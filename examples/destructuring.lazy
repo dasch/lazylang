@@ -1,0 +1,9 @@
+(first, last) = ("John", "Doe")
+
+{ firstName, lastName } = { firstName: "Jane", lastName: "Smith" }
+
+fullname = { first, last } -> (first, last)
+
+result = fullname { first: "Alice", last: "Johnson" }
+
+[first, firstName]

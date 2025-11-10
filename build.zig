@@ -70,8 +70,23 @@ pub fn build(b: *std.Build) void {
         "tests/eval/pattern_matching_test.zig",
     };
 
+    // Examples test module
+    const examples_test_module = b.createModule(.{
+        .root_source_file = b.path("tests/examples_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    examples_test_module.addImport("cli", cli_module);
+    examples_test_module.addImport("evaluator", evaluator_module);
+
+    const examples_tests = b.addTest(.{
+        .root_module = examples_test_module,
+    });
+
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&b.addRunArtifact(tests).step);
+    test_step.dependOn(&b.addRunArtifact(examples_tests).step);
 
     for (eval_test_files) |test_file| {
         const eval_test_module = b.createModule(.{

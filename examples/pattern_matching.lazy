@@ -1,0 +1,5 @@
+obj = { status: "ok", payload: 100 }
+
+when obj matches
+  { status: "error" } then 0
+  { status: "ok", payload } then payload
