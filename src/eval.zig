@@ -4,6 +4,7 @@ const TokenKind = enum {
     eof,
     identifier,
     number,
+    string,
     comma,
     colon,
     arrow,
@@ -26,6 +27,7 @@ const Token = struct {
 
 const TokenizerError = error{
     UnexpectedCharacter,
+    UnterminatedString,
 };
 
 const ParseError = TokenizerError || std.mem.Allocator.Error || std.fmt.ParseIntError || error{
@@ -42,11 +44,13 @@ const BinaryOp = enum {
 const Expression = union(enum) {
     integer: i64,
     identifier: []const u8,
+    string_literal: []const u8,
     lambda: Lambda,
     binary: Binary,
     application: Application,
     array: ArrayLiteral,
     object: ObjectLiteral,
+    import_expr: ImportExpr,
 };
 
 const Lambda = struct {
@@ -76,6 +80,10 @@ const ObjectField = struct {
 
 const ObjectLiteral = struct {
     fields: []ObjectField,
+};
+
+const ImportExpr = struct {
+    path: []const u8,
 };
 
 const Tokenizer = struct {
@@ -157,6 +165,9 @@ const Tokenizer = struct {
             '0'...'9' => {
                 return self.consumeNumber();
             },
+            '\'' => {
+                return self.consumeString();
+            },
             else => return error.UnexpectedCharacter,
         }
     }
@@ -183,6 +194,23 @@ const Tokenizer = struct {
             }
         }
         return self.makeToken(.number, start);
+    }
+
+    fn consumeString(self: *Tokenizer) TokenizerError!Token {
+        self.index += 1; // skip opening quote
+        const start_content = self.index;
+        while (self.index < self.source.len) : (self.index += 1) {
+            if (self.source[self.index] == '\'') {
+                const token = Token{
+                    .kind = .string,
+                    .lexeme = self.source[start_content..self.index],
+                    .preceded_by_newline = self.last_whitespace_had_newline,
+                };
+                self.index += 1; // skip closing quote
+                return token;
+            }
+        }
+        return error.UnterminatedString;
     }
 
     fn skipWhitespace(self: *Tokenizer) bool {
@@ -315,10 +343,26 @@ const Parser = struct {
                 return node;
             },
             .identifier => {
+                if (std.mem.eql(u8, self.current.lexeme, "import")) {
+                    try self.advance();
+                    if (self.current.kind != .string) return error.ExpectedExpression;
+                    const path = self.current.lexeme;
+                    try self.advance();
+                    const node = try self.allocateExpression();
+                    node.* = .{ .import_expr = .{ .path = path } };
+                    return node;
+                }
                 const name = self.current.lexeme;
                 try self.advance();
                 const node = try self.allocateExpression();
                 node.* = .{ .identifier = name };
+                return node;
+            },
+            .string => {
+                const value = self.current.lexeme;
+                try self.advance();
+                const node = try self.allocateExpression();
+                node.* = .{ .string_literal = value };
                 return node;
             },
             .l_paren => {
@@ -442,6 +486,7 @@ const Value = union(enum) {
     function: *FunctionValue,
     array: ArrayValue,
     object: ObjectValue,
+    string: []const u8,
 };
 
 const ArrayValue = struct {
@@ -457,21 +502,118 @@ const ObjectValue = struct {
     fields: []ObjectFieldValue,
 };
 
-fn evaluateExpression(arena: std.mem.Allocator, expr: *Expression, env: ?*Environment) !Value {
+const EvalError = ParseError || std.mem.Allocator.Error || std.process.GetEnvVarOwnedError || std.fs.File.OpenError || std.fs.File.ReadError || error{
+    UnknownIdentifier,
+    TypeMismatch,
+    ExpectedFunction,
+    ModuleNotFound,
+    Overflow,
+    FileTooBig,
+};
+
+const EvalContext = struct {
+    allocator: std.mem.Allocator,
+    lazy_paths: [][]const u8,
+};
+
+const ModuleFile = struct {
+    path: []u8,
+    file: std.fs.File,
+};
+
+fn collectLazyPaths(arena: std.mem.Allocator) EvalError![][]const u8 {
+    var list = std.ArrayList([]const u8).init(arena);
+    defer list.deinit();
+
+    const env_value = std.process.getEnvVarOwned(arena, "LAZYLANG_PATH") catch |err| switch (err) {
+        error.EnvironmentVariableNotFound => return try list.toOwnedSlice(),
+        else => return err,
+    };
+
+    if (env_value.len == 0) {
+        return try list.toOwnedSlice();
+    }
+
+    var parts = std.mem.splitScalar(u8, env_value, std.fs.path.delimiter);
+    while (parts.next()) |part| {
+        if (part.len == 0) continue;
+        const copy = try arena.dupe(u8, part);
+        try list.append(copy);
+    }
+
+    return try list.toOwnedSlice();
+}
+
+fn normalizedImportPath(allocator: std.mem.Allocator, import_path: []const u8) ![]u8 {
+    if (std.fs.path.extension(import_path).len == 0) {
+        return try std.fmt.allocPrint(allocator, "{s}.lazy", .{import_path});
+    }
+    return try allocator.dupe(u8, import_path);
+}
+
+fn openImportFile(ctx: *const EvalContext, import_path: []const u8, current_dir: ?[]const u8) EvalError!ModuleFile {
+    const normalized = try normalizedImportPath(ctx.allocator, import_path);
+    errdefer ctx.allocator.free(normalized);
+
+    if (current_dir) |dir| {
+        const candidate = try std.fs.path.join(ctx.allocator, &.{ dir, normalized });
+        const maybe_file = std.fs.cwd().openFile(candidate, .{}) catch |err| switch (err) {
+            error.FileNotFound => null,
+            else => return err,
+        };
+        if (maybe_file) |file| {
+            ctx.allocator.free(normalized);
+            return .{ .path = candidate, .file = file };
+        }
+        ctx.allocator.free(candidate);
+    }
+
+    const relative_file = std.fs.cwd().openFile(normalized, .{}) catch |err| switch (err) {
+        error.FileNotFound => null,
+        else => return err,
+    };
+    if (relative_file) |file| {
+        return .{ .path = normalized, .file = file };
+    }
+
+    for (ctx.lazy_paths) |base| {
+        const candidate = try std.fs.path.join(ctx.allocator, &.{ base, normalized });
+        const maybe_file = std.fs.cwd().openFile(candidate, .{}) catch |err| switch (err) {
+            error.FileNotFound => null,
+            else => return err,
+        };
+        if (maybe_file) |file| {
+            ctx.allocator.free(normalized);
+            return .{ .path = candidate, .file = file };
+        }
+        ctx.allocator.free(candidate);
+    }
+
+    return error.ModuleNotFound;
+}
+
+fn evaluateExpression(
+    arena: std.mem.Allocator,
+    expr: *Expression,
+    env: ?*Environment,
+    current_dir: ?[]const u8,
+    ctx: *const EvalContext,
+) EvalError!Value {
     return switch (expr.*) {
         .integer => |value| .{ .integer = value },
         .identifier => |name| blk: {
             const resolved = lookup(env, name) orelse return error.UnknownIdentifier;
             break :blk resolved;
         },
+        .string_literal => |value| .{ .string = value },
         .lambda => |lambda| blk: {
             const function = try arena.create(FunctionValue);
             function.* = .{ .param = lambda.param, .body = lambda.body, .env = env };
             break :blk Value{ .function = function };
         },
         .binary => |binary| blk: {
-            const left_value = try evaluateExpression(arena, binary.left, env);
-            const right_value = try evaluateExpression(arena, binary.right, env);
+            const left_value = try evaluateExpression(arena, binary.left, env, current_dir, ctx);
+            const right_value = try evaluateExpression(arena, binary.right, env, current_dir, ctx);
             const left_int = switch (left_value) {
                 .integer => |v| v,
                 else => return error.TypeMismatch,
@@ -489,8 +631,8 @@ fn evaluateExpression(arena: std.mem.Allocator, expr: *Expression, env: ?*Enviro
             break :blk Value{ .integer = result };
         },
         .application => |application| blk: {
-            const function_value = try evaluateExpression(arena, application.function, env);
-            const argument_value = try evaluateExpression(arena, application.argument, env);
+            const function_value = try evaluateExpression(arena, application.function, env, current_dir, ctx);
+            const argument_value = try evaluateExpression(arena, application.argument, env, current_dir, ctx);
 
             const function_ptr = switch (function_value) {
                 .function => |fn_ptr| fn_ptr,
@@ -504,23 +646,43 @@ fn evaluateExpression(arena: std.mem.Allocator, expr: *Expression, env: ?*Enviro
                 .value = argument_value,
             };
 
-            break :blk try evaluateExpression(arena, function_ptr.body, bound_env);
+            break :blk try evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx);
         },
         .array => |array| blk: {
             const values = try arena.alloc(Value, array.elements.len);
             for (array.elements, 0..) |element, i| {
-                values[i] = try evaluateExpression(arena, element, env);
+                values[i] = try evaluateExpression(arena, element, env, current_dir, ctx);
             }
             break :blk Value{ .array = .{ .elements = values } };
         },
         .object => |object| blk: {
             const fields = try arena.alloc(ObjectFieldValue, object.fields.len);
             for (object.fields, 0..) |field, i| {
-                fields[i] = .{ .key = field.key, .value = try evaluateExpression(arena, field.value, env) };
+                fields[i] = .{ .key = field.key, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx) };
             }
             break :blk Value{ .object = .{ .fields = fields } };
         },
+        .import_expr => |import_expr| try importModule(arena, import_expr.path, current_dir, ctx),
     };
+}
+
+fn importModule(
+    arena: std.mem.Allocator,
+    import_path: []const u8,
+    current_dir: ?[]const u8,
+    ctx: *const EvalContext,
+) EvalError!Value {
+    var module_file = try openImportFile(ctx, import_path, current_dir);
+    defer module_file.file.close();
+    defer ctx.allocator.free(module_file.path);
+
+    const contents = try module_file.file.readToEndAlloc(arena, std.math.maxInt(usize));
+
+    var parser = try Parser.init(arena, contents);
+    const expression = try parser.parse();
+
+    const module_dir = std.fs.path.dirname(module_file.path);
+    return evaluateExpression(arena, expression, null, module_dir, ctx);
 }
 
 fn lookup(env: ?*Environment, name: []const u8) ?Value {
@@ -570,6 +732,7 @@ fn formatValue(allocator: std.mem.Allocator, value: Value) ![]u8 {
 
             break :blk try builder.toOwnedSlice(allocator);
         },
+        .string => |str| try std.fmt.allocPrint(allocator, "\"{s}\"", .{str}),
     };
 }
 
@@ -583,14 +746,21 @@ pub const EvalOutput = struct {
     }
 };
 
-pub fn evalInline(allocator: std.mem.Allocator, source: []const u8) !EvalOutput {
+fn evalSource(
+    allocator: std.mem.Allocator,
+    source: []const u8,
+    current_dir: ?[]const u8,
+) EvalError!EvalOutput {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
+
+    const lazy_paths = try collectLazyPaths(arena.allocator());
+    const context = EvalContext{ .allocator = allocator, .lazy_paths = lazy_paths };
 
     var parser = try Parser.init(arena.allocator(), source);
     const expression = try parser.parse();
 
-    const value = try evaluateExpression(arena.allocator(), expression, null);
+    const value = try evaluateExpression(arena.allocator(), expression, null, current_dir, &context);
     const formatted = try formatValue(allocator, value);
 
     return .{
@@ -599,12 +769,17 @@ pub fn evalInline(allocator: std.mem.Allocator, source: []const u8) !EvalOutput 
     };
 }
 
-pub fn evalFile(allocator: std.mem.Allocator, path: []const u8) !EvalOutput {
+pub fn evalInline(allocator: std.mem.Allocator, source: []const u8) EvalError!EvalOutput {
+    return try evalSource(allocator, source, null);
+}
+
+pub fn evalFile(allocator: std.mem.Allocator, path: []const u8) EvalError!EvalOutput {
     var file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
 
     const contents = try file.readToEndAlloc(allocator, std.math.maxInt(usize));
     defer allocator.free(contents);
 
-    return try evalInline(allocator, contents);
+    const directory = std.fs.path.dirname(path);
+    return try evalSource(allocator, contents, directory);
 }
