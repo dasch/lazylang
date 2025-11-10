@@ -166,7 +166,10 @@ const Tokenizer = struct {
                 return self.consumeNumber();
             },
             '\'' => {
-                return self.consumeString();
+                return self.consumeString('\'');
+            },
+            '"' => {
+                return self.consumeString('"');
             },
             else => return error.UnexpectedCharacter,
         }
@@ -196,11 +199,11 @@ const Tokenizer = struct {
         return self.makeToken(.number, start);
     }
 
-    fn consumeString(self: *Tokenizer) TokenizerError!Token {
+    fn consumeString(self: *Tokenizer, quote_char: u8) TokenizerError!Token {
         self.index += 1; // skip opening quote
         const start_content = self.index;
         while (self.index < self.source.len) : (self.index += 1) {
-            if (self.source[self.index] == '\'') {
+            if (self.source[self.index] == quote_char) {
                 const token = Token{
                     .kind = .string,
                     .lexeme = self.source[start_content..self.index],
