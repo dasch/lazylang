@@ -522,26 +522,26 @@ const ModuleFile = struct {
 };
 
 fn collectLazyPaths(arena: std.mem.Allocator) EvalError![][]const u8 {
-    var list = std.ArrayList([]const u8).init(arena);
-    defer list.deinit();
+    var list = std.ArrayList([]const u8){};
+    defer list.deinit(arena);
 
     const env_value = std.process.getEnvVarOwned(arena, "LAZYLANG_PATH") catch |err| switch (err) {
-        error.EnvironmentVariableNotFound => return try list.toOwnedSlice(),
+        error.EnvironmentVariableNotFound => return try list.toOwnedSlice(arena),
         else => return err,
     };
 
     if (env_value.len == 0) {
-        return try list.toOwnedSlice();
+        return try list.toOwnedSlice(arena);
     }
 
     var parts = std.mem.splitScalar(u8, env_value, std.fs.path.delimiter);
     while (parts.next()) |part| {
         if (part.len == 0) continue;
         const copy = try arena.dupe(u8, part);
-        try list.append(copy);
+        try list.append(arena, copy);
     }
 
-    return try list.toOwnedSlice();
+    return try list.toOwnedSlice(arena);
 }
 
 fn normalizedImportPath(allocator: std.mem.Allocator, import_path: []const u8) ![]u8 {
