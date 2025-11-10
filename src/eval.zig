@@ -71,7 +71,7 @@ const Expression = union(enum) {
 };
 
 const Lambda = struct {
-    param: []const u8,
+    param: *Pattern,
     body: *Expression,
 };
 
@@ -395,10 +395,18 @@ const Parser = struct {
             return node;
         }
 
-        // Check for lambda: identifier -> expression
-        if (self.current.kind == .identifier and self.lookahead.kind == .arrow) {
-            const param = self.current.lexeme;
-            try self.advance();
+        // Check for lambda: pattern -> expression
+        const is_lambda = switch (self.current.kind) {
+            .identifier => self.lookahead.kind == .arrow,
+            .l_paren, .l_bracket, .l_brace => blk: {
+                // Look ahead to see if this is a lambda with pattern parameter
+                break :blk self.isLambdaPattern();
+            },
+            else => false,
+        };
+
+        if (is_lambda) {
+            const param = try self.parsePattern();
             try self.expect(.arrow);
             const body = try self.parseLambda();
             const node = try self.allocateExpression();
@@ -407,6 +415,46 @@ const Parser = struct {
         }
 
         return self.parseBinary(0);
+    }
+
+    fn isLambdaPattern(self: *Parser) bool {
+        // Similar to isPatternBinding, but looks for '->' instead of '='
+        const saved_tokenizer = self.tokenizer;
+        const saved_current = self.current;
+        const saved_lookahead = self.lookahead;
+        defer {
+            self.tokenizer = saved_tokenizer;
+            self.current = saved_current;
+            self.lookahead = saved_lookahead;
+        }
+
+        var depth: usize = 0;
+        const open_kind = self.current.kind;
+        const close_kind = switch (open_kind) {
+            .l_paren => TokenKind.r_paren,
+            .l_bracket => TokenKind.r_bracket,
+            .l_brace => TokenKind.r_brace,
+            else => return false,
+        };
+
+        // Advance past opening delimiter
+        self.advance() catch return false;
+        depth = 1;
+
+        // Scan forward looking for matching close and then '->'
+        while (depth > 0) {
+            if (self.current.kind == .eof) return false;
+            if (self.current.kind == open_kind) depth += 1;
+            if (self.current.kind == close_kind) {
+                depth -= 1;
+                if (depth == 0) break;
+            }
+            self.advance() catch return false;
+        }
+
+        // Now check if next token is '->'
+        self.advance() catch return false;
+        return self.current.kind == .arrow;
     }
 
     fn isPatternBinding(self: *Parser) bool {
@@ -510,7 +558,7 @@ const Parser = struct {
                     node.* = .{ .application = .{ .function = expr, .argument = argument } };
                     expr = node;
                 },
-                .number, .l_paren => {
+                .number, .l_paren, .l_bracket, .l_brace => {
                     const argument = try self.parsePrimary();
                     const node = try self.allocateExpression();
                     node.* = .{ .application = .{ .function = expr, .argument = argument } };
@@ -847,7 +895,7 @@ const Environment = struct {
 };
 
 const FunctionValue = struct {
-    param: []const u8,
+    param: *Pattern,
     body: *Expression,
     env: ?*Environment,
 };
@@ -1159,12 +1207,7 @@ fn evaluateExpression(
                 else => return error.ExpectedFunction,
             };
 
-            const bound_env = try arena.create(Environment);
-            bound_env.* = .{
-                .parent = function_ptr.env,
-                .name = function_ptr.param,
-                .value = argument_value,
-            };
+            const bound_env = try matchPattern(arena, function_ptr.param, argument_value, function_ptr.env);
 
             break :blk try evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx);
         },
