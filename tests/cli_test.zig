@@ -39,17 +39,17 @@ fn runCli(args: []const []const u8) !TestOutput {
     };
 }
 
-test "eval command requires an expression argument" {
+test "eval command requires a file path or --expr argument" {
     const args = [_][]const u8{ "lazylang", "eval" };
     var outcome = try runCli(&args);
     defer outcome.deinit();
 
     try std.testing.expectEqual(@as(u8, 1), outcome.result.exit_code);
     try std.testing.expectEqualStrings("", outcome.stdout);
-    try std.testing.expectStringStartsWith(outcome.stderr, "error: missing expression");
+    try std.testing.expectStringStartsWith(outcome.stderr, "error: missing file path or --expr option");
 }
 
-test "eval command prints evaluator output" {
+test "eval command with --expr prints evaluator output" {
     const args = [_][]const u8{ "lazylang", "eval", "--expr", "42" };
     var outcome = try runCli(&args);
     defer outcome.deinit();
@@ -59,17 +59,7 @@ test "eval command prints evaluator output" {
     try std.testing.expectEqualStrings("", outcome.stderr);
 }
 
-test "expr command requires a file path argument" {
-    const args = [_][]const u8{ "lazylang", "expr" };
-    var outcome = try runCli(&args);
-    defer outcome.deinit();
-
-    try std.testing.expectEqual(@as(u8, 1), outcome.result.exit_code);
-    try std.testing.expectEqualStrings("", outcome.stdout);
-    try std.testing.expectStringStartsWith(outcome.stderr, "error: missing file path");
-}
-
-test "expr command evaluates lazylang file" {
+test "eval command with file path evaluates lazylang file" {
     const allocator = std.testing.allocator;
     var tmp = std.testing.tmpDir(.{});
     defer tmp.cleanup();
@@ -82,11 +72,21 @@ test "expr command evaluates lazylang file" {
     const file_path = try tmp.dir.realpathAlloc(allocator, file_name);
     defer allocator.free(file_path);
 
-    const args = [_][]const u8{ "lazylang", "expr", file_path };
+    const args = [_][]const u8{ "lazylang", "eval", file_path };
     var outcome = try runCli(&args);
     defer outcome.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), outcome.result.exit_code);
     try std.testing.expectEqualStrings("42\n", outcome.stdout);
     try std.testing.expectEqualStrings("", outcome.stderr);
+}
+
+test "eval command rejects both --expr and file path" {
+    const args = [_][]const u8{ "lazylang", "eval", "--expr", "42", "file.lazy" };
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 1), outcome.result.exit_code);
+    try std.testing.expectEqualStrings("", outcome.stdout);
+    try std.testing.expectStringStartsWith(outcome.stderr, "error: cannot specify both --expr and a file path");
 }
