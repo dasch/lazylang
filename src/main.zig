@@ -12,11 +12,11 @@ pub fn main() !void {
     var args_iter = std.process.args();
     defer args_iter.deinit();
 
-    var args_list = std.ArrayList([]const u8).init(allocator);
-    defer args_list.deinit();
+    var args_list = std.ArrayList([]const u8){};
+    defer args_list.deinit(allocator);
 
     while (args_iter.next()) |arg| {
-        try args_list.append(arg);
+        try args_list.append(allocator, arg);
     }
 
     const result = try cli.run(allocator, args_list.items, stdout_file, stderr_file);
