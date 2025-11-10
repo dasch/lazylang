@@ -4,17 +4,24 @@ const TokenKind = enum {
     eof,
     identifier,
     number,
+    comma,
+    colon,
     arrow,
     plus,
     minus,
     star,
     l_paren,
     r_paren,
+    l_bracket,
+    r_bracket,
+    l_brace,
+    r_brace,
 };
 
 const Token = struct {
     kind: TokenKind,
     lexeme: []const u8,
+    preceded_by_newline: bool,
 };
 
 const TokenizerError = error{
@@ -38,6 +45,8 @@ const Expression = union(enum) {
     lambda: Lambda,
     binary: Binary,
     application: Application,
+    array: ArrayLiteral,
+    object: ObjectLiteral,
 };
 
 const Lambda = struct {
@@ -56,19 +65,38 @@ const Application = struct {
     argument: *Expression,
 };
 
+const ArrayLiteral = struct {
+    elements: []*Expression,
+};
+
+const ObjectField = struct {
+    key: []const u8,
+    value: *Expression,
+};
+
+const ObjectLiteral = struct {
+    fields: []ObjectField,
+};
+
 const Tokenizer = struct {
     source: []const u8,
     index: usize,
+    last_whitespace_had_newline: bool,
 
     pub fn init(source: []const u8) Tokenizer {
-        return .{ .source = source, .index = 0 };
+        return .{ .source = source, .index = 0, .last_whitespace_had_newline = false };
     }
 
     fn next(self: *Tokenizer) TokenizerError!Token {
-        self.skipWhitespace();
+        const saw_newline = self.skipWhitespace();
+        self.last_whitespace_had_newline = saw_newline;
 
         if (self.index >= self.source.len) {
-            return .{ .kind = .eof, .lexeme = self.source[self.source.len..self.source.len] };
+            return .{
+                .kind = .eof,
+                .lexeme = self.source[self.source.len..self.source.len],
+                .preceded_by_newline = saw_newline,
+            };
         }
 
         const start = self.index;
@@ -77,27 +105,51 @@ const Tokenizer = struct {
         switch (char) {
             '+' => {
                 self.index += 1;
-                return .{ .kind = .plus, .lexeme = self.source[start..self.index] };
+                return self.makeToken(.plus, start);
             },
             '-' => {
                 self.index += 1;
                 if (self.index < self.source.len and self.source[self.index] == '>') {
                     self.index += 1;
-                    return .{ .kind = .arrow, .lexeme = self.source[start..self.index] };
+                    return self.makeToken(.arrow, start);
                 }
-                return .{ .kind = .minus, .lexeme = self.source[start..self.index] };
+                return self.makeToken(.minus, start);
             },
             '*' => {
                 self.index += 1;
-                return .{ .kind = .star, .lexeme = self.source[start..self.index] };
+                return self.makeToken(.star, start);
+            },
+            ',' => {
+                self.index += 1;
+                return self.makeToken(.comma, start);
+            },
+            ':' => {
+                self.index += 1;
+                return self.makeToken(.colon, start);
             },
             '(' => {
                 self.index += 1;
-                return .{ .kind = .l_paren, .lexeme = self.source[start..self.index] };
+                return self.makeToken(.l_paren, start);
             },
             ')' => {
                 self.index += 1;
-                return .{ .kind = .r_paren, .lexeme = self.source[start..self.index] };
+                return self.makeToken(.r_paren, start);
+            },
+            '[' => {
+                self.index += 1;
+                return self.makeToken(.l_bracket, start);
+            },
+            ']' => {
+                self.index += 1;
+                return self.makeToken(.r_bracket, start);
+            },
+            '{' => {
+                self.index += 1;
+                return self.makeToken(.l_brace, start);
+            },
+            '}' => {
+                self.index += 1;
+                return self.makeToken(.r_brace, start);
             },
             'a'...'z', 'A'...'Z', '_' => {
                 return self.consumeIdentifier();
@@ -118,7 +170,7 @@ const Tokenizer = struct {
                 else => break,
             }
         }
-        return .{ .kind = .identifier, .lexeme = self.source[start..self.index] };
+        return self.makeToken(.identifier, start);
     }
 
     fn consumeNumber(self: *Tokenizer) Token {
@@ -130,17 +182,40 @@ const Tokenizer = struct {
                 else => break,
             }
         }
-        return .{ .kind = .number, .lexeme = self.source[start..self.index] };
+        return self.makeToken(.number, start);
     }
 
-    fn skipWhitespace(self: *Tokenizer) void {
-        while (self.index < self.source.len) : (self.index += 1) {
+    fn skipWhitespace(self: *Tokenizer) bool {
+        var saw_newline = false;
+        while (self.index < self.source.len) {
             const c = self.source[self.index];
             switch (c) {
-                ' ', '\t', '\n', '\r' => continue,
-                else => return,
+                ' ', '\t' => {
+                    self.index += 1;
+                },
+                '\r' => {
+                    saw_newline = true;
+                    self.index += 1;
+                    if (self.index < self.source.len and self.source[self.index] == '\n') {
+                        self.index += 1;
+                    }
+                },
+                '\n' => {
+                    saw_newline = true;
+                    self.index += 1;
+                },
+                else => return saw_newline,
             }
         }
+        return saw_newline;
+    }
+
+    fn makeToken(self: *Tokenizer, kind: TokenKind, start: usize) Token {
+        return .{
+            .kind = kind,
+            .lexeme = self.source[start..self.index],
+            .preceded_by_newline = self.last_whitespace_had_newline,
+        };
     }
 };
 
@@ -214,6 +289,7 @@ const Parser = struct {
         var expr = try self.parsePrimary();
 
         while (true) {
+            if (self.current.preceded_by_newline) break;
             switch (self.current.kind) {
                 .identifier, .number, .l_paren => {
                     const argument = try self.parsePrimary();
@@ -251,8 +327,79 @@ const Parser = struct {
                 try self.expect(.r_paren);
                 return inner;
             },
+            .l_bracket => return self.parseArray(),
+            .l_brace => return self.parseObject(),
             else => return error.ExpectedExpression,
         }
+    }
+
+    fn parseArray(self: *Parser) ParseError!*Expression {
+        try self.expect(.l_bracket);
+
+        var elements = std.ArrayListUnmanaged(*Expression){};
+
+        while (self.current.kind != .r_bracket) {
+            const element = try self.parseLambda();
+            try elements.append(self.arena, element);
+
+            if (self.current.kind == .comma) {
+                try self.advance();
+                if (self.current.kind == .r_bracket) break;
+                continue;
+            }
+
+            if (self.current.kind == .r_bracket) break;
+
+            if (self.current.preceded_by_newline) {
+                continue;
+            }
+
+            return error.UnexpectedToken;
+        }
+
+        try self.expect(.r_bracket);
+
+        const slice = try elements.toOwnedSlice(self.arena);
+        const node = try self.allocateExpression();
+        node.* = .{ .array = .{ .elements = slice } };
+        return node;
+    }
+
+    fn parseObject(self: *Parser) ParseError!*Expression {
+        try self.expect(.l_brace);
+
+        var fields = std.ArrayListUnmanaged(ObjectField){};
+
+        while (self.current.kind != .r_brace) {
+            if (self.current.kind != .identifier) return error.UnexpectedToken;
+            const key = self.current.lexeme;
+            try self.advance();
+
+            try self.expect(.colon);
+            const value_expr = try self.parseLambda();
+            try fields.append(self.arena, .{ .key = key, .value = value_expr });
+
+            if (self.current.kind == .comma) {
+                try self.advance();
+                if (self.current.kind == .r_brace) break;
+                continue;
+            }
+
+            if (self.current.kind == .r_brace) break;
+
+            if (self.current.preceded_by_newline) {
+                continue;
+            }
+
+            return error.UnexpectedToken;
+        }
+
+        try self.expect(.r_brace);
+
+        const slice = try fields.toOwnedSlice(self.arena);
+        const node = try self.allocateExpression();
+        node.* = .{ .object = .{ .fields = slice } };
+        return node;
     }
 
     fn expect(self: *Parser, kind: TokenKind) ParseError!void {
@@ -293,6 +440,21 @@ const FunctionValue = struct {
 const Value = union(enum) {
     integer: i64,
     function: *FunctionValue,
+    array: ArrayValue,
+    object: ObjectValue,
+};
+
+const ArrayValue = struct {
+    elements: []Value,
+};
+
+const ObjectFieldValue = struct {
+    key: []const u8,
+    value: Value,
+};
+
+const ObjectValue = struct {
+    fields: []ObjectFieldValue,
 };
 
 fn evaluateExpression(arena: std.mem.Allocator, expr: *Expression, env: ?*Environment) !Value {
@@ -344,6 +506,20 @@ fn evaluateExpression(arena: std.mem.Allocator, expr: *Expression, env: ?*Enviro
 
             break :blk try evaluateExpression(arena, function_ptr.body, bound_env);
         },
+        .array => |array| blk: {
+            const values = try arena.alloc(Value, array.elements.len);
+            for (array.elements, 0..) |element, i| {
+                values[i] = try evaluateExpression(arena, element, env);
+            }
+            break :blk Value{ .array = .{ .elements = values } };
+        },
+        .object => |object| blk: {
+            const fields = try arena.alloc(ObjectFieldValue, object.fields.len);
+            for (object.fields, 0..) |field, i| {
+                fields[i] = .{ .key = field.key, .value = try evaluateExpression(arena, field.value, env) };
+            }
+            break :blk Value{ .object = .{ .fields = fields } };
+        },
     };
 }
 
@@ -362,6 +538,38 @@ fn formatValue(allocator: std.mem.Allocator, value: Value) ![]u8 {
     return switch (value) {
         .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
         .function => try std.fmt.allocPrint(allocator, "<function>", .{}),
+        .array => |arr| blk: {
+            var builder = std.ArrayList(u8).init(allocator);
+            errdefer builder.deinit();
+
+            try builder.append('[');
+            for (arr.elements, 0..) |element, i| {
+                if (i != 0) try builder.appendSlice(", ");
+                const formatted = try formatValue(allocator, element);
+                defer allocator.free(formatted);
+                try builder.appendSlice(formatted);
+            }
+            try builder.append(']');
+
+            break :blk try builder.toOwnedSlice();
+        },
+        .object => |obj| blk: {
+            var builder = std.ArrayList(u8).init(allocator);
+            errdefer builder.deinit();
+
+            try builder.append('{');
+            for (obj.fields, 0..) |field, i| {
+                if (i != 0) try builder.appendSlice(", ");
+                try builder.appendSlice(field.key);
+                try builder.appendSlice(": ");
+                const formatted = try formatValue(allocator, field.value);
+                defer allocator.free(formatted);
+                try builder.appendSlice(formatted);
+            }
+            try builder.append('}');
+
+            break :blk try builder.toOwnedSlice();
+        },
     };
 }
 
