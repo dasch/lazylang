@@ -1,0 +1,9 @@
+{ describe, it, mustEq } = import 'Spec'
+
+describe "Simple Tests" [
+  it "passes a basic assertion" do
+    mustEq 5 (2 + 3)
+
+  it "passes another assertion" do
+    mustEq 10 (5 * 2)
+]
