@@ -138,6 +138,10 @@ const ImportExpr = struct {
 
 const Pattern = union(enum) {
     identifier: []const u8,
+    integer: i64,
+    boolean: bool,
+    null_literal,
+    string_literal: []const u8,
     tuple: TuplePattern,
     array: ArrayPattern,
     object: ObjectPattern,
@@ -152,7 +156,12 @@ const ArrayPattern = struct {
 };
 
 const ObjectPattern = struct {
-    fields: [][]const u8,
+    fields: []ObjectPatternField,
+};
+
+const ObjectPatternField = struct {
+    key: []const u8,
+    pattern: *Pattern, // Either identifier for extraction or literal for matching
 };
 
 const Tokenizer = struct {
@@ -831,8 +840,45 @@ const Parser = struct {
 
     fn parsePattern(self: *Parser) ParseError!*Pattern {
         switch (self.current.kind) {
+            .number => {
+                const lexeme = self.current.lexeme;
+                const value = try std.fmt.parseInt(i64, lexeme, 10);
+                try self.advance();
+                const pattern = try self.arena.create(Pattern);
+                pattern.* = .{ .integer = value };
+                return pattern;
+            },
+            .string => {
+                const value = self.current.lexeme;
+                try self.advance();
+                const pattern = try self.arena.create(Pattern);
+                pattern.* = .{ .string_literal = value };
+                return pattern;
+            },
             .identifier => {
                 const name = self.current.lexeme;
+
+                // Check for boolean and null literals
+                if (std.mem.eql(u8, name, "true")) {
+                    try self.advance();
+                    const pattern = try self.arena.create(Pattern);
+                    pattern.* = .{ .boolean = true };
+                    return pattern;
+                }
+                if (std.mem.eql(u8, name, "false")) {
+                    try self.advance();
+                    const pattern = try self.arena.create(Pattern);
+                    pattern.* = .{ .boolean = false };
+                    return pattern;
+                }
+                if (std.mem.eql(u8, name, "null")) {
+                    try self.advance();
+                    const pattern = try self.arena.create(Pattern);
+                    pattern.* = .null_literal;
+                    return pattern;
+                }
+
+                // Regular identifier pattern
                 try self.advance();
                 const pattern = try self.arena.create(Pattern);
                 pattern.* = .{ .identifier = name };
@@ -902,13 +948,31 @@ const Parser = struct {
     fn parseObjectPattern(self: *Parser) ParseError!*Pattern {
         try self.expect(.l_brace);
 
-        var fields = std.ArrayListUnmanaged([]const u8){};
+        var fields = std.ArrayListUnmanaged(ObjectPatternField){};
 
         while (self.current.kind != .r_brace) {
             if (self.current.kind != .identifier) return error.UnexpectedToken;
             const field_name = self.current.lexeme;
             try self.advance();
-            try fields.append(self.arena, field_name);
+
+            // Check if there's a colon (field with pattern) or not (field extraction)
+            if (self.current.kind == .colon) {
+                // Parse field pattern: { key: pattern }
+                try self.advance();
+                const field_pattern = try self.parsePattern();
+                try fields.append(self.arena, .{
+                    .key = field_name,
+                    .pattern = field_pattern,
+                });
+            } else {
+                // Field extraction: { key } is short for { key: key }
+                const field_pattern = try self.arena.create(Pattern);
+                field_pattern.* = .{ .identifier = field_name };
+                try fields.append(self.arena, .{
+                    .key = field_name,
+                    .pattern = field_pattern,
+                });
+            }
 
             if (self.current.kind == .comma) {
                 try self.advance();
@@ -1099,6 +1163,37 @@ fn matchPattern(
             };
             break :blk new_env;
         },
+        .integer => |expected| blk: {
+            const actual = switch (value) {
+                .integer => |v| v,
+                else => return error.TypeMismatch,
+            };
+            if (expected != actual) return error.TypeMismatch;
+            break :blk base_env;
+        },
+        .boolean => |expected| blk: {
+            const actual = switch (value) {
+                .boolean => |v| v,
+                else => return error.TypeMismatch,
+            };
+            if (expected != actual) return error.TypeMismatch;
+            break :blk base_env;
+        },
+        .null_literal => blk: {
+            switch (value) {
+                .null_value => {},
+                else => return error.TypeMismatch,
+            }
+            break :blk base_env;
+        },
+        .string_literal => |expected| blk: {
+            const actual = switch (value) {
+                .string => |v| v,
+                else => return error.TypeMismatch,
+            };
+            if (!std.mem.eql(u8, expected, actual)) return error.TypeMismatch;
+            break :blk base_env;
+        },
         .tuple => |tuple_pattern| blk: {
             const tuple_value = switch (value) {
                 .tuple => |t| t,
@@ -1138,18 +1233,13 @@ fn matchPattern(
             };
 
             var current_env = base_env;
-            for (object_pattern.fields) |field_name| {
+            for (object_pattern.fields) |pattern_field| {
                 // Find the field in the object value
                 var found = false;
-                for (object_value.fields) |field| {
-                    if (std.mem.eql(u8, field.key, field_name)) {
-                        const new_env = try arena.create(Environment);
-                        new_env.* = .{
-                            .parent = current_env,
-                            .name = field_name,
-                            .value = field.value,
-                        };
-                        current_env = new_env;
+                for (object_value.fields) |value_field| {
+                    if (std.mem.eql(u8, value_field.key, pattern_field.key)) {
+                        // Match the field's pattern against the field's value
+                        current_env = try matchPattern(arena, pattern_field.pattern, value_field.value, current_env);
                         found = true;
                         break;
                     }
