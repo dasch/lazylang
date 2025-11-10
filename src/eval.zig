@@ -43,6 +43,7 @@ const BinaryOp = enum {
 
 const Expression = union(enum) {
     integer: i64,
+    boolean: bool,
     identifier: []const u8,
     string_literal: []const u8,
     lambda: Lambda,
@@ -360,6 +361,18 @@ const Parser = struct {
                     node.* = .{ .import_expr = .{ .path = path } };
                     return node;
                 }
+                if (std.mem.eql(u8, self.current.lexeme, "true")) {
+                    try self.advance();
+                    const node = try self.allocateExpression();
+                    node.* = .{ .boolean = true };
+                    return node;
+                }
+                if (std.mem.eql(u8, self.current.lexeme, "false")) {
+                    try self.advance();
+                    const node = try self.allocateExpression();
+                    node.* = .{ .boolean = false };
+                    return node;
+                }
                 const name = self.current.lexeme;
                 try self.advance();
                 const node = try self.allocateExpression();
@@ -527,6 +540,7 @@ const FunctionValue = struct {
 
 const Value = union(enum) {
     integer: i64,
+    boolean: bool,
     function: *FunctionValue,
     array: ArrayValue,
     tuple: TupleValue,
@@ -650,6 +664,7 @@ fn evaluateExpression(
 ) EvalError!Value {
     return switch (expr.*) {
         .integer => |value| .{ .integer = value },
+        .boolean => |value| .{ .boolean = value },
         .identifier => |name| blk: {
             const resolved = lookup(env, name) orelse return error.UnknownIdentifier;
             break :blk resolved;
@@ -755,6 +770,7 @@ fn lookup(env: ?*Environment, name: []const u8) ?Value {
 fn formatValue(allocator: std.mem.Allocator, value: Value) ![]u8 {
     return switch (value) {
         .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
+        .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
         .function => try std.fmt.allocPrint(allocator, "<function>", .{}),
         .array => |arr| blk: {
             var builder = std.ArrayList(u8){};
