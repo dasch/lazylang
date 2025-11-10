@@ -269,7 +269,7 @@ when Object.find "team" resource matches
 Modules are `.lazy` files that can be imported using the `import` keyword:
 
 ```
-import lib.Phone
+Phone = import 'lib/phone'
 
 Phone.format { countryCode: "+1", number: "5551234" }
 ```
@@ -277,7 +277,7 @@ Phone.format { countryCode: "+1", number: "5551234" }
 It is also possible to import specific values from a module:
 
 ```
-import lib.Phone.{ format, parse }
+{ format, parse } = import 'lib/phone'
 
 format { countryCode: "+1", number: "5551234" }
 ```
