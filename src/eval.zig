@@ -11,6 +11,9 @@ const TokenKind = enum {
     plus,
     minus,
     star,
+    ampersand_ampersand,
+    pipe_pipe,
+    bang,
     l_paren,
     r_paren,
     l_bracket,
@@ -39,6 +42,12 @@ const BinaryOp = enum {
     add,
     subtract,
     multiply,
+    logical_and,
+    logical_or,
+};
+
+const UnaryOp = enum {
+    logical_not,
 };
 
 const Expression = union(enum) {
@@ -47,6 +56,7 @@ const Expression = union(enum) {
     identifier: []const u8,
     string_literal: []const u8,
     lambda: Lambda,
+    unary: Unary,
     binary: Binary,
     application: Application,
     array: ArrayLiteral,
@@ -58,6 +68,11 @@ const Expression = union(enum) {
 const Lambda = struct {
     param: []const u8,
     body: *Expression,
+};
+
+const Unary = struct {
+    op: UnaryOp,
+    operand: *Expression,
 };
 
 const Binary = struct {
@@ -132,6 +147,26 @@ const Tokenizer = struct {
             '*' => {
                 self.index += 1;
                 return self.makeToken(.star, start);
+            },
+            '&' => {
+                self.index += 1;
+                if (self.index < self.source.len and self.source[self.index] == '&') {
+                    self.index += 1;
+                    return self.makeToken(.ampersand_ampersand, start);
+                }
+                return error.UnexpectedCharacter;
+            },
+            '|' => {
+                self.index += 1;
+                if (self.index < self.source.len and self.source[self.index] == '|') {
+                    self.index += 1;
+                    return self.makeToken(.pipe_pipe, start);
+                }
+                return error.UnexpectedCharacter;
+            },
+            '!' => {
+                self.index += 1;
+                return self.makeToken(.bang, start);
             },
             ',' => {
                 self.index += 1;
@@ -295,7 +330,7 @@ const Parser = struct {
     }
 
     fn parseBinary(self: *Parser, min_precedence: u32) ParseError!*Expression {
-        var left = try self.parseApplication();
+        var left = try self.parseUnary();
 
         while (true) {
             const precedence = getPrecedence(self.current.kind) orelse break;
@@ -311,6 +346,8 @@ const Parser = struct {
                     .plus => .add,
                     .minus => .subtract,
                     .star => .multiply,
+                    .ampersand_ampersand => .logical_and,
+                    .pipe_pipe => .logical_or,
                     else => unreachable,
                 },
                 .left = left,
@@ -320,6 +357,20 @@ const Parser = struct {
         }
 
         return left;
+    }
+
+    fn parseUnary(self: *Parser) ParseError!*Expression {
+        if (self.current.kind == .bang) {
+            try self.advance();
+            const operand = try self.parseUnary();
+            const node = try self.allocateExpression();
+            node.* = .{ .unary = .{
+                .op = .logical_not,
+                .operand = operand,
+            } };
+            return node;
+        }
+        return self.parseApplication();
     }
 
     fn parseApplication(self: *Parser) ParseError!*Expression {
@@ -520,8 +571,10 @@ const Parser = struct {
 
 fn getPrecedence(kind: TokenKind) ?u32 {
     return switch (kind) {
-        .plus, .minus => 1,
-        .star => 2,
+        .pipe_pipe => 3,
+        .ampersand_ampersand => 4,
+        .plus, .minus => 5,
+        .star => 6,
         else => null,
     };
 }
@@ -675,24 +728,66 @@ fn evaluateExpression(
             function.* = .{ .param = lambda.param, .body = lambda.body, .env = env };
             break :blk Value{ .function = function };
         },
+        .unary => |unary| blk: {
+            const operand_value = try evaluateExpression(arena, unary.operand, env, current_dir, ctx);
+            const result = switch (unary.op) {
+                .logical_not => blk2: {
+                    const bool_val = switch (operand_value) {
+                        .boolean => |v| v,
+                        else => return error.TypeMismatch,
+                    };
+                    break :blk2 Value{ .boolean = !bool_val };
+                },
+            };
+            break :blk result;
+        },
         .binary => |binary| blk: {
             const left_value = try evaluateExpression(arena, binary.left, env, current_dir, ctx);
             const right_value = try evaluateExpression(arena, binary.right, env, current_dir, ctx);
-            const left_int = switch (left_value) {
-                .integer => |v| v,
-                else => return error.TypeMismatch,
-            };
-            const right_int = switch (right_value) {
-                .integer => |v| v,
-                else => return error.TypeMismatch,
-            };
 
             const result = switch (binary.op) {
-                .add => try std.math.add(i64, left_int, right_int),
-                .subtract => try std.math.sub(i64, left_int, right_int),
-                .multiply => try std.math.mul(i64, left_int, right_int),
+                .add, .subtract, .multiply => blk2: {
+                    const left_int = switch (left_value) {
+                        .integer => |v| v,
+                        else => return error.TypeMismatch,
+                    };
+                    const right_int = switch (right_value) {
+                        .integer => |v| v,
+                        else => return error.TypeMismatch,
+                    };
+
+                    const int_result = switch (binary.op) {
+                        .add => try std.math.add(i64, left_int, right_int),
+                        .subtract => try std.math.sub(i64, left_int, right_int),
+                        .multiply => try std.math.mul(i64, left_int, right_int),
+                        else => unreachable,
+                    };
+                    break :blk2 Value{ .integer = int_result };
+                },
+                .logical_and => blk2: {
+                    const left_bool = switch (left_value) {
+                        .boolean => |v| v,
+                        else => return error.TypeMismatch,
+                    };
+                    const right_bool = switch (right_value) {
+                        .boolean => |v| v,
+                        else => return error.TypeMismatch,
+                    };
+                    break :blk2 Value{ .boolean = left_bool and right_bool };
+                },
+                .logical_or => blk2: {
+                    const left_bool = switch (left_value) {
+                        .boolean => |v| v,
+                        else => return error.TypeMismatch,
+                    };
+                    const right_bool = switch (right_value) {
+                        .boolean => |v| v,
+                        else => return error.TypeMismatch,
+                    };
+                    break :blk2 Value{ .boolean = left_bool or right_bool };
+                },
             };
-            break :blk Value{ .integer = result };
+            break :blk result;
         },
         .application => |application| blk: {
             const function_value = try evaluateExpression(arena, application.function, env, current_dir, ctx);
