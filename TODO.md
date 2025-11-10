@@ -1,7 +1,7 @@
 # TODO
 
 - [x] Support for `where` syntax
-- [ ] Support for `do` syntax
+- [x] Support for `do` syntax
 - [ ] Support for symbols (`#foo`)
 - [ ] Standard library module for Array (`map`, `flatMap`, `select`, `reject`, `fold`)
 - [ ] Standard library module for String (`split`, `join`, `trim`, `toUpperCase`, `toLowerCase`)
