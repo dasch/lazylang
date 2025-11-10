@@ -122,3 +122,31 @@ test "distinguishes parenthesized expressions from tuples" {
 test "evaluates tuple with lambda expressions" {
     try expectEvaluates("((x -> x + 1), (x -> x * 2))", "(<function>, <function>)");
 }
+
+test "evaluates true literal" {
+    try expectEvaluates("true", "true");
+}
+
+test "evaluates false literal" {
+    try expectEvaluates("false", "false");
+}
+
+test "evaluates boolean in array" {
+    try expectEvaluates("[true, false]", "[true, false]");
+}
+
+test "evaluates boolean in tuple" {
+    try expectEvaluates("(true, false)", "(true, false)");
+}
+
+test "evaluates boolean in object" {
+    try expectEvaluates("{ a: true, b: false }", "{a: true, b: false}");
+}
+
+test "evaluates mixed boolean and integer tuple" {
+    try expectEvaluates("(true, 42, false)", "(true, 42, false)");
+}
+
+test "evaluates mixed types with booleans" {
+    try expectEvaluates("(true, \"hello\", 42, false)", "(true, \"hello\", 42, false)");
+}
