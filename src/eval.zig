@@ -49,6 +49,7 @@ const Expression = union(enum) {
     binary: Binary,
     application: Application,
     array: ArrayLiteral,
+    tuple: TupleLiteral,
     object: ObjectLiteral,
     import_expr: ImportExpr,
 };
@@ -70,6 +71,10 @@ const Application = struct {
 };
 
 const ArrayLiteral = struct {
+    elements: []*Expression,
+};
+
+const TupleLiteral = struct {
     elements: []*Expression,
 };
 
@@ -368,12 +373,7 @@ const Parser = struct {
                 node.* = .{ .string_literal = value };
                 return node;
             },
-            .l_paren => {
-                try self.advance();
-                const inner = try self.parseLambda();
-                try self.expect(.r_paren);
-                return inner;
-            },
+            .l_paren => return self.parseTupleOrParenthesized(),
             .l_bracket => return self.parseArray(),
             .l_brace => return self.parseObject(),
             else => return error.ExpectedExpression,
@@ -449,6 +449,47 @@ const Parser = struct {
         return node;
     }
 
+    fn parseTupleOrParenthesized(self: *Parser) ParseError!*Expression {
+        try self.expect(.l_paren);
+
+        // Empty tuple: ()
+        if (self.current.kind == .r_paren) {
+            try self.advance();
+            const node = try self.allocateExpression();
+            node.* = .{ .tuple = .{ .elements = &[_]*Expression{} } };
+            return node;
+        }
+
+        // Parse first element
+        const first = try self.parseLambda();
+
+        // If no comma follows, it's a parenthesized expression
+        if (self.current.kind != .comma) {
+            try self.expect(.r_paren);
+            return first;
+        }
+
+        // It's a tuple - collect all elements
+        var elements = std.ArrayListUnmanaged(*Expression){};
+        try elements.append(self.arena, first);
+
+        while (self.current.kind == .comma) {
+            try self.advance();
+            // Allow trailing comma
+            if (self.current.kind == .r_paren) break;
+
+            const element = try self.parseLambda();
+            try elements.append(self.arena, element);
+        }
+
+        try self.expect(.r_paren);
+
+        const slice = try elements.toOwnedSlice(self.arena);
+        const node = try self.allocateExpression();
+        node.* = .{ .tuple = .{ .elements = slice } };
+        return node;
+    }
+
     fn expect(self: *Parser, kind: TokenKind) ParseError!void {
         if (self.current.kind != kind) return error.UnexpectedToken;
         try self.advance();
@@ -488,11 +529,16 @@ const Value = union(enum) {
     integer: i64,
     function: *FunctionValue,
     array: ArrayValue,
+    tuple: TupleValue,
     object: ObjectValue,
     string: []const u8,
 };
 
 const ArrayValue = struct {
+    elements: []Value,
+};
+
+const TupleValue = struct {
     elements: []Value,
 };
 
@@ -658,6 +704,13 @@ fn evaluateExpression(
             }
             break :blk Value{ .array = .{ .elements = values } };
         },
+        .tuple => |tuple| blk: {
+            const values = try arena.alloc(Value, tuple.elements.len);
+            for (tuple.elements, 0..) |element, i| {
+                values[i] = try evaluateExpression(arena, element, env, current_dir, ctx);
+            }
+            break :blk Value{ .tuple = .{ .elements = values } };
+        },
         .object => |object| blk: {
             const fields = try arena.alloc(ObjectFieldValue, object.fields.len);
             for (object.fields, 0..) |field, i| {
@@ -715,6 +768,21 @@ fn formatValue(allocator: std.mem.Allocator, value: Value) ![]u8 {
                 try builder.appendSlice(allocator, formatted);
             }
             try builder.append(allocator, ']');
+
+            break :blk try builder.toOwnedSlice(allocator);
+        },
+        .tuple => |tup| blk: {
+            var builder = std.ArrayList(u8){};
+            errdefer builder.deinit(allocator);
+
+            try builder.append(allocator, '(');
+            for (tup.elements, 0..) |element, i| {
+                if (i != 0) try builder.appendSlice(allocator, ", ");
+                const formatted = try formatValue(allocator, element);
+                defer allocator.free(formatted);
+                try builder.appendSlice(allocator, formatted);
+            }
+            try builder.append(allocator, ')');
 
             break :blk try builder.toOwnedSlice(allocator);
         },
