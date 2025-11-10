@@ -1,5 +1,6 @@
 const std = @import("std");
 const evaluator = @import("eval.zig");
+const spec = @import("spec.zig");
 
 pub const CommandResult = struct {
     exit_code: u8,
@@ -19,6 +20,10 @@ pub fn run(
     const subcommand = args[1];
     if (std.mem.eql(u8, subcommand, "eval")) {
         return try runEval(allocator, args[2..], stdout, stderr);
+    }
+
+    if (std.mem.eql(u8, subcommand, "spec")) {
+        return try runSpec(allocator, args[2..], stdout, stderr);
     }
 
     try stderr.print("error: unknown subcommand '{s}'\n", .{subcommand});
@@ -83,4 +88,33 @@ fn runEval(
 
     try stdout.print("{s}\n", .{eval_output.text});
     return .{ .exit_code = 0 };
+}
+
+fn runSpec(
+    allocator: std.mem.Allocator,
+    args: []const []const u8,
+    stdout: anytype,
+    stderr: anytype,
+) !CommandResult {
+    // If no arguments, run all specs in spec/ directory
+    if (args.len == 0) {
+        const result = spec.runAllSpecs(allocator, "spec", stdout) catch |err| {
+            try stderr.print("error: failed to run specs: {}\n", .{err});
+            return .{ .exit_code = 1 };
+        };
+        return .{ .exit_code = result.exitCode() };
+    }
+
+    // If one argument, run that specific spec file
+    if (args.len == 1) {
+        const file_path = args[0];
+        const result = spec.runSpec(allocator, file_path, stdout) catch |err| {
+            try stderr.print("error: failed to run spec: {}\n", .{err});
+            return .{ .exit_code = 1 };
+        };
+        return .{ .exit_code = result.exitCode() };
+    }
+
+    try stderr.print("error: unexpected arguments\n", .{});
+    return .{ .exit_code = 1 };
 }
