@@ -76,7 +76,7 @@ const Lambda = struct {
 };
 
 const Let = struct {
-    name: []const u8,
+    pattern: *Pattern,
     value: *Expression,
     body: *Expression,
 };
@@ -122,6 +122,25 @@ const ObjectLiteral = struct {
 
 const ImportExpr = struct {
     path: []const u8,
+};
+
+const Pattern = union(enum) {
+    identifier: []const u8,
+    tuple: TuplePattern,
+    array: ArrayPattern,
+    object: ObjectPattern,
+};
+
+const TuplePattern = struct {
+    elements: []*Pattern,
+};
+
+const ArrayPattern = struct {
+    elements: []*Pattern,
+};
+
+const ObjectPattern = struct {
+    fields: [][]const u8,
 };
 
 const Tokenizer = struct {
@@ -342,10 +361,19 @@ const Parser = struct {
     }
 
     fn parseLambda(self: *Parser) ParseError!*Expression {
-        // Check for let binding: identifier = expression
-        if (self.current.kind == .identifier and self.lookahead.kind == .equals) {
-            const name = self.current.lexeme;
-            try self.advance();
+        // Check for let binding with pattern: pattern = expression
+        const is_let_binding = switch (self.current.kind) {
+            .identifier => self.lookahead.kind == .equals,
+            .l_paren, .l_bracket, .l_brace => blk: {
+                // Look ahead to see if this is a pattern binding
+                // We need to scan ahead to find if there's an equals sign
+                break :blk self.isPatternBinding();
+            },
+            else => false,
+        };
+
+        if (is_let_binding) {
+            const pattern = try self.parsePattern();
             try self.expect(.equals);
             const value = try self.parseLambda();
 
@@ -363,7 +391,7 @@ const Parser = struct {
 
             const body = try self.parseLambda();
             const node = try self.allocateExpression();
-            node.* = .{ .let = .{ .name = name, .value = value, .body = body } };
+            node.* = .{ .let = .{ .pattern = pattern, .value = value, .body = body } };
             return node;
         }
 
@@ -379,6 +407,46 @@ const Parser = struct {
         }
 
         return self.parseBinary(0);
+    }
+
+    fn isPatternBinding(self: *Parser) bool {
+        // Simple heuristic: if we see an opening delimiter, count depth and look for '='
+        const saved_tokenizer = self.tokenizer;
+        const saved_current = self.current;
+        const saved_lookahead = self.lookahead;
+        defer {
+            self.tokenizer = saved_tokenizer;
+            self.current = saved_current;
+            self.lookahead = saved_lookahead;
+        }
+
+        var depth: usize = 0;
+        const open_kind = self.current.kind;
+        const close_kind = switch (open_kind) {
+            .l_paren => TokenKind.r_paren,
+            .l_bracket => TokenKind.r_bracket,
+            .l_brace => TokenKind.r_brace,
+            else => return false,
+        };
+
+        // Advance past opening delimiter
+        self.advance() catch return false;
+        depth = 1;
+
+        // Scan forward looking for matching close and then '='
+        while (depth > 0) {
+            if (self.current.kind == .eof) return false;
+            if (self.current.kind == open_kind) depth += 1;
+            if (self.current.kind == close_kind) {
+                depth -= 1;
+                if (depth == 0) break;
+            }
+            self.advance() catch return false;
+        }
+
+        // Now check if next token is '='
+        self.advance() catch return false;
+        return self.current.kind == .equals;
     }
 
     fn parseBinary(self: *Parser, min_precedence: u32) ParseError!*Expression {
@@ -648,6 +716,105 @@ const Parser = struct {
         return node;
     }
 
+    fn parsePattern(self: *Parser) ParseError!*Pattern {
+        switch (self.current.kind) {
+            .identifier => {
+                const name = self.current.lexeme;
+                try self.advance();
+                const pattern = try self.arena.create(Pattern);
+                pattern.* = .{ .identifier = name };
+                return pattern;
+            },
+            .l_paren => return self.parseTuplePattern(),
+            .l_bracket => return self.parseArrayPattern(),
+            .l_brace => return self.parseObjectPattern(),
+            else => return error.UnexpectedToken,
+        }
+    }
+
+    fn parseTuplePattern(self: *Parser) ParseError!*Pattern {
+        try self.expect(.l_paren);
+
+        var elements = std.ArrayListUnmanaged(*Pattern){};
+
+        while (self.current.kind != .r_paren) {
+            const element = try self.parsePattern();
+            try elements.append(self.arena, element);
+
+            if (self.current.kind == .comma) {
+                try self.advance();
+                if (self.current.kind == .r_paren) break;
+                continue;
+            }
+
+            if (self.current.kind == .r_paren) break;
+            return error.UnexpectedToken;
+        }
+
+        try self.expect(.r_paren);
+
+        const slice = try elements.toOwnedSlice(self.arena);
+        const pattern = try self.arena.create(Pattern);
+        pattern.* = .{ .tuple = .{ .elements = slice } };
+        return pattern;
+    }
+
+    fn parseArrayPattern(self: *Parser) ParseError!*Pattern {
+        try self.expect(.l_bracket);
+
+        var elements = std.ArrayListUnmanaged(*Pattern){};
+
+        while (self.current.kind != .r_bracket) {
+            const element = try self.parsePattern();
+            try elements.append(self.arena, element);
+
+            if (self.current.kind == .comma) {
+                try self.advance();
+                if (self.current.kind == .r_bracket) break;
+                continue;
+            }
+
+            if (self.current.kind == .r_bracket) break;
+            return error.UnexpectedToken;
+        }
+
+        try self.expect(.r_bracket);
+
+        const slice = try elements.toOwnedSlice(self.arena);
+        const pattern = try self.arena.create(Pattern);
+        pattern.* = .{ .array = .{ .elements = slice } };
+        return pattern;
+    }
+
+    fn parseObjectPattern(self: *Parser) ParseError!*Pattern {
+        try self.expect(.l_brace);
+
+        var fields = std.ArrayListUnmanaged([]const u8){};
+
+        while (self.current.kind != .r_brace) {
+            if (self.current.kind != .identifier) return error.UnexpectedToken;
+            const field_name = self.current.lexeme;
+            try self.advance();
+            try fields.append(self.arena, field_name);
+
+            if (self.current.kind == .comma) {
+                try self.advance();
+                if (self.current.kind == .r_brace) break;
+                continue;
+            }
+
+            if (self.current.kind == .r_brace) break;
+            return error.UnexpectedToken;
+        }
+
+        try self.expect(.r_brace);
+
+        const slice = try fields.toOwnedSlice(self.arena);
+        const pattern = try self.arena.create(Pattern);
+        pattern.* = .{ .object = .{ .fields = slice } };
+        return pattern;
+    }
+
     fn expect(self: *Parser, kind: TokenKind) ParseError!void {
         if (self.current.kind != kind) return error.UnexpectedToken;
         try self.advance();
@@ -803,6 +970,84 @@ fn openImportFile(ctx: *const EvalContext, import_path: []const u8, current_dir:
     return error.ModuleNotFound;
 }
 
+fn matchPattern(
+    arena: std.mem.Allocator,
+    pattern: *Pattern,
+    value: Value,
+    base_env: ?*Environment,
+) EvalError!?*Environment {
+    return switch (pattern.*) {
+        .identifier => |name| blk: {
+            const new_env = try arena.create(Environment);
+            new_env.* = .{
+                .parent = base_env,
+                .name = name,
+                .value = value,
+            };
+            break :blk new_env;
+        },
+        .tuple => |tuple_pattern| blk: {
+            const tuple_value = switch (value) {
+                .tuple => |t| t,
+                else => return error.TypeMismatch,
+            };
+
+            if (tuple_pattern.elements.len != tuple_value.elements.len) {
+                return error.TypeMismatch;
+            }
+
+            var current_env = base_env;
+            for (tuple_pattern.elements, 0..) |elem_pattern, i| {
+                current_env = try matchPattern(arena, elem_pattern, tuple_value.elements[i], current_env);
+            }
+            break :blk current_env;
+        },
+        .array => |array_pattern| blk: {
+            const array_value = switch (value) {
+                .array => |a| a,
+                else => return error.TypeMismatch,
+            };
+
+            if (array_pattern.elements.len != array_value.elements.len) {
+                return error.TypeMismatch;
+            }
+
+            var current_env = base_env;
+            for (array_pattern.elements, 0..) |elem_pattern, i| {
+                current_env = try matchPattern(arena, elem_pattern, array_value.elements[i], current_env);
+            }
+            break :blk current_env;
+        },
+        .object => |object_pattern| blk: {
+            const object_value = switch (value) {
+                .object => |o| o,
+                else => return error.TypeMismatch,
+            };
+
+            var current_env = base_env;
+            for (object_pattern.fields) |field_name| {
+                // Find the field in the object value
+                var found = false;
+                for (object_value.fields) |field| {
+                    if (std.mem.eql(u8, field.key, field_name)) {
+                        const new_env = try arena.create(Environment);
+                        new_env.* = .{
+                            .parent = current_env,
+                            .name = field_name,
+                            .value = field.value,
+                        };
+                        current_env = new_env;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) return error.TypeMismatch;
+            }
+            break :blk current_env;
+        },
+    };
+}
+
 fn evaluateExpression(
     arena: std.mem.Allocator,
     expr: *Expression,
@@ -826,12 +1071,7 @@ fn evaluateExpression(
         },
         .let => |let_expr| blk: {
             const value = try evaluateExpression(arena, let_expr.value, env, current_dir, ctx);
-            const new_env = try arena.create(Environment);
-            new_env.* = .{
-                .parent = env,
-                .name = let_expr.name,
-                .value = value,
-            };
+            const new_env = try matchPattern(arena, let_expr.pattern, value, env);
             break :blk try evaluateExpression(arena, let_expr.body, new_env, current_dir, ctx);
         },
         .unary => |unary| blk: {
