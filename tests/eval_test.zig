@@ -321,3 +321,31 @@ test "evaluates nested scopes with indentation" {
         "6",
     );
 }
+
+test "evaluates tuple destructuring in assignment" {
+    try expectEvaluates("(first, last) = (\"John\", \"Doe\"); first", "\"John\"");
+}
+
+test "evaluates tuple destructuring with multiple bindings" {
+    try expectEvaluates("(a, b) = (1, 2); a + b", "3");
+}
+
+test "evaluates tuple destructuring with three elements" {
+    try expectEvaluates("(x, y, z) = (1, 2, 3); x + y + z", "6");
+}
+
+test "evaluates object destructuring in assignment" {
+    try expectEvaluates("{ first, last } = { first: \"John\", last: \"Doe\" }; first", "\"John\"");
+}
+
+test "evaluates object destructuring with multiple uses" {
+    try expectEvaluates("{ x, y } = { x: 10, y: 20 }; x + y", "30");
+}
+
+test "evaluates array destructuring with two elements" {
+    try expectEvaluates("[a, b] = [1, 2]; a + b", "3");
+}
+
+test "evaluates nested destructuring" {
+    try expectEvaluates("(a, (b, c)) = (1, (2, 3)); a + b + c", "6");
+}
