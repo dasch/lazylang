@@ -308,3 +308,16 @@ test "evaluates variable shadowing" {
 test "evaluates nested variable scopes" {
     try expectEvaluates("x = 1; y = (z = 2; z + 1); x + y", "4");
 }
+
+test "evaluates nested scopes with indentation" {
+    try expectEvaluates(
+        \\x =
+        \\  x1 = 1
+        \\  x2 = 2
+        \\  x1 + x2
+        \\y = 3
+        \\x + y
+    ,
+        "6",
+    );
+}
