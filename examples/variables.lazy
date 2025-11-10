@@ -2,4 +2,4 @@ x = 42
 name = "John Doe"
 isActive = true
 
-{ x: x, name: name, isActive: isActive }
+{ x, name, isActive }

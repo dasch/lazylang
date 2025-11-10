@@ -770,8 +770,17 @@ const Parser = struct {
             const key = self.current.lexeme;
             try self.advance();
 
-            try self.expect(.colon);
-            const value_expr = try self.parseLambda();
+            // Check for short form (no colon) vs long form (with colon)
+            const value_expr = if (self.current.kind == .colon) blk: {
+                try self.advance();
+                break :blk try self.parseLambda();
+            } else blk: {
+                // Short form: create an identifier reference with the same name as the key
+                const node = try self.allocateExpression();
+                node.* = .{ .identifier = key };
+                break :blk node;
+            };
+
             try fields.append(self.arena, .{ .key = key, .value = value_expr });
 
             if (self.current.kind == .comma) {
