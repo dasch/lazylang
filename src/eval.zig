@@ -435,7 +435,60 @@ const Parser = struct {
             return node;
         }
 
-        return self.parseBinary(0);
+        var expr = try self.parseBinary(0);
+
+        // Check for 'where' clause
+        if (self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "where")) {
+            try self.advance();
+
+            // Parse bindings: collect them into a list
+            var bindings = std.ArrayListUnmanaged(struct { pattern: *Pattern, value: *Expression }){};
+
+            while (true) {
+                // Check if we're done
+                if (self.current.kind == .eof) break;
+                if (self.current.kind == .r_paren) break; // Could be inside parentheses
+                if (self.current.kind == .r_bracket) break;
+                if (self.current.kind == .r_brace) break;
+
+                // Check if next token starts a binding
+                const is_binding = switch (self.current.kind) {
+                    .identifier => self.lookahead.kind == .equals,
+                    .l_paren, .l_bracket, .l_brace => self.isPatternBinding(),
+                    else => false,
+                };
+
+                if (!is_binding) break;
+
+                const pattern = try self.parsePattern();
+                try self.expect(.equals);
+                const value = try self.parseBinary(0);
+
+                try bindings.append(self.arena, .{ .pattern = pattern, .value = value });
+
+                // Check for separator
+                if (self.current.kind == .semicolon) {
+                    try self.advance();
+                } else if (!self.current.preceded_by_newline and self.current.kind != .eof and
+                          self.current.kind != .r_paren and self.current.kind != .r_bracket and
+                          self.current.kind != .r_brace) {
+                    break;
+                }
+            }
+
+            // Wrap expr in nested let expressions (in reverse order to maintain dependency order)
+            const binding_slice = try bindings.toOwnedSlice(self.arena);
+            var i = binding_slice.len;
+            while (i > 0) {
+                i -= 1;
+                const binding = binding_slice[i];
+                const let_node = try self.allocateExpression();
+                let_node.* = .{ .let = .{ .pattern = binding.pattern, .value = binding.value, .body = expr } };
+                expr = let_node;
+            }
+        }
+
+        return expr;
     }
 
     fn isLambdaPattern(self: *Parser) bool {
@@ -573,7 +626,8 @@ const Parser = struct {
                     if (std.mem.eql(u8, self.current.lexeme, "then") or
                         std.mem.eql(u8, self.current.lexeme, "else") or
                         std.mem.eql(u8, self.current.lexeme, "matches") or
-                        std.mem.eql(u8, self.current.lexeme, "otherwise")) {
+                        std.mem.eql(u8, self.current.lexeme, "otherwise") or
+                        std.mem.eql(u8, self.current.lexeme, "where")) {
                         break;
                     }
                     const argument = try self.parsePrimary();

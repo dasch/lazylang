@@ -1,6 +1,6 @@
 # TODO
 
-- [ ] Support for `where` syntax
+- [x] Support for `where` syntax
 - [ ] Support for `do` syntax
 - [ ] Support for symbols (`#foo`)
 - [ ] Standard library module for Array (`map`, `flatMap`, `select`, `reject`, `fold`)
