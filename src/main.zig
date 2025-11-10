@@ -6,8 +6,17 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    var stdout_file = std.io.getStdOut().writer();
-    var stderr_file = std.io.getStdErr().writer();
+    const stdout = std.fs.File{ .handle = std.posix.STDOUT_FILENO };
+    const stderr = std.fs.File{ .handle = std.posix.STDERR_FILENO };
+
+    var stdout_buffer: [4096]u8 = undefined;
+    var stderr_buffer: [4096]u8 = undefined;
+
+    var stdout_writer = stdout.writer(&stdout_buffer);
+    var stderr_writer = stderr.writer(&stderr_buffer);
+
+    const stdout_file = &stdout_writer.interface;
+    const stderr_file = &stderr_writer.interface;
 
     var args_iter = std.process.args();
     defer args_iter.deinit();
@@ -20,5 +29,10 @@ pub fn main() !void {
     }
 
     const result = try cli.run(allocator, args_list.items, stdout_file, stderr_file);
+
+    // Flush output buffers before exiting
+    try stdout_file.flush();
+    try stderr_file.flush();
+
     std.process.exit(result.exit_code);
 }
