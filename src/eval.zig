@@ -622,6 +622,18 @@ const Parser = struct {
             if (self.current.preceded_by_newline) break;
             switch (self.current.kind) {
                 .identifier => {
+                    // Handle 'do' keyword specially - it introduces a block argument
+                    if (std.mem.eql(u8, self.current.lexeme, "do")) {
+                        try self.advance();
+                        // Parse the following expression(s) as a block
+                        const argument = try self.parseLambda();
+                        const node = try self.allocateExpression();
+                        node.* = .{ .application = .{ .function = expr, .argument = argument } };
+                        expr = node;
+                        // After a 'do' block, stop looking for more arguments
+                        break;
+                    }
+
                     // Don't consume keywords as function arguments
                     if (std.mem.eql(u8, self.current.lexeme, "then") or
                         std.mem.eql(u8, self.current.lexeme, "else") or
