@@ -38,4 +38,12 @@ pub fn build(b: *std.Build) void {
 
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&b.addRunArtifact(tests).step);
+
+    const eval_tests = b.addTest(.{
+        .root_source_file = .{ .path = "tests/eval_test.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+
+    test_step.dependOn(&b.addRunArtifact(eval_tests).step);
 }

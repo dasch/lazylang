@@ -82,7 +82,7 @@ test "expr command evaluates lazylang file" {
 
     const file_name = "example.lazy";
     var file = try tmp.dir.createFile(file_name, .{ .read = true });
-    try file.writeAll("file contents");
+    try file.writeAll("(x -> x + 1) 41");
     file.close();
 
     const file_path = try tmp.dir.realpathAlloc(allocator, file_name);
@@ -93,6 +93,6 @@ test "expr command evaluates lazylang file" {
     defer outcome.deinit();
 
     try std.testing.expectEqual(@as(u8, 0), outcome.result.exit_code);
-    try std.testing.expectEqualStrings("file contents\n", outcome.stdout);
+    try std.testing.expectEqualStrings("42\n", outcome.stdout);
     try std.testing.expectEqualStrings("", outcome.stderr);
 }
