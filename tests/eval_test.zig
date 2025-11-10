@@ -266,3 +266,15 @@ test "evaluates if in tuple" {
 test "evaluates if with arithmetic in branches" {
     try expectEvaluates("if true then 1 + 2 else 3 * 4", "3");
 }
+
+test "evaluates chained if-else-if with first condition true" {
+    try expectEvaluates("if true then 1 else if false then 2 else 3", "1");
+}
+
+test "evaluates chained if-else-if with second condition true" {
+    try expectEvaluates("if false then 1 else if true then 2 else 3", "2");
+}
+
+test "evaluates chained if-else-if with all conditions false" {
+    try expectEvaluates("if false then 1 else if false then 2 else 3", "3");
+}
