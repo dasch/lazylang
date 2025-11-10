@@ -678,7 +678,7 @@ const Parser = struct {
                     node.* = .{ .application = .{ .function = expr, .argument = argument } };
                     expr = node;
                 },
-                .number, .l_paren, .l_bracket, .l_brace => {
+                .number, .string, .symbol, .l_paren, .l_bracket, .l_brace => {
                     const argument = try self.parsePrimary();
                     const node = try self.allocateExpression();
                     node.* = .{ .application = .{ .function = expr, .argument = argument } };
