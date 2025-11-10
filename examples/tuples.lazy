@@ -1,0 +1,4 @@
+point = (10, 20)
+record = ("Alice", 30)
+
+(point, record)

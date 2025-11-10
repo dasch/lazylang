@@ -1,0 +1,8 @@
+add = (a, b) -> a + b
+
+addThreeNumbers = a -> b -> c -> a + b + c
+
+result1 = add (5, 10)
+result2 = addThreeNumbers 1 2 3
+
+(result1, result2)

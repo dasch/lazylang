@@ -1,0 +1,9 @@
+isActive = true
+
+status = if isActive then "online" else "offline"
+
+hasError = false
+
+result = if hasError then "error" else "success"
+
+{ status: status, result: result }

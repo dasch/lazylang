@@ -1,0 +1,9 @@
+obj = {
+  one: 1
+  two: 2
+  rest: {
+    three: 3
+  }
+}
+
+obj
