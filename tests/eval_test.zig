@@ -365,3 +365,71 @@ test "evaluates function with array destructuring parameter" {
 test "evaluates function with nested destructuring parameter" {
     try expectEvaluates("f = (a, (b, c)) -> a + b + c; f (1, (2, 3))", "6");
 }
+
+test "evaluates when matches with tuple pattern" {
+    try expectEvaluates(
+        \\when (1, 2) matches
+        \\  (x, y) then x + y
+    ,
+        "3",
+    );
+}
+
+test "evaluates when matches with multiple patterns" {
+    try expectEvaluates(
+        \\value = [1, 2, 3]
+        \\when value matches
+        \\  (x, y) then x + y
+        \\  [a, b, c] then a + b + c
+    ,
+        "6",
+    );
+}
+
+test "evaluates when matches with otherwise" {
+    try expectEvaluates(
+        \\value = 42
+        \\when value matches
+        \\  (x, y) then x + y
+        \\  otherwise 100
+    ,
+        "100",
+    );
+}
+
+test "evaluates when matches with array pattern" {
+    try expectEvaluates(
+        \\when [1, 2, 3] matches
+        \\  [a, b, c] then a + b + c
+    ,
+        "6",
+    );
+}
+
+test "evaluates when matches with object pattern" {
+    try expectEvaluates(
+        \\when { x: 10, y: 20 } matches
+        \\  { x, y } then x + y
+    ,
+        "30",
+    );
+}
+
+test "evaluates when matches with nested pattern" {
+    try expectEvaluates(
+        \\when (1, (2, 3)) matches
+        \\  (a, (b, c)) then a + b + c
+    ,
+        "6",
+    );
+}
+
+test "evaluates when matches selecting first match" {
+    try expectEvaluates(
+        \\when (5, 10) matches
+        \\  (a, b) then a + b
+        \\  (x, y) then x * y
+    ,
+        "15",
+    );
+}
