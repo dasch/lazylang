@@ -46,8 +46,8 @@
 - Pattern matching is available in assignments, function parameters, and `when ... matches` expressions. 【F:README.md†L183-L203】
 
 ## 10. Modules and Imports
-- Modules correspond to `.lazy` files. `import Module.Path` loads a module, and `import Module.Path.{ a, b }` imports specific bindings. 【F:README.md†L269-L283】
-- A module’s exported value is the result of evaluating its top-level expression, which can be any Lazylang value (commonly an object aggregating public functions). 【F:README.md†L285-L292】
+- Modules correspond to `.lazy` files. `import 'path/to/Module'` loads a module using a string path. Specific values can be imported via destructuring: `{ a, b } = import 'path/to/Module'`. 【F:README.md†L269-L283】
+- A module's exported value is the result of evaluating its top-level expression, which can be any Lazylang value (commonly an object aggregating public functions). 【F:README.md†L285-L292】
 
 ## 11. Error-Handling Conventions
 - Functions that may fail are expected to return tagged tuples such as `(#ok, value)` or a tag like `#noSuchKey`, to be handled via pattern matching. 【F:README.md†L257-L265】
