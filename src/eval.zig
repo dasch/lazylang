@@ -17,6 +17,15 @@ const Token = struct {
     lexeme: []const u8,
 };
 
+const TokenizerError = error{
+    UnexpectedCharacter,
+};
+
+const ParseError = TokenizerError || std.mem.Allocator.Error || std.fmt.ParseIntError || error{
+    ExpectedExpression,
+    UnexpectedToken,
+};
+
 const BinaryOp = enum {
     add,
     subtract,
@@ -55,7 +64,7 @@ const Tokenizer = struct {
         return .{ .source = source, .index = 0 };
     }
 
-    fn next(self: *Tokenizer) !Token {
+    fn next(self: *Tokenizer) TokenizerError!Token {
         self.skipWhitespace();
 
         if (self.index >= self.source.len) {
@@ -141,7 +150,7 @@ const Parser = struct {
     current: Token,
     lookahead: Token,
 
-    fn init(arena: std.mem.Allocator, source: []const u8) !Parser {
+    fn init(arena: std.mem.Allocator, source: []const u8) ParseError!Parser {
         var tokenizer = Tokenizer.init(source);
         const first = try tokenizer.next();
         const second = try tokenizer.next();
@@ -153,27 +162,27 @@ const Parser = struct {
         };
     }
 
-    fn parse(self: *Parser) !*Expression {
+    fn parse(self: *Parser) ParseError!*Expression {
         if (self.current.kind == .eof) return error.ExpectedExpression;
         const expr = try self.parseLambda();
         if (self.current.kind != .eof) return error.UnexpectedToken;
         return expr;
     }
 
-    fn parseLambda(self: *Parser) !*Expression {
+    fn parseLambda(self: *Parser) ParseError!*Expression {
         if (self.current.kind == .identifier and self.lookahead.kind == .arrow) {
             const param = self.current.lexeme;
             try self.advance();
             try self.expect(.arrow);
             const body = try self.parseLambda();
-            var node = try self.allocateExpression();
+            const node = try self.allocateExpression();
             node.* = .{ .lambda = .{ .param = param, .body = body } };
             return node;
         }
         return self.parseBinary(0);
     }
 
-    fn parseBinary(self: *Parser, min_precedence: u32) !*Expression {
+    fn parseBinary(self: *Parser, min_precedence: u32) ParseError!*Expression {
         var left = try self.parseApplication();
 
         while (true) {
@@ -182,9 +191,9 @@ const Parser = struct {
 
             const op_token = self.current;
             try self.advance();
-            var right = try self.parseBinary(precedence + 1);
+            const right = try self.parseBinary(precedence + 1);
 
-            var node = try self.allocateExpression();
+            const node = try self.allocateExpression();
             node.* = .{ .binary = .{
                 .op = switch (op_token.kind) {
                     .plus => .add,
@@ -201,14 +210,14 @@ const Parser = struct {
         return left;
     }
 
-    fn parseApplication(self: *Parser) !*Expression {
+    fn parseApplication(self: *Parser) ParseError!*Expression {
         var expr = try self.parsePrimary();
 
         while (true) {
             switch (self.current.kind) {
                 .identifier, .number, .l_paren => {
                     const argument = try self.parsePrimary();
-                    var node = try self.allocateExpression();
+                    const node = try self.allocateExpression();
                     node.* = .{ .application = .{ .function = expr, .argument = argument } };
                     expr = node;
                 },
@@ -219,20 +228,20 @@ const Parser = struct {
         return expr;
     }
 
-    fn parsePrimary(self: *Parser) !*Expression {
+    fn parsePrimary(self: *Parser) ParseError!*Expression {
         switch (self.current.kind) {
             .number => {
                 const lexeme = self.current.lexeme;
                 const value = try std.fmt.parseInt(i64, lexeme, 10);
                 try self.advance();
-                var node = try self.allocateExpression();
+                const node = try self.allocateExpression();
                 node.* = .{ .integer = value };
                 return node;
             },
             .identifier => {
                 const name = self.current.lexeme;
                 try self.advance();
-                var node = try self.allocateExpression();
+                const node = try self.allocateExpression();
                 node.* = .{ .identifier = name };
                 return node;
             },
@@ -246,17 +255,17 @@ const Parser = struct {
         }
     }
 
-    fn expect(self: *Parser, kind: TokenKind) !void {
+    fn expect(self: *Parser, kind: TokenKind) ParseError!void {
         if (self.current.kind != kind) return error.UnexpectedToken;
         try self.advance();
     }
 
-    fn advance(self: *Parser) !void {
+    fn advance(self: *Parser) ParseError!void {
         self.current = self.lookahead;
         self.lookahead = try self.tokenizer.next();
     }
 
-    fn allocateExpression(self: *Parser) !*Expression {
+    fn allocateExpression(self: *Parser) ParseError!*Expression {
         return try self.arena.create(Expression);
     }
 };

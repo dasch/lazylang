@@ -1,5 +1,5 @@
 const std = @import("std");
-const evaluator = @import("../src/eval.zig");
+const evaluator = @import("evaluator");
 
 fn expectEvaluates(source: []const u8, expected: []const u8) !void {
     var result = try evaluator.evalInline(std.testing.allocator, source);
