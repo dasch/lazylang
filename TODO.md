@@ -1,12 +1,18 @@
 # TODO
 
+## Language Features
 - [x] Support for `where` syntax
 - [x] Support for `do` syntax
-- [x] Support for symbols (`#foo`)
+- [x] Support for symbols/tags (`#foo`)
 - [x] Parser support for string/symbol literals as function arguments
+- [x] Import statement and module system
+
+## Testing
 - [ ] Debug and fix spec testing framework (works for eval, but runner has issues with writer)
-- [ ] Standard library module for Array (`map`, `flatMap`, `select`, `reject`, `fold`)
-- [ ] Standard library module for String (`split`, `join`, `trim`, `toUpperCase`, `toLowerCase`)
-- [ ] Standard library module for Math (`max`, `min`, `sum`, `avg`, `clamp`)
-- [ ] Standard library module for Object (`values`, `fields`, `entries`, `mapValues`)
+
+## Standard Library
+- [ ] Array module (`map`, `flatMap`, `select`, `reject`, `fold`, `find`, `filter`)
+- [ ] String module (`split`, `join`, `trim`, `toUpperCase`, `toLowerCase`, `replace`)
+- [ ] Math module (`max`, `min`, `sum`, `avg`, `clamp`, `abs`, `round`, `pow`)
+- [ ] Object module (`values`, `keys`, `entries`, `mapValues`, `merge`)
 
