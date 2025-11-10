@@ -5,6 +5,7 @@ const TokenKind = enum {
     identifier,
     number,
     string,
+    symbol,
     comma,
     colon,
     semicolon,
@@ -56,6 +57,7 @@ const Expression = union(enum) {
     integer: i64,
     boolean: bool,
     null_literal,
+    symbol: []const u8,
     identifier: []const u8,
     string_literal: []const u8,
     lambda: Lambda,
@@ -141,6 +143,7 @@ const Pattern = union(enum) {
     integer: i64,
     boolean: bool,
     null_literal,
+    symbol: []const u8,
     string_literal: []const u8,
     tuple: TuplePattern,
     array: ArrayPattern,
@@ -277,6 +280,9 @@ const Tokenizer = struct {
             '"' => {
                 return self.consumeString('"');
             },
+            '#' => {
+                return self.consumeSymbol();
+            },
             else => return error.UnexpectedCharacter,
         }
     }
@@ -291,6 +297,31 @@ const Tokenizer = struct {
             }
         }
         return self.makeToken(.identifier, start);
+    }
+
+    fn consumeSymbol(self: *Tokenizer) Token {
+        const start = self.index;
+        self.index += 1; // skip '#'
+
+        // Symbol must be followed by an identifier character
+        if (self.index >= self.source.len) {
+            return self.makeToken(.symbol, start);
+        }
+
+        const c = self.source[self.index];
+        if (!((c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or c == '_')) {
+            return self.makeToken(.symbol, start);
+        }
+
+        // Consume the identifier part
+        while (self.index < self.source.len) : (self.index += 1) {
+            const ch = self.source[self.index];
+            switch (ch) {
+                'a'...'z', 'A'...'Z', '0'...'9', '_' => continue,
+                else => break,
+            }
+        }
+        return self.makeToken(.symbol, start);
     }
 
     fn consumeNumber(self: *Tokenizer) Token {
@@ -787,6 +818,13 @@ const Parser = struct {
                 node.* = .{ .string_literal = value };
                 return node;
             },
+            .symbol => {
+                const value = self.current.lexeme;
+                try self.advance();
+                const node = try self.allocateExpression();
+                node.* = .{ .symbol = value };
+                return node;
+            },
             .l_paren => return self.parseTupleOrParenthesized(),
             .l_bracket => return self.parseArray(),
             .l_brace => return self.parseObject(),
@@ -928,6 +966,13 @@ const Parser = struct {
                 try self.advance();
                 const pattern = try self.arena.create(Pattern);
                 pattern.* = .{ .string_literal = value };
+                return pattern;
+            },
+            .symbol => {
+                const value = self.current.lexeme;
+                try self.advance();
+                const pattern = try self.arena.create(Pattern);
+                pattern.* = .{ .symbol = value };
                 return pattern;
             },
             .identifier => {
@@ -1108,6 +1153,7 @@ const Value = union(enum) {
     integer: i64,
     boolean: bool,
     null_value,
+    symbol: []const u8,
     function: *FunctionValue,
     array: ArrayValue,
     tuple: TupleValue,
@@ -1269,6 +1315,14 @@ fn matchPattern(
             if (!std.mem.eql(u8, expected, actual)) return error.TypeMismatch;
             break :blk base_env;
         },
+        .symbol => |expected| blk: {
+            const actual = switch (value) {
+                .symbol => |v| v,
+                else => return error.TypeMismatch,
+            };
+            if (!std.mem.eql(u8, expected, actual)) return error.TypeMismatch;
+            break :blk base_env;
+        },
         .tuple => |tuple_pattern| blk: {
             const tuple_value = switch (value) {
                 .tuple => |t| t,
@@ -1337,6 +1391,7 @@ fn evaluateExpression(
         .integer => |value| .{ .integer = value },
         .boolean => |value| .{ .boolean = value },
         .null_literal => .null_value,
+        .symbol => |value| .{ .symbol = value },
         .identifier => |name| blk: {
             const resolved = lookup(env, name) orelse return error.UnknownIdentifier;
             break :blk resolved;
@@ -1525,6 +1580,7 @@ fn formatValue(allocator: std.mem.Allocator, value: Value) ![]u8 {
         .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
         .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
         .null_value => try std.fmt.allocPrint(allocator, "null", .{}),
+        .symbol => |s| try std.fmt.allocPrint(allocator, "{s}", .{s}),
         .function => try std.fmt.allocPrint(allocator, "<function>", .{}),
         .array => |arr| blk: {
             var builder = std.ArrayList(u8){};
