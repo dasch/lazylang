@@ -1,0 +1,7 @@
+describe "Math" [
+  describe "pow" [
+    it "calculates power correctly" do
+      mustEq 8 (Math.pow 2 3)
+  ]
+]
+where { describe, it, mustEq } = import 'Spec'

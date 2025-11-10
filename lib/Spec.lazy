@@ -1,0 +1,19 @@
+{
+  describe: description -> children -> {
+    type: "describe",
+    description: description,
+    children: children
+  },
+
+  it: description -> testExpr -> {
+    type: "it",
+    description: description,
+    test: testExpr
+  },
+
+  mustEq: expected -> actual -> {
+    type: "assertion",
+    expected: expected,
+    actual: actual
+  }
+}
