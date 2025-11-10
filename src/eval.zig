@@ -1149,7 +1149,7 @@ const FunctionValue = struct {
     env: ?*Environment,
 };
 
-const Value = union(enum) {
+pub const Value = union(enum) {
     integer: i64,
     boolean: bool,
     null_value,
@@ -1161,20 +1161,20 @@ const Value = union(enum) {
     string: []const u8,
 };
 
-const ArrayValue = struct {
+pub const ArrayValue = struct {
     elements: []Value,
 };
 
-const TupleValue = struct {
+pub const TupleValue = struct {
     elements: []Value,
 };
 
-const ObjectFieldValue = struct {
+pub const ObjectFieldValue = struct {
     key: []const u8,
     value: Value,
 };
 
-const ObjectValue = struct {
+pub const ObjectValue = struct {
     fields: []ObjectFieldValue,
 };
 
@@ -1575,7 +1575,7 @@ fn lookup(env: ?*Environment, name: []const u8) ?Value {
     return null;
 }
 
-fn formatValue(allocator: std.mem.Allocator, value: Value) ![]u8 {
+pub fn formatValue(allocator: std.mem.Allocator, value: Value) ![]u8 {
     return switch (value) {
         .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
         .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
@@ -1679,4 +1679,25 @@ pub fn evalFile(allocator: std.mem.Allocator, path: []const u8) EvalError!EvalOu
 
     const directory = std.fs.path.dirname(path);
     return try evalSource(allocator, contents, directory);
+}
+
+pub fn evalFileValue(
+    arena: std.mem.Allocator,
+    allocator: std.mem.Allocator,
+    path: []const u8,
+) EvalError!Value {
+    var file = try std.fs.cwd().openFile(path, .{});
+    defer file.close();
+
+    const contents = try file.readToEndAlloc(allocator, std.math.maxInt(usize));
+    defer allocator.free(contents);
+
+    const lazy_paths = try collectLazyPaths(arena);
+    const context = EvalContext{ .allocator = allocator, .lazy_paths = lazy_paths };
+
+    var parser = try Parser.init(arena, contents);
+    const expression = try parser.parse();
+
+    const directory = std.fs.path.dirname(path);
+    return try evaluateExpression(arena, expression, null, directory, &context);
 }
