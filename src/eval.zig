@@ -60,6 +60,7 @@ const Expression = union(enum) {
     unary: Unary,
     binary: Binary,
     application: Application,
+    if_expr: If,
     array: ArrayLiteral,
     tuple: TupleLiteral,
     object: ObjectLiteral,
@@ -85,6 +86,12 @@ const Binary = struct {
 const Application = struct {
     function: *Expression,
     argument: *Expression,
+};
+
+const If = struct {
+    condition: *Expression,
+    then_expr: *Expression,
+    else_expr: ?*Expression,
 };
 
 const ArrayLiteral = struct {
@@ -380,7 +387,18 @@ const Parser = struct {
         while (true) {
             if (self.current.preceded_by_newline) break;
             switch (self.current.kind) {
-                .identifier, .number, .l_paren => {
+                .identifier => {
+                    // Don't consume keywords as function arguments
+                    if (std.mem.eql(u8, self.current.lexeme, "then") or
+                        std.mem.eql(u8, self.current.lexeme, "else")) {
+                        break;
+                    }
+                    const argument = try self.parsePrimary();
+                    const node = try self.allocateExpression();
+                    node.* = .{ .application = .{ .function = expr, .argument = argument } };
+                    expr = node;
+                },
+                .number, .l_paren => {
                     const argument = try self.parsePrimary();
                     const node = try self.allocateExpression();
                     node.* = .{ .application = .{ .function = expr, .argument = argument } };
@@ -429,6 +447,31 @@ const Parser = struct {
                     try self.advance();
                     const node = try self.allocateExpression();
                     node.* = .null_literal;
+                    return node;
+                }
+                if (std.mem.eql(u8, self.current.lexeme, "if")) {
+                    try self.advance();
+                    const condition = try self.parseBinary(0);
+
+                    if (self.current.kind != .identifier or !std.mem.eql(u8, self.current.lexeme, "then")) {
+                        return error.UnexpectedToken;
+                    }
+                    try self.advance();
+
+                    const then_expr = try self.parseBinary(0);
+
+                    var else_expr: ?*Expression = null;
+                    if (self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "else")) {
+                        try self.advance();
+                        else_expr = try self.parseBinary(0);
+                    }
+
+                    const node = try self.allocateExpression();
+                    node.* = .{ .if_expr = .{
+                        .condition = condition,
+                        .then_expr = then_expr,
+                        .else_expr = else_expr,
+                    } };
                     return node;
                 }
                 const name = self.current.lexeme;
@@ -797,6 +840,21 @@ fn evaluateExpression(
                 },
             };
             break :blk result;
+        },
+        .if_expr => |if_expr| blk: {
+            const condition_value = try evaluateExpression(arena, if_expr.condition, env, current_dir, ctx);
+            const condition_bool = switch (condition_value) {
+                .boolean => |v| v,
+                else => return error.TypeMismatch,
+            };
+
+            if (condition_bool) {
+                break :blk try evaluateExpression(arena, if_expr.then_expr, env, current_dir, ctx);
+            } else if (if_expr.else_expr) |else_expr| {
+                break :blk try evaluateExpression(arena, else_expr, env, current_dir, ctx);
+            } else {
+                break :blk .null_value;
+            }
         },
         .application => |application| blk: {
             const function_value = try evaluateExpression(arena, application.function, env, current_dir, ctx);
