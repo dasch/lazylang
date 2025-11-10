@@ -64,6 +64,7 @@ const Expression = union(enum) {
     binary: Binary,
     application: Application,
     if_expr: If,
+    when_matches: WhenMatches,
     array: ArrayLiteral,
     tuple: TupleLiteral,
     object: ObjectLiteral,
@@ -101,6 +102,17 @@ const If = struct {
     condition: *Expression,
     then_expr: *Expression,
     else_expr: ?*Expression,
+};
+
+const WhenMatches = struct {
+    value: *Expression,
+    branches: []MatchBranch,
+    otherwise: ?*Expression,
+};
+
+const MatchBranch = struct {
+    pattern: *Pattern,
+    expression: *Expression,
 };
 
 const ArrayLiteral = struct {
@@ -550,7 +562,9 @@ const Parser = struct {
                 .identifier => {
                     // Don't consume keywords as function arguments
                     if (std.mem.eql(u8, self.current.lexeme, "then") or
-                        std.mem.eql(u8, self.current.lexeme, "else")) {
+                        std.mem.eql(u8, self.current.lexeme, "else") or
+                        std.mem.eql(u8, self.current.lexeme, "matches") or
+                        std.mem.eql(u8, self.current.lexeme, "otherwise")) {
                         break;
                     }
                     const argument = try self.parsePrimary();
@@ -631,6 +645,57 @@ const Parser = struct {
                         .condition = condition,
                         .then_expr = then_expr,
                         .else_expr = else_expr,
+                    } };
+                    return node;
+                }
+                if (std.mem.eql(u8, self.current.lexeme, "when")) {
+                    try self.advance();
+                    const value = try self.parseBinary(0);
+
+                    if (self.current.kind != .identifier or !std.mem.eql(u8, self.current.lexeme, "matches")) {
+                        return error.UnexpectedToken;
+                    }
+                    try self.advance();
+
+                    var branches = std.ArrayListUnmanaged(MatchBranch){};
+                    var otherwise_expr: ?*Expression = null;
+
+                    while (true) {
+                        // Check for "otherwise"
+                        if (self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "otherwise")) {
+                            try self.advance();
+                            otherwise_expr = try self.parseBinary(0);
+                            break;
+                        }
+
+                        // Check if we're done (EOF or semicolon)
+                        if (self.current.kind == .eof or self.current.kind == .semicolon) {
+                            break;
+                        }
+
+                        // Parse pattern
+                        const pattern = try self.parsePattern();
+
+                        // Expect "then"
+                        if (self.current.kind != .identifier or !std.mem.eql(u8, self.current.lexeme, "then")) {
+                            return error.UnexpectedToken;
+                        }
+                        try self.advance();
+
+                        // Parse expression
+                        const branch_expr = try self.parseBinary(0);
+
+                        try branches.append(self.arena, .{
+                            .pattern = pattern,
+                            .expression = branch_expr,
+                        });
+                    }
+
+                    const node = try self.allocateExpression();
+                    node.* = .{ .when_matches = .{
+                        .value = value,
+                        .branches = try branches.toOwnedSlice(self.arena),
+                        .otherwise = otherwise_expr,
                     } };
                     return node;
                 }
@@ -1197,6 +1262,30 @@ fn evaluateExpression(
             } else {
                 break :blk .null_value;
             }
+        },
+        .when_matches => |when_matches| blk: {
+            const value = try evaluateExpression(arena, when_matches.value, env, current_dir, ctx);
+
+            // Try each pattern branch
+            for (when_matches.branches) |branch| {
+                // Try to match the pattern
+                const match_env = matchPattern(arena, branch.pattern, value, env) catch |err| {
+                    // If pattern doesn't match, try next branch
+                    if (err == error.TypeMismatch) continue;
+                    return err;
+                };
+
+                // Pattern matched, evaluate the expression
+                break :blk try evaluateExpression(arena, branch.expression, match_env, current_dir, ctx);
+            }
+
+            // No pattern matched, check for otherwise clause
+            if (when_matches.otherwise) |otherwise_expr| {
+                break :blk try evaluateExpression(arena, otherwise_expr, env, current_dir, ctx);
+            }
+
+            // No pattern matched and no otherwise clause - error
+            return error.TypeMismatch;
         },
         .application => |application| blk: {
             const function_value = try evaluateExpression(arena, application.function, env, current_dir, ctx);
