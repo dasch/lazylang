@@ -161,6 +161,29 @@ Instead of newlines, semicolons can be used to separate variable assignments:
 name = "Joe"; age = 42; { name, age }
 ```
 
+## Conditional expressions
+
+Conditional expressions use the `if-then-else` syntax:
+
+```
+status = if isActive then "online" else "offline"
+
+result = if score > 90 then
+  "excellent"
+else if score > 70 then
+  "good"
+else
+  "needs improvement"
+```
+
+The condition must evaluate to a boolean value; a runtime error occurs if it doesn't.
+
+The `else` branch is optional. If omitted and the condition is false, the expression evaluates to `null`:
+
+```
+message = if hasError then "Error occurred"  // null if hasError is false
+```
+
 ## Functions
 
 Functions are defined using the `->` operator:

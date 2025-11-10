@@ -37,7 +37,9 @@
 - Function arguments can be destructured directly in the parameter position, supporting pattern matching on tuples, arrays, or objects. 【F:README.md†L190-L194】
 
 ## 8. Control Flow and Lazy Evaluation Constructs
-- Conditional expressions use `if condition then expr else expr`. These expressions can appear in dynamic field computations and runtime modules. 【F:README.md†L94-L95】【F:README.md†L341-L344】
+- Conditional expressions use the `if-then-else` syntax: `if condition then expr else expr`. The condition must evaluate to a boolean value at runtime; a `TypeMismatch` error occurs if it doesn't. These expressions can appear in dynamic field computations, runtime modules, and anywhere an expression is expected. 【F:README.md†L164-L185】
+- The `else` branch is optional. When omitted (`if condition then expr`), the expression evaluates to `null` if the condition is false. This allows for concise conditional field definitions and nullable results. 【F:README.md†L181-L185】
+- Chained if-else-if patterns are supported by nesting if expressions in the else branch: `if a then 1 else if b then 2 else 3`. This provides multi-way branching for decision logic. 【F:README.md†L171-L176】
 - `when` expressions perform pattern matching with a sequence of `pattern then expression` branches and an optional `otherwise` catch-all. Failing to match without `otherwise` causes a runtime crash. 【F:README.md†L196-L207】
 - Comprehension clauses also support `when` filters to discard iterations. 【F:README.md†L137-L142】
 
