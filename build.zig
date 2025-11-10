@@ -53,20 +53,40 @@ pub fn build(b: *std.Build) void {
         .root_module = cli_test_module,
     });
 
-    const eval_test_module = b.createModule(.{
-        .root_source_file = b.path("tests/eval_test.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
-    eval_test_module.addImport("cli", cli_module);
-    eval_test_module.addImport("evaluator", evaluator_module);
-
-    const eval_tests = b.addTest(.{
-        .root_module = eval_test_module,
-    });
+    // Eval test files
+    const eval_test_files = [_][]const u8{
+        "tests/eval/arithmetic_test.zig",
+        "tests/eval/functions_test.zig",
+        "tests/eval/arrays_test.zig",
+        "tests/eval/objects_test.zig",
+        "tests/eval/imports_test.zig",
+        "tests/eval/strings_test.zig",
+        "tests/eval/tuples_test.zig",
+        "tests/eval/booleans_test.zig",
+        "tests/eval/null_test.zig",
+        "tests/eval/conditionals_test.zig",
+        "tests/eval/variables_test.zig",
+        "tests/eval/destructuring_test.zig",
+        "tests/eval/pattern_matching_test.zig",
+    };
 
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&b.addRunArtifact(tests).step);
-    test_step.dependOn(&b.addRunArtifact(eval_tests).step);
+
+    for (eval_test_files) |test_file| {
+        const eval_test_module = b.createModule(.{
+            .root_source_file = b.path(test_file),
+            .target = target,
+            .optimize = optimize,
+        });
+
+        eval_test_module.addImport("cli", cli_module);
+        eval_test_module.addImport("evaluator", evaluator_module);
+
+        const eval_tests = b.addTest(.{
+            .root_module = eval_test_module,
+        });
+
+        test_step.dependOn(&b.addRunArtifact(eval_tests).step);
+    }
 }
