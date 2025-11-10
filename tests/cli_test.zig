@@ -17,26 +17,20 @@ const TestOutput = struct {
 fn runCli(args: []const []const u8) !TestOutput {
     const allocator = std.testing.allocator;
 
-    var stdout_buffer = std.ArrayList(u8).init(allocator);
-    defer stdout_buffer.deinit();
-    var stderr_buffer = std.ArrayList(u8).init(allocator);
-    defer stderr_buffer.deinit();
-
-    var stdout_stream = std.io.bufferedWriter(stdout_buffer.writer());
-    var stderr_stream = std.io.bufferedWriter(stderr_buffer.writer());
+    var stdout_buffer = std.ArrayList(u8){};
+    defer stdout_buffer.deinit(allocator);
+    var stderr_buffer = std.ArrayList(u8){};
+    defer stderr_buffer.deinit(allocator);
 
     const result = try cli.run(
         allocator,
         args,
-        stdout_stream.writer(),
-        stderr_stream.writer(),
+        stdout_buffer.writer(allocator),
+        stderr_buffer.writer(allocator),
     );
 
-    try stdout_stream.flush();
-    try stderr_stream.flush();
-
-    const stdout_owned = try stdout_buffer.toOwnedSlice();
-    const stderr_owned = try stderr_buffer.toOwnedSlice();
+    const stdout_owned = try stdout_buffer.toOwnedSlice(allocator);
+    const stderr_owned = try stderr_buffer.toOwnedSlice(allocator);
 
     return .{
         .result = result,

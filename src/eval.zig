@@ -539,36 +539,36 @@ fn formatValue(allocator: std.mem.Allocator, value: Value) ![]u8 {
         .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
         .function => try std.fmt.allocPrint(allocator, "<function>", .{}),
         .array => |arr| blk: {
-            var builder = std.ArrayList(u8).init(allocator);
-            errdefer builder.deinit();
+            var builder = std.ArrayList(u8){};
+            errdefer builder.deinit(allocator);
 
-            try builder.append('[');
+            try builder.append(allocator, '[');
             for (arr.elements, 0..) |element, i| {
-                if (i != 0) try builder.appendSlice(", ");
+                if (i != 0) try builder.appendSlice(allocator, ", ");
                 const formatted = try formatValue(allocator, element);
                 defer allocator.free(formatted);
-                try builder.appendSlice(formatted);
+                try builder.appendSlice(allocator, formatted);
             }
-            try builder.append(']');
+            try builder.append(allocator, ']');
 
-            break :blk try builder.toOwnedSlice();
+            break :blk try builder.toOwnedSlice(allocator);
         },
         .object => |obj| blk: {
-            var builder = std.ArrayList(u8).init(allocator);
-            errdefer builder.deinit();
+            var builder = std.ArrayList(u8){};
+            errdefer builder.deinit(allocator);
 
-            try builder.append('{');
+            try builder.append(allocator, '{');
             for (obj.fields, 0..) |field, i| {
-                if (i != 0) try builder.appendSlice(", ");
-                try builder.appendSlice(field.key);
-                try builder.appendSlice(": ");
+                if (i != 0) try builder.appendSlice(allocator, ", ");
+                try builder.appendSlice(allocator, field.key);
+                try builder.appendSlice(allocator, ": ");
                 const formatted = try formatValue(allocator, field.value);
                 defer allocator.free(formatted);
-                try builder.appendSlice(formatted);
+                try builder.appendSlice(allocator, formatted);
             }
-            try builder.append('}');
+            try builder.append(allocator, '}');
 
-            break :blk try builder.toOwnedSlice();
+            break :blk try builder.toOwnedSlice(allocator);
         },
     };
 }

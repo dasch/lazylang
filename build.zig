@@ -4,25 +4,31 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const exe = b.addExecutable(.{
-        .name = "lazylang",
-        .root_source_file = .{ .cwd_relative = "src/main.zig" },
+    // Create shared modules
+    const cli_module = b.addModule("cli", .{
+        .root_source_file = b.path("src/cli.zig"),
+    });
+
+    const evaluator_module = b.addModule("evaluator", .{
+        .root_source_file = b.path("src/eval.zig"),
+    });
+
+    // Create executable module
+    const exe_module = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
 
+    exe_module.addImport("cli", cli_module);
+    exe_module.addImport("evaluator", evaluator_module);
+
+    const exe = b.addExecutable(.{
+        .name = "lazylang",
+        .root_module = exe_module,
+    });
+
     b.installArtifact(exe);
-
-    const cli_module = b.addModule("cli", .{
-        .root_source_file = .{ .cwd_relative = "src/cli.zig" },
-    });
-
-    const evaluator_module = b.addModule("evaluator", .{
-        .root_source_file = .{ .cwd_relative = "src/eval.zig" },
-    });
-
-    exe.root_module.addImport("cli", cli_module);
-    exe.root_module.addImport("evaluator", evaluator_module);
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
@@ -33,26 +39,34 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the lazylang CLI");
     run_step.dependOn(&run_cmd.step);
 
-    const tests = b.addTest(.{
-        .root_source_file = .{ .cwd_relative = "tests/cli_test.zig" },
+    // Create test modules
+    const cli_test_module = b.createModule(.{
+        .root_source_file = b.path("tests/cli_test.zig"),
         .target = target,
         .optimize = optimize,
     });
 
-    tests.root_module.addImport("cli", cli_module);
-    tests.root_module.addImport("evaluator", evaluator_module);
+    cli_test_module.addImport("cli", cli_module);
+    cli_test_module.addImport("evaluator", evaluator_module);
+
+    const tests = b.addTest(.{
+        .root_module = cli_test_module,
+    });
+
+    const eval_test_module = b.createModule(.{
+        .root_source_file = b.path("tests/eval_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    eval_test_module.addImport("cli", cli_module);
+    eval_test_module.addImport("evaluator", evaluator_module);
+
+    const eval_tests = b.addTest(.{
+        .root_module = eval_test_module,
+    });
 
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&b.addRunArtifact(tests).step);
-
-    const eval_tests = b.addTest(.{
-        .root_source_file = .{ .cwd_relative = "tests/eval_test.zig" },
-        .target = target,
-        .optimize = optimize,
-    });
-
-    eval_tests.root_module.addImport("cli", cli_module);
-    eval_tests.root_module.addImport("evaluator", evaluator_module);
-
     test_step.dependOn(&b.addRunArtifact(eval_tests).step);
 }
