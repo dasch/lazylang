@@ -7,6 +7,8 @@ const TokenKind = enum {
     string,
     comma,
     colon,
+    semicolon,
+    equals,
     arrow,
     plus,
     minus,
@@ -57,6 +59,7 @@ const Expression = union(enum) {
     identifier: []const u8,
     string_literal: []const u8,
     lambda: Lambda,
+    let: Let,
     unary: Unary,
     binary: Binary,
     application: Application,
@@ -69,6 +72,12 @@ const Expression = union(enum) {
 
 const Lambda = struct {
     param: []const u8,
+    body: *Expression,
+};
+
+const Let = struct {
+    name: []const u8,
+    value: *Expression,
     body: *Expression,
 };
 
@@ -183,6 +192,14 @@ const Tokenizer = struct {
             ':' => {
                 self.index += 1;
                 return self.makeToken(.colon, start);
+            },
+            ';' => {
+                self.index += 1;
+                return self.makeToken(.semicolon, start);
+            },
+            '=' => {
+                self.index += 1;
+                return self.makeToken(.equals, start);
             },
             '(' => {
                 self.index += 1;
@@ -325,6 +342,32 @@ const Parser = struct {
     }
 
     fn parseLambda(self: *Parser) ParseError!*Expression {
+        // Check for let binding: identifier = expression
+        if (self.current.kind == .identifier and self.lookahead.kind == .equals) {
+            const name = self.current.lexeme;
+            try self.advance();
+            try self.expect(.equals);
+            const value = try self.parseLambda();
+
+            // Check for semicolon or newline separator
+            if (self.current.kind == .semicolon) {
+                try self.advance();
+            } else if (!self.current.preceded_by_newline and self.current.kind != .eof) {
+                return error.UnexpectedToken;
+            }
+
+            // If we're at EOF or closing delimiter, return just the value
+            if (self.current.kind == .eof or self.current.kind == .r_paren) {
+                return value;
+            }
+
+            const body = try self.parseLambda();
+            const node = try self.allocateExpression();
+            node.* = .{ .let = .{ .name = name, .value = value, .body = body } };
+            return node;
+        }
+
+        // Check for lambda: identifier -> expression
         if (self.current.kind == .identifier and self.lookahead.kind == .arrow) {
             const param = self.current.lexeme;
             try self.advance();
@@ -334,6 +377,7 @@ const Parser = struct {
             node.* = .{ .lambda = .{ .param = param, .body = body } };
             return node;
         }
+
         return self.parseBinary(0);
     }
 
@@ -779,6 +823,16 @@ fn evaluateExpression(
             const function = try arena.create(FunctionValue);
             function.* = .{ .param = lambda.param, .body = lambda.body, .env = env };
             break :blk Value{ .function = function };
+        },
+        .let => |let_expr| blk: {
+            const value = try evaluateExpression(arena, let_expr.value, env, current_dir, ctx);
+            const new_env = try arena.create(Environment);
+            new_env.* = .{
+                .parent = env,
+                .name = let_expr.name,
+                .value = value,
+            };
+            break :blk try evaluateExpression(arena, let_expr.body, new_env, current_dir, ctx);
         },
         .unary => |unary| blk: {
             const operand_value = try evaluateExpression(arena, unary.operand, env, current_dir, ctx);
