@@ -1,4 +1,4 @@
-.PHONY: all build test test-zig test-spec clean
+.PHONY: all build test test-zig test-spec docs clean
 
 all: test
 
@@ -19,6 +19,10 @@ test-spec: build
 
 # Run all tests (both Zig tests and stdlib specs)
 test: test-zig test-spec
+
+# Generate stdlib documentation
+docs: build
+	cd stdlib && ../zig-out/bin/lazylang docs lib
 
 # Clean build artifacts
 clean:
