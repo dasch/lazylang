@@ -101,6 +101,7 @@ pub fn build(b: *std.Build) void {
         "tests/eval/where_test.zig",
         "tests/eval/do_test.zig",
         "tests/eval/symbols_test.zig",
+        "tests/eval/comprehensions_test.zig",
     };
 
     // Examples test module
