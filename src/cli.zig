@@ -1,6 +1,7 @@
 const std = @import("std");
 const evaluator = @import("eval.zig");
 const spec = @import("spec.zig");
+const formatter = @import("formatter.zig");
 
 pub const CommandResult = struct {
     exit_code: u8,
@@ -24,6 +25,10 @@ pub fn run(
 
     if (std.mem.eql(u8, subcommand, "spec")) {
         return try runSpec(allocator, args[2..], stdout, stderr);
+    }
+
+    if (std.mem.eql(u8, subcommand, "format")) {
+        return try runFormat(allocator, args[2..], stdout, stderr);
     }
 
     try stderr.print("error: unknown subcommand '{s}'\n", .{subcommand});
@@ -137,4 +142,34 @@ fn runSpec(
 
     try stderr.print("error: unexpected arguments\n", .{});
     return .{ .exit_code = 1 };
+}
+
+fn runFormat(
+    allocator: std.mem.Allocator,
+    args: []const []const u8,
+    stdout: anytype,
+    stderr: anytype,
+) !CommandResult {
+    if (args.len == 0) {
+        try stderr.print("error: missing file path\n", .{});
+        try stderr.print("usage: lazy format <path>\n", .{});
+        return .{ .exit_code = 1 };
+    }
+
+    if (args.len > 1) {
+        try stderr.print("error: too many arguments\n", .{});
+        try stderr.print("usage: lazy format <path>\n", .{});
+        return .{ .exit_code = 1 };
+    }
+
+    const file_path = args[0];
+
+    var format_output = formatter.formatFile(allocator, file_path) catch |err| {
+        try stderr.print("error: failed to format file: {}\n", .{err});
+        return .{ .exit_code = 1 };
+    };
+    defer format_output.deinit();
+
+    try stdout.print("{s}", .{format_output.text});
+    return .{ .exit_code = 0 };
 }
