@@ -826,20 +826,26 @@ fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocItem,
     try file.writeAll(
         \\    * { margin: 0; padding: 0; box-sizing: border-box; }
         \\    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; background: #f5f5f5; display: flex; }
-        \\    .sidebar { width: 250px; background: #2c3e50; color: white; min-height: 100vh; position: fixed; top: 0; left: 0; overflow-y: auto; }
-        \\    .sidebar h2 { padding: 20px; font-size: 1.2em; border-bottom: 1px solid #34495e; }
+        \\    .sidebar { width: 280px; background: #2c3e50; color: white; min-height: 100vh; position: fixed; top: 0; left: 0; overflow-y: auto; }
+        \\    .sidebar-search { padding: 15px; border-bottom: 1px solid #34495e; }
+        \\    .sidebar-search input { width: 100%; padding: 10px 12px; font-size: 14px; border: 1px solid #34495e; border-radius: 4px; background: #34495e; color: white; }
+        \\    .sidebar-search input::placeholder { color: #95a5a6; }
+        \\    .sidebar-search input:focus { outline: none; background: #3d5469; border-color: #3498db; }
+        \\    .sidebar h2 { padding: 15px; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.5px; color: #95a5a6; border-bottom: 1px solid #34495e; }
         \\    .sidebar ul { list-style: none; }
-        \\    .sidebar li { border-bottom: 1px solid #34495e; }
+        \\    .sidebar > ul > li { border-bottom: 1px solid #34495e; }
         \\    .sidebar a { display: block; padding: 12px 20px; color: #ecf0f1; text-decoration: none; transition: background 0.2s; }
         \\    .sidebar a:hover { background: #34495e; }
         \\    .sidebar a.active { background: #3498db; font-weight: 600; }
-        \\    .main { margin-left: 250px; flex: 1; }
+        \\    .sidebar .module-link { font-weight: 500; }
+        \\    .sidebar .nested { list-style: none; }
+        \\    .sidebar .nested li { border-bottom: none; }
+        \\    .sidebar .nested a { padding: 8px 20px 8px 35px; font-size: 0.9em; color: #bdc3c7; }
+        \\    .sidebar .nested a:hover { background: #3d5469; color: #ecf0f1; }
+        \\    .main { margin-left: 280px; flex: 1; }
         \\    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
         \\    header { background: #2c3e50; color: white; padding: 30px 0; margin-bottom: 30px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         \\    h1 { font-size: 2.5em; font-weight: 300; }
-        \\    .search-box { margin: 20px 0; }
-        \\    .search-box input { width: 100%; padding: 12px 20px; font-size: 16px; border: 2px solid #ddd; border-radius: 6px; }
-        \\    .search-box input:focus { outline: none; border-color: #3498db; }
         \\    .doc-item { background: white; padding: 25px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         \\    .doc-item h2 { color: #2c3e50; margin-bottom: 10px; font-size: 1.5em; }
         \\    .doc-item .kind { display: inline-block; padding: 4px 10px; background: #3498db; color: white; border-radius: 4px; font-size: 0.85em; margin-bottom: 10px; }
@@ -850,6 +856,7 @@ fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocItem,
         \\    .doc-item .doc-content strong { font-weight: 600; color: #2c3e50; }
         \\    .doc-item .doc-content li { margin-left: 20px; margin-bottom: 5px; }
         \\    .no-results { text-align: center; padding: 40px; color: #999; }
+        \\    .search-result-label { font-size: 0.85em; color: #7f8c8d; margin-left: 5px; }
         \\    @media (max-width: 768px) { .sidebar { display: none; } .main { margin-left: 0; } .container { padding: 10px; } .doc-item { padding: 15px; } }
         \\
     );
@@ -860,24 +867,50 @@ fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocItem,
     // Sidebar
     try file.writeAll("  <div class=\"sidebar\">\n");
 
-    // Home link if there are multiple modules
-    if (modules.len > 1) {
-        try file.writeAll("    <div style=\"padding: 15px; border-bottom: 1px solid #34495e;\">\n");
-        try file.writeAll("      <a href=\"index.html\" style=\"color: #3498db; text-decoration: none;\">← All Modules</a>\n");
-        try file.writeAll("    </div>\n");
+    // Search box at the top
+    try file.writeAll("    <div class=\"sidebar-search\">\n");
+    try file.writeAll("      <input type=\"text\" id=\"sidebar-search\" placeholder=\"Search (Cmd+K)...\" />\n");
+    try file.writeAll("    </div>\n");
+
+    // Modules section
+    try file.writeAll("    <h2>Modules</h2>\n");
+    try file.writeAll("    <ul>\n");
+
+    // List all modules
+    for (modules) |module| {
+        const is_current = std.mem.eql(u8, module.name, module_name);
+
+        try file.writeAll("      <li>\n");
+        try file.writeAll("        <a href=\"");
+        try file.writeAll(module.name);
+        try file.writeAll(".html\" class=\"module-link");
+        if (is_current) {
+            try file.writeAll(" active");
+        }
+        try file.writeAll("\">");
+        try file.writeAll(module.name);
+        try file.writeAll("</a>\n");
+
+        // If this is the current module, show its items
+        if (is_current) {
+            try file.writeAll("        <ul class=\"nested\">\n");
+            for (items) |item| {
+                try file.writeAll("          <li><a href=\"#");
+                try file.writeAll(item.name);
+                try file.writeAll("\" data-module=\"");
+                try file.writeAll(module_name);
+                try file.writeAll("\" data-item=\"");
+                try file.writeAll(item.name);
+                try file.writeAll("\">");
+                try file.writeAll(item.name);
+                try file.writeAll("</a></li>\n");
+            }
+            try file.writeAll("        </ul>\n");
+        }
+
+        try file.writeAll("      </li>\n");
     }
 
-    try file.writeAll("    <h2>");
-    try file.writeAll(module_name);
-    try file.writeAll("</h2>\n");
-    try file.writeAll("    <ul>\n");
-    for (items) |item| {
-        try file.writeAll("      <li><a href=\"#");
-        try file.writeAll(item.name);
-        try file.writeAll("\">");
-        try file.writeAll(item.name);
-        try file.writeAll("</a></li>\n");
-    }
     try file.writeAll("    </ul>\n");
     try file.writeAll("  </div>\n");
 
@@ -891,9 +924,6 @@ fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocItem,
     try file.writeAll("      </div>\n");
     try file.writeAll("    </header>\n");
     try file.writeAll("    <div class=\"container\">\n");
-    try file.writeAll("    <div class=\"search-box\">\n");
-    try file.writeAll("      <input type=\"text\" id=\"search\" placeholder=\"Search functions and values...\" />\n");
-    try file.writeAll("    </div>\n");
     try file.writeAll("    <div id=\"docs\">\n");
 
     // We need access to allocator for markdown rendering
@@ -940,16 +970,98 @@ fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocItem,
     try file.writeAll("    </div>\n");
     try file.writeAll("  </div>\n");
     try file.writeAll("  <script>\n");
+
+    // Generate search data for all modules
+    try file.writeAll("    const searchData = [\n");
+    for (modules, 0..) |module, i| {
+        for (module.items, 0..) |item, j| {
+            try file.writeAll("      { module: '");
+            try file.writeAll(module.name);
+            try file.writeAll("', name: '");
+            // Escape single quotes in name
+            for (item.name) |c| {
+                if (c == '\'') {
+                    try file.writeAll("\\'");
+                } else {
+                    const char_slice = &[_]u8{c};
+                    try file.writeAll(char_slice);
+                }
+            }
+            try file.writeAll("', signature: '");
+            // Escape single quotes in signature
+            for (item.signature) |c| {
+                if (c == '\'') {
+                    try file.writeAll("\\'");
+                } else {
+                    const char_slice = &[_]u8{c};
+                    try file.writeAll(char_slice);
+                }
+            }
+            try file.writeAll("' }");
+            if (!(i == modules.len - 1 and j == module.items.len - 1)) {
+                try file.writeAll(",\n");
+            }
+        }
+    }
+    try file.writeAll("\n    ];\n");
+
     try file.writeAll(
-        \\    const searchInput = document.getElementById('search');
-        \\    const docItems = document.querySelectorAll('.doc-item');
+        \\
+        \\    const currentModule = document.querySelector('.sidebar .module-link.active').textContent;
+        \\    const searchInput = document.getElementById('sidebar-search');
+        \\    const modulesList = document.querySelector('.sidebar > ul');
+        \\    const originalModulesList = modulesList.innerHTML;
+        \\
+        \\    // CMD+K / Ctrl+K to focus search
+        \\    document.addEventListener('keydown', (e) => {
+        \\      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        \\        e.preventDefault();
+        \\        searchInput.focus();
+        \\      }
+        \\    });
+        \\
+        \\    // Search functionality
         \\    searchInput.addEventListener('input', (e) => {
-        \\      const query = e.target.value.toLowerCase();
-        \\      docItems.forEach(item => {
-        \\        const name = item.dataset.name.toLowerCase();
-        \\        const text = item.textContent.toLowerCase();
-        \\        item.style.display = (name.includes(query) || text.includes(query)) ? 'block' : 'none';
+        \\      const query = e.target.value.toLowerCase().trim();
+        \\
+        \\      if (!query) {
+        \\        // Restore original sidebar
+        \\        modulesList.innerHTML = originalModulesList;
+        \\        return;
+        \\      }
+        \\
+        \\      // Search across all modules
+        \\      const results = searchData.filter(item =>
+        \\        item.name.toLowerCase().includes(query) ||
+        \\        item.signature.toLowerCase().includes(query) ||
+        \\        item.module.toLowerCase().includes(query)
+        \\      );
+        \\
+        \\      // Group results by module
+        \\      const resultsByModule = {};
+        \\      results.forEach(result => {
+        \\        if (!resultsByModule[result.module]) {
+        \\          resultsByModule[result.module] = [];
+        \\        }
+        \\        resultsByModule[result.module].push(result);
         \\      });
+        \\
+        \\      // Rebuild sidebar with search results
+        \\      let html = '';
+        \\      Object.keys(resultsByModule).sort().forEach(moduleName => {
+        \\        const isActive = moduleName === currentModule;
+        \\        html += '<li>';
+        \\        html += `<a href="${moduleName}.html" class="module-link${isActive ? ' active' : ''}">${moduleName}</a>`;
+        \\        html += '<ul class="nested">';
+        \\        resultsByModule[moduleName].forEach(item => {
+        \\          const href = isActive ? `#${item.name}` : `${moduleName}.html#${item.name}`;
+        \\          html += `<li><a href="${href}">${item.name}</a></li>`;
+        \\        });
+        \\        html += '</ul>';
+        \\        html += '</li>';
+        \\      });
+        \\
+        \\      modulesList.innerHTML = html;
         \\    });
         \\
     );
