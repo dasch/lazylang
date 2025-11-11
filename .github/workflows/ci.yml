@@ -15,4 +15,4 @@ jobs:
         with:
           version: 0.15.2
       - name: Run tests
-        run: zig build test
+        run: make test
