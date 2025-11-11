@@ -15,6 +15,37 @@ name = "John Doe"
 isActive = true
 ```
 
+## Strings
+
+Strings can be single or double-quoted:
+```
+name = "Alice"
+greeting = 'Hello'
+```
+
+### String interpolation
+
+String interpolation allows embedding variables and expressions directly within strings:
+
+```
+target = "world"
+message = "hello, $target"  // "hello, world"
+```
+
+For simple variable references, use `$identifier` directly within the string.
+
+For more complex expressions, use `${expression}` syntax:
+
+```
+name = "Alice"
+toUpper = str -> str
+greeting = "Hello, ${toUpper name}!"
+
+x = 5
+y = 10
+result = "The sum is ${x + y}"  // "The sum is 15"
+```
+
 ## Tuples
 
 Tuples are defined using parentheses:

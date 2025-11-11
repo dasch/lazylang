@@ -8,6 +8,7 @@
 
 ## 2. Primitive Values and Tags
 - Primitive literals mirror JSON (numbers, strings, booleans, `null`) and can appear anywhere an expression is expected. 【F:README.md†L13-L16】
+- Strings support interpolation of variables and expressions using `$identifier` for simple variable references and `${expression}` for complex expressions. 【F:README.md†L18-L46】
 - Tags are atom-like symbols introduced with `#` and behave as unique symbolic values. 【F:README.md†L248-L255】
 
 ## 3. Bindings and Expressions

@@ -79,6 +79,7 @@ pub const Expression = union(enum) {
     symbol: []const u8,
     identifier: []const u8,
     string_literal: []const u8,
+    string_interpolation: StringInterpolation,
     lambda: Lambda,
     let: Let,
     unary: Unary,
@@ -159,6 +160,15 @@ const ObjectLiteral = struct {
 
 const ImportExpr = struct {
     path: []const u8,
+};
+
+const StringInterpolation = struct {
+    parts: []StringPart,
+};
+
+const StringPart = union(enum) {
+    literal: []const u8,
+    interpolation: *Expression,
 };
 
 const ForClause = struct {
@@ -1076,9 +1086,21 @@ pub const Parser = struct {
             .string => {
                 const value = self.current.lexeme;
                 try self.advance();
-                const node = try self.allocateExpression();
-                node.* = .{ .string_literal = value };
-                return node;
+
+                // Check if the string contains interpolation
+                const parts = try self.parseStringInterpolation(value);
+
+                if (parts.len == 1 and parts[0] == .literal) {
+                    // Simple string with no interpolation
+                    const node = try self.allocateExpression();
+                    node.* = .{ .string_literal = parts[0].literal };
+                    return node;
+                } else {
+                    // String with interpolation
+                    const node = try self.allocateExpression();
+                    node.* = .{ .string_interpolation = .{ .parts = parts } };
+                    return node;
+                }
             },
             .symbol => {
                 const value = self.current.lexeme;
@@ -1534,6 +1556,86 @@ pub const Parser = struct {
         self.lookahead = try self.tokenizer.next();
     }
 
+    fn parseStringInterpolation(self: *Parser, string_content: []const u8) ParseError![]StringPart {
+        var parts = std.ArrayListUnmanaged(StringPart){};
+        var i: usize = 0;
+        var literal_start: usize = 0;
+
+        while (i < string_content.len) {
+            if (string_content[i] == '$') {
+                // Add any literal part before the interpolation
+                if (i > literal_start) {
+                    try parts.append(self.arena, .{ .literal = string_content[literal_start..i] });
+                }
+
+                i += 1; // skip '$'
+
+                if (i < string_content.len and string_content[i] == '{') {
+                    // Complex interpolation: ${expression}
+                    i += 1; // skip '{'
+
+                    // Find the matching '}'
+                    var brace_depth: usize = 1;
+                    const expr_start = i;
+                    while (i < string_content.len and brace_depth > 0) {
+                        if (string_content[i] == '{') {
+                            brace_depth += 1;
+                        } else if (string_content[i] == '}') {
+                            brace_depth -= 1;
+                        }
+                        if (brace_depth > 0) i += 1;
+                    }
+
+                    if (brace_depth != 0) {
+                        return error.UnterminatedString;
+                    }
+
+                    // Parse the expression inside ${}
+                    const expr_source = string_content[expr_start..i];
+                    var expr_parser = try Parser.init(self.arena, expr_source);
+                    const expr = try expr_parser.parseLambda();
+
+                    try parts.append(self.arena, .{ .interpolation = expr });
+
+                    i += 1; // skip '}'
+                    literal_start = i;
+                } else {
+                    // Simple interpolation: $identifier
+                    const ident_start = i;
+                    while (i < string_content.len and (std.ascii.isAlphanumeric(string_content[i]) or string_content[i] == '_')) {
+                        i += 1;
+                    }
+
+                    if (i == ident_start) {
+                        // Just a '$' with no identifier following
+                        try parts.append(self.arena, .{ .literal = "$" });
+                    } else {
+                        const ident = string_content[ident_start..i];
+                        const expr = try self.allocateExpression();
+                        expr.* = .{ .identifier = ident };
+                        try parts.append(self.arena, .{ .interpolation = expr });
+                    }
+
+                    literal_start = i;
+                }
+            } else {
+                i += 1;
+            }
+        }
+
+        // Add any remaining literal part
+        if (literal_start < string_content.len) {
+            try parts.append(self.arena, .{ .literal = string_content[literal_start..] });
+        }
+
+        // If no parts were added, return a single empty literal
+        if (parts.items.len == 0) {
+            try parts.append(self.arena, .{ .literal = "" });
+        }
+
+        return try parts.toOwnedSlice(self.arena);
+    }
+
     fn allocateExpression(self: *Parser) ParseError!*Expression {
         return try self.arena.create(Expression);
     }
@@ -1821,6 +1923,22 @@ pub fn evaluateExpression(
             break :blk resolved;
         },
         .string_literal => |value| .{ .string = try arena.dupe(u8, value) },
+        .string_interpolation => |interp| blk: {
+            var result = std.ArrayListUnmanaged(u8){};
+            for (interp.parts) |part| {
+                switch (part) {
+                    .literal => |lit| {
+                        try result.appendSlice(arena, lit);
+                    },
+                    .interpolation => |interp_expr| {
+                        const interp_value = try evaluateExpression(arena, interp_expr, env, current_dir, ctx);
+                        const str_value = try valueToString(arena, interp_value);
+                        try result.appendSlice(arena, str_value);
+                    },
+                }
+            }
+            break :blk .{ .string = try result.toOwnedSlice(arena) };
+        },
         .lambda => |lambda| blk: {
             const function = try arena.create(FunctionValue);
             function.* = .{ .param = lambda.param, .body = lambda.body, .env = env };
@@ -2196,6 +2314,17 @@ fn lookup(env: ?*Environment, name: []const u8) ?Value {
         current = scope.parent;
     }
     return null;
+}
+
+fn valueToString(allocator: std.mem.Allocator, value: Value) ![]u8 {
+    return switch (value) {
+        .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
+        .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
+        .null_value => try std.fmt.allocPrint(allocator, "null", .{}),
+        .symbol => |s| try allocator.dupe(u8, s),
+        .string => |str| try allocator.dupe(u8, str),
+        else => try formatValue(allocator, value),
+    };
 }
 
 pub fn formatValue(allocator: std.mem.Allocator, value: Value) ![]u8 {
