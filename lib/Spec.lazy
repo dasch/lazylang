@@ -1,16 +1,53 @@
 {
+  /// Creates a test suite with a description and child tests.
+  /// Used to organize related tests into groups.
+  ///
+  /// **Parameters:**
+  /// - `description`: A string describing what is being tested
+  /// - `children`: An array of test cases or nested describe blocks
+  ///
+  /// **Example:**
+  /// ```
+  /// describe "Array operations" [
+  ///   it "should concatenate arrays" (mustEq [1,2,3] result)
+  /// ]
+  /// ```
   describe: description -> children -> {
     type: "describe",
     description: description,
     children: children
   },
 
+  /// Creates an individual test case with a description and test expression.
+  ///
+  /// **Parameters:**
+  /// - `description`: A string describing what should happen
+  /// - `testExpr`: An assertion expression to validate the test
+  ///
+  /// **Example:**
+  /// ```
+  /// it "adds two numbers correctly" (mustEq 5 result) where
+  ///   result = 2 + 3
+  /// ```
   it: description -> testExpr -> {
     type: "it",
     description: description,
     test: testExpr
   },
 
+  /// Creates an equality assertion that checks if the actual value matches the expected value.
+  /// The test passes if both values are equal, otherwise it fails.
+  ///
+  /// **Parameters:**
+  /// - `expected`: The expected value
+  /// - `actual`: The actual value to compare
+  ///
+  /// **Example:**
+  /// ```
+  /// mustEq 42 actualValue
+  /// mustEq [1, 2, 3] resultArray
+  /// mustEq { name: "John" } resultObject
+  /// ```
   mustEq: expected -> actual -> {
     type: "assertion",
     expected: expected,

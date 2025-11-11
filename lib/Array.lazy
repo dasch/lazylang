@@ -1,4 +1,22 @@
 {
-  length: __array_length,
-  get: __array_get
+  /// Returns the number of elements in an array.
+  ///
+  /// **Example:**
+  /// ```
+  /// Array.length [1, 2, 3]  // Returns 3
+  /// ```
+  length: (arr) -> __array_length arr,
+
+  /// Retrieves the element at the specified index in an array.
+  /// Returns the element if the index is valid, otherwise behavior is undefined.
+  ///
+  /// **Parameters:**
+  /// - `arr`: The array to access
+  /// - `idx`: The zero-based index of the element to retrieve
+  ///
+  /// **Example:**
+  /// ```
+  /// Array.get [10, 20, 30] 1  // Returns 20
+  /// ```
+  get: (arr, idx) -> __array_get (arr, idx)
 }

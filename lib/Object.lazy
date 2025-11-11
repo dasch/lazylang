@@ -1,5 +1,35 @@
 {
-  keys: __object_keys,
-  values: __object_values,
-  get: __object_get
+  /// Returns an array of all keys in an object.
+  ///
+  /// **Parameter:**
+  /// - `obj`: The object to extract keys from
+  ///
+  /// **Example:**
+  /// ```
+  /// Object.keys { name: "John", age: 30 }  // Returns ["name", "age"]
+  /// ```
+  keys: (obj) -> __object_keys obj,
+
+  /// Returns an array of all values in an object.
+  ///
+  /// **Parameter:**
+  /// - `obj`: The object to extract values from
+  ///
+  /// **Example:**
+  /// ```
+  /// Object.values { name: "John", age: 30 }  // Returns ["John", 30]
+  /// ```
+  values: (obj) -> __object_values obj,
+
+  /// Retrieves the value associated with a key in an object.
+  ///
+  /// **Parameters:**
+  /// - `obj`: The object to access
+  /// - `key`: The key to look up
+  ///
+  /// **Example:**
+  /// ```
+  /// Object.get { name: "John", age: 30 } "name"  // Returns "John"
+  /// ```
+  get: (obj, key) -> __object_get (obj, key)
 }
