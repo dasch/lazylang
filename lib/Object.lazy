@@ -1,5 +1,5 @@
 {
   keys: __object_keys,
   values: __object_values,
-  get: (obj, key) -> __object_get (obj, key)
+  get: __object_get
 }
