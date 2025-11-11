@@ -17,6 +17,7 @@ pub const TokenKind = enum {
     plus,
     minus,
     star,
+    ampersand,
     ampersand_ampersand,
     pipe_pipe,
     bang,
@@ -66,6 +67,7 @@ const BinaryOp = enum {
     greater_than,
     less_or_equal,
     greater_or_equal,
+    merge,
 };
 
 const UnaryOp = enum {
@@ -90,6 +92,7 @@ pub const Expression = union(enum) {
     array: ArrayLiteral,
     tuple: TupleLiteral,
     object: ObjectLiteral,
+    object_extend: ObjectExtend,
     import_expr: ImportExpr,
     array_comprehension: ArrayComprehension,
     object_comprehension: ObjectComprehension,
@@ -151,10 +154,16 @@ const TupleLiteral = struct {
 const ObjectField = struct {
     key: []const u8,
     value: *Expression,
+    is_patch: bool, // true if no colon (merge), false if colon (overwrite)
     doc: ?[]const u8, // Combined documentation comments
 };
 
 const ObjectLiteral = struct {
+    fields: []ObjectField,
+};
+
+const ObjectExtend = struct {
+    base: *Expression,
     fields: []ObjectField,
 };
 
@@ -284,7 +293,7 @@ pub const Tokenizer = struct {
                     self.advance();
                     return self.makeToken(.ampersand_ampersand, start, start_line, start_column);
                 }
-                return error.UnexpectedCharacter;
+                return self.makeToken(.ampersand, start, start_line, start_column);
             },
             '|' => {
                 self.advance();
@@ -880,6 +889,7 @@ pub const Parser = struct {
                     .plus => .add,
                     .minus => .subtract,
                     .star => .multiply,
+                    .ampersand => .merge,
                     .ampersand_ampersand => .logical_and,
                     .pipe_pipe => .logical_or,
                     .backslash => .pipeline,
@@ -950,7 +960,21 @@ pub const Parser = struct {
                     node.* = .{ .application = .{ .function = expr, .argument = argument } };
                     expr = node;
                 },
-                .number, .string, .symbol, .l_paren, .l_bracket, .l_brace => {
+                .l_brace => {
+                    // Object extension: expr { fields }
+                    const object_expr = try self.parseObject();
+
+                    // Extract the fields from the parsed object
+                    const fields = switch (object_expr.*) {
+                        .object => |obj| obj.fields,
+                        else => return error.UnexpectedToken,
+                    };
+
+                    const node = try self.allocateExpression();
+                    node.* = .{ .object_extend = .{ .base = expr, .fields = fields } };
+                    expr = node;
+                },
+                .number, .string, .symbol, .l_paren, .l_bracket => {
                     const argument = try self.parsePrimary();
                     const node = try self.allocateExpression();
                     node.* = .{ .application = .{ .function = expr, .argument = argument } };
@@ -1263,10 +1287,18 @@ pub const Parser = struct {
             const key = self.current.lexeme;
             try self.advance();
 
-            // Check for short form (no colon) vs long form (with colon)
+            // Check for three forms:
+            // 1. Long form with colon: `field: value` (is_patch = false)
+            // 2. Patch form: `field { ... }` (is_patch = true)
+            // 3. Short form: `field` (is_patch = false, expands to `field: field`)
+            var is_patch = false;
             const value_expr = if (self.current.kind == .colon) blk: {
                 try self.advance();
                 break :blk try self.parseLambda();
+            } else if (self.current.kind == .l_brace and !self.current.preceded_by_newline) blk: {
+                // Patch form: field followed by object
+                is_patch = true;
+                break :blk try self.parseObject();
             } else blk: {
                 // Short form: create an identifier reference with the same name as the key
                 const node = try self.allocateExpression();
@@ -1274,7 +1306,7 @@ pub const Parser = struct {
                 break :blk node;
             };
 
-            try fields.append(self.arena, .{ .key = key, .value = value_expr, .doc = doc });
+            try fields.append(self.arena, .{ .key = key, .value = value_expr, .is_patch = is_patch, .doc = doc });
 
             if (self.current.kind == .comma) {
                 try self.advance();
@@ -1647,8 +1679,9 @@ fn getPrecedence(kind: TokenKind) ?u32 {
         .pipe_pipe => 3,
         .ampersand_ampersand => 4,
         .equals_equals, .bang_equals, .less, .greater, .less_equals, .greater_equals => 5,
-        .plus, .minus => 6,
-        .star => 7,
+        .ampersand => 6, // Object merge operator
+        .plus, .minus => 7,
+        .star => 8,
         else => null,
     };
 }
@@ -1906,6 +1939,57 @@ pub fn matchPattern(
     };
 }
 
+fn findObjectField(obj: ObjectValue, key: []const u8) ?Value {
+    for (obj.fields) |field| {
+        if (std.mem.eql(u8, field.key, key)) {
+            return field.value;
+        }
+    }
+    return null;
+}
+
+fn mergeObjects(arena: std.mem.Allocator, base: ObjectValue, extension: ObjectValue) EvalError!Value {
+    // Create a map to track which keys we've seen
+    var result_fields = std.ArrayListUnmanaged(ObjectFieldValue){};
+
+    // First, add all fields from base
+    for (base.fields) |base_field| {
+        // Check if this field is overridden in extension
+        var found_override = false;
+        for (extension.fields) |ext_field| {
+            if (std.mem.eql(u8, base_field.key, ext_field.key)) {
+                found_override = true;
+                // Use the extension value (it overrides the base)
+                const key_copy = try arena.dupe(u8, ext_field.key);
+                try result_fields.append(arena, .{ .key = key_copy, .value = ext_field.value });
+                break;
+            }
+        }
+        if (!found_override) {
+            // No override, keep the base field
+            const key_copy = try arena.dupe(u8, base_field.key);
+            try result_fields.append(arena, .{ .key = key_copy, .value = base_field.value });
+        }
+    }
+
+    // Then, add fields from extension that are not in base
+    for (extension.fields) |ext_field| {
+        var found_in_base = false;
+        for (base.fields) |base_field| {
+            if (std.mem.eql(u8, base_field.key, ext_field.key)) {
+                found_in_base = true;
+                break;
+            }
+        }
+        if (!found_in_base) {
+            const key_copy = try arena.dupe(u8, ext_field.key);
+            try result_fields.append(arena, .{ .key = key_copy, .value = ext_field.value });
+        }
+    }
+
+    return Value{ .object = .{ .fields = try result_fields.toOwnedSlice(arena) } };
+}
+
 pub fn evaluateExpression(
     arena: std.mem.Allocator,
     expr: *Expression,
@@ -2043,6 +2127,20 @@ pub fn evaluateExpression(
                         else => return error.ExpectedFunction,
                     }
                 },
+                .merge => blk2: {
+                    // Object merge operator: obj1 & obj2
+                    const left_obj = switch (left_value) {
+                        .object => |o| o,
+                        else => return error.TypeMismatch,
+                    };
+                    const right_obj = switch (right_value) {
+                        .object => |o| o,
+                        else => return error.TypeMismatch,
+                    };
+
+                    // Merge the two objects
+                    break :blk2 try mergeObjects(arena, left_obj, right_obj);
+                },
             };
             break :blk result;
         },
@@ -2123,6 +2221,72 @@ pub fn evaluateExpression(
                 fields[i] = .{ .key = key_copy, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx) };
             }
             break :blk Value{ .object = .{ .fields = fields } };
+        },
+        .object_extend => |extend| blk: {
+            // Evaluate the base expression
+            const base_value = try evaluateExpression(arena, extend.base, env, current_dir, ctx);
+
+            // Check if base is a function - if so, treat this as function application
+            switch (base_value) {
+                .function => |function_ptr| {
+                    // Build an object from the extension fields and apply the function
+                    const fields = try arena.alloc(ObjectFieldValue, extend.fields.len);
+                    for (extend.fields, 0..) |field, i| {
+                        const key_copy = try arena.dupe(u8, field.key);
+                        fields[i] = .{ .key = key_copy, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx) };
+                    }
+                    const obj_arg = Value{ .object = .{ .fields = fields } };
+                    const bound_env = try matchPattern(arena, function_ptr.param, obj_arg, function_ptr.env);
+                    break :blk try evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx);
+                },
+                .native_fn => |native_fn| {
+                    // Build an object from the extension fields and call native function
+                    const fields = try arena.alloc(ObjectFieldValue, extend.fields.len);
+                    for (extend.fields, 0..) |field, i| {
+                        const key_copy = try arena.dupe(u8, field.key);
+                        fields[i] = .{ .key = key_copy, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx) };
+                    }
+                    const obj_arg = Value{ .object = .{ .fields = fields } };
+                    const args = [_]Value{obj_arg};
+                    break :blk try native_fn(arena, &args);
+                },
+                .object => |base_obj| {
+                    // Build the extension object with proper handling of is_patch
+                    var extension_fields = std.ArrayListUnmanaged(ObjectFieldValue){};
+                    for (extend.fields) |field| {
+                        const key_copy = try arena.dupe(u8, field.key);
+                        const value = try evaluateExpression(arena, field.value, env, current_dir, ctx);
+
+                        if (field.is_patch) {
+                            // Patch: merge with existing field if it exists and is an object
+                            const existing_value = findObjectField(base_obj, field.key);
+                            if (existing_value) |existing| {
+                                const existing_obj = switch (existing) {
+                                    .object => |o| o,
+                                    else => return error.TypeMismatch,
+                                };
+                                const value_obj = switch (value) {
+                                    .object => |o| o,
+                                    else => return error.TypeMismatch,
+                                };
+                                const merged = try mergeObjects(arena, existing_obj, value_obj);
+                                try extension_fields.append(arena, .{ .key = key_copy, .value = merged });
+                            } else {
+                                // Field doesn't exist in base, just add it
+                                try extension_fields.append(arena, .{ .key = key_copy, .value = value });
+                            }
+                        } else {
+                            // Overwrite: just use the new value
+                            try extension_fields.append(arena, .{ .key = key_copy, .value = value });
+                        }
+                    }
+
+                    // Merge base with extension
+                    const extension_obj = ObjectValue{ .fields = try extension_fields.toOwnedSlice(arena) };
+                    break :blk try mergeObjects(arena, base_obj, extension_obj);
+                },
+                else => return error.TypeMismatch,
+            }
         },
         .array_comprehension => |comp| blk: {
             var result_list = std.ArrayListUnmanaged(Value){};
