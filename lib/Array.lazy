@@ -1,0 +1,4 @@
+{
+  length: __array_length,
+  get: (arr, idx) -> __array_get (arr, idx)
+}

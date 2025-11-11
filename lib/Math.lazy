@@ -1,0 +1,5 @@
+{
+  max: (a, b) -> __math_max (a, b),
+  min: (a, b) -> __math_min (a, b),
+  abs: __math_abs
+}
