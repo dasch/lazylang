@@ -27,7 +27,7 @@ pub const TokenKind = enum {
     r_brace,
 };
 
-const Token = struct {
+pub const Token = struct {
     kind: TokenKind,
     lexeme: []const u8,
     preceded_by_newline: bool,

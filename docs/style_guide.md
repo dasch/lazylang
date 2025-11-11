@@ -40,6 +40,8 @@ point = { x: 10, y: 20 }
 user = { name: "Bob", age: 25 }
 ```
 
+Always include inner spaces in non-empty objects.
+
 ### Multi-line objects
 
 Use multi-line format for objects with more than 2-3 fields or complex values:
@@ -269,10 +271,11 @@ processData items do
 Format `when` expressions with consistent indentation:
 
 ```
-result = when value matches
-  (#ok, data) then processData data
-  (#error, msg) then logError msg
-  otherwise null
+result =
+  when value matches
+    (#ok, data) then processData data
+    (#error, msg) then logError msg
+    otherwise null
 ```
 
 For complex branches, use indentation:
@@ -280,13 +283,10 @@ For complex branches, use indentation:
 ```
 handleResponse = response -> when response matches
   (#ok, data) then
-    logSuccess data
     transformData data
   (#error, message) then
-    logError message
     defaultValue
   otherwise
-    logWarning "Unknown response"
     null
 ```
 
