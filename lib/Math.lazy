@@ -35,5 +35,5 @@
   /// Math.abs -5   // Returns 5
   /// Math.abs 10   // Returns 10
   /// ```
-  abs: __math_abs
+  abs: (n) -> __math_abs n
 }

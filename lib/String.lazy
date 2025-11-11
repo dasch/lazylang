@@ -8,7 +8,7 @@
   /// ```
   /// String.length "hello"  // Returns 5
   /// ```
-  length: __string_length,
+  length: (str) -> __string_length str,
 
   /// Concatenates two strings together.
   ///

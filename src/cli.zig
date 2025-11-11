@@ -549,7 +549,7 @@ fn buildSignature(allocator: std.mem.Allocator, field_name: []const u8, value: *
 
         for (param_names.items) |param_name| {
             try signature.appendSlice(allocator, param_name);
-            try signature.appendSlice(allocator, " -> ");
+            try signature.appendSlice(allocator, " → ");
         }
 
         current_expr = lambda.body;
