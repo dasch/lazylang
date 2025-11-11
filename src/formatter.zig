@@ -48,7 +48,7 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
     defer tokens.deinit(allocator);
 
     var src_index: usize = 0;
-    var tokenizer = evaluator.Tokenizer.init(source);
+    var tokenizer = evaluator.Tokenizer.init(source, allocator);
     while (true) {
         // Find where this token starts in source (after whitespace)
         while (src_index < source.len) {

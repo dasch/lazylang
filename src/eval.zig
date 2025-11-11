@@ -60,7 +60,7 @@ const UnaryOp = enum {
     logical_not,
 };
 
-const Expression = union(enum) {
+pub const Expression = union(enum) {
     integer: i64,
     boolean: bool,
     null_literal,
@@ -91,6 +91,7 @@ const Let = struct {
     pattern: *Pattern,
     value: *Expression,
     body: *Expression,
+    doc: ?[]const u8, // Combined documentation comments
 };
 
 const Unary = struct {
@@ -137,6 +138,7 @@ const TupleLiteral = struct {
 const ObjectField = struct {
     key: []const u8,
     value: *Expression,
+    doc: ?[]const u8, // Combined documentation comments
 };
 
 const ObjectLiteral = struct {
@@ -201,8 +203,10 @@ pub const Tokenizer = struct {
     line: usize, // current line number (1-indexed)
     column: usize, // current column number (1-indexed)
     line_start: usize, // byte offset of the current line start
+    pending_doc_comments: std.ArrayListUnmanaged([]const u8),
+    arena: std.mem.Allocator,
 
-    pub fn init(source: []const u8) Tokenizer {
+    pub fn init(source: []const u8, arena: std.mem.Allocator) Tokenizer {
         return .{
             .source = source,
             .index = 0,
@@ -210,6 +214,8 @@ pub const Tokenizer = struct {
             .line = 1,
             .column = 1,
             .line_start = 0,
+            .pending_doc_comments = .{},
+            .arena = arena,
         };
     }
 
@@ -443,6 +449,43 @@ pub const Tokenizer = struct {
                     saw_newline = true;
                     self.advance();
                 },
+                '/' => {
+                    // Check for comments
+                    if (self.index + 1 < self.source.len and self.source[self.index + 1] == '/') {
+                        // Check if it's a doc comment (///)
+                        if (self.index + 2 < self.source.len and self.source[self.index + 2] == '/') {
+                            // Documentation comment
+                            self.index += 3; // skip '///'
+
+                            // Skip leading whitespace in the comment
+                            while (self.index < self.source.len and (self.source[self.index] == ' ' or self.source[self.index] == '\t')) {
+                                self.index += 1;
+                            }
+
+                            const content_start = self.index;
+
+                            // Find end of line
+                            while (self.index < self.source.len and self.source[self.index] != '\n' and self.source[self.index] != '\r') {
+                                self.index += 1;
+                            }
+
+                            const comment_content = self.source[content_start..self.index];
+                            self.pending_doc_comments.append(self.arena, comment_content) catch {};
+
+                            // The newline will be handled in the next iteration
+                            continue;
+                        } else {
+                            // Regular comment - skip to end of line
+                            self.index += 2; // skip '//'
+                            while (self.index < self.source.len and self.source[self.index] != '\n' and self.source[self.index] != '\r') {
+                                self.index += 1;
+                            }
+                            // The newline will be handled in the next iteration
+                            continue;
+                        }
+                    }
+                    return saw_newline;
+                },
                 else => return saw_newline,
             }
         }
@@ -459,9 +502,57 @@ pub const Tokenizer = struct {
             .offset = start,
         };
     }
+
+    fn consumeDocComments(self: *Tokenizer) ?[]const u8 {
+        if (self.pending_doc_comments.items.len == 0) {
+            return null;
+        }
+
+        // Safety check: if we have way too many comments, something is wrong
+        if (self.pending_doc_comments.items.len > 1000) {
+            self.pending_doc_comments.clearRetainingCapacity();
+            return null;
+        }
+
+        // Join all doc comments with newlines
+        var total_len: usize = 0;
+        for (self.pending_doc_comments.items) |comment| {
+            const separator_len: usize = if (total_len > 0) 1 else 0;
+            const new_len = total_len +% comment.len +% separator_len; // Use wrapping addition
+            // Check for overflow
+            if (new_len < total_len or new_len < comment.len) {
+                self.pending_doc_comments.clearRetainingCapacity();
+                return null;
+            }
+            total_len = new_len;
+        }
+
+        if (total_len == 0) {
+            self.pending_doc_comments.clearRetainingCapacity();
+            return null;
+        }
+
+        var result = self.arena.alloc(u8, total_len) catch return null;
+        var offset: usize = 0;
+        for (self.pending_doc_comments.items, 0..) |comment, i| {
+            if (i > 0) {
+                result[offset] = '\n';
+                offset += 1;
+            }
+            @memcpy(result[offset .. offset + comment.len], comment);
+            offset += comment.len;
+        }
+
+        self.pending_doc_comments.clearRetainingCapacity();
+        return result;
+    }
+
+    fn clearDocComments(self: *Tokenizer) void {
+        self.pending_doc_comments.clearRetainingCapacity();
+    }
 };
 
-const Parser = struct {
+pub const Parser = struct {
     arena: std.mem.Allocator,
     tokenizer: Tokenizer,
     current: Token,
@@ -469,8 +560,8 @@ const Parser = struct {
     source: []const u8,
     error_ctx: ?*error_context.ErrorContext,
 
-    fn init(arena: std.mem.Allocator, source: []const u8) ParseError!Parser {
-        var tokenizer = Tokenizer.init(source);
+    pub fn init(arena: std.mem.Allocator, source: []const u8) ParseError!Parser {
+        var tokenizer = Tokenizer.init(source, arena);
         const first = try tokenizer.next();
         const second = try tokenizer.next();
         return .{
@@ -499,7 +590,7 @@ const Parser = struct {
         }
     }
 
-    fn parse(self: *Parser) ParseError!*Expression {
+    pub fn parse(self: *Parser) ParseError!*Expression {
         if (self.current.kind == .eof) {
             self.recordError();
             return error.ExpectedExpression;
@@ -525,6 +616,7 @@ const Parser = struct {
         };
 
         if (is_let_binding) {
+            const doc = self.tokenizer.consumeDocComments();
             const pattern = try self.parsePattern();
             try self.expect(.equals);
             const value = try self.parseLambda();
@@ -543,7 +635,7 @@ const Parser = struct {
 
             const body = try self.parseLambda();
             const node = try self.allocateExpression();
-            node.* = .{ .let = .{ .pattern = pattern, .value = value, .body = body } };
+            node.* = .{ .let = .{ .pattern = pattern, .value = value, .body = body, .doc = doc } };
             return node;
         }
 
@@ -573,7 +665,7 @@ const Parser = struct {
             try self.advance();
 
             // Parse bindings: collect them into a list
-            var bindings = std.ArrayListUnmanaged(struct { pattern: *Pattern, value: *Expression }){};
+            var bindings = std.ArrayListUnmanaged(struct { pattern: *Pattern, value: *Expression, doc: ?[]const u8 }){};
 
             while (true) {
                 // Check if we're done
@@ -591,11 +683,12 @@ const Parser = struct {
 
                 if (!is_binding) break;
 
+                const doc = self.tokenizer.consumeDocComments();
                 const pattern = try self.parsePattern();
                 try self.expect(.equals);
                 const value = try self.parseBinary(0);
 
-                try bindings.append(self.arena, .{ .pattern = pattern, .value = value });
+                try bindings.append(self.arena, .{ .pattern = pattern, .value = value, .doc = doc });
 
                 // Check for separator
                 if (self.current.kind == .semicolon) {
@@ -614,7 +707,7 @@ const Parser = struct {
                 i -= 1;
                 const binding = binding_slice[i];
                 const let_node = try self.allocateExpression();
-                let_node.* = .{ .let = .{ .pattern = binding.pattern, .value = binding.value, .body = expr } };
+                let_node.* = .{ .let = .{ .pattern = binding.pattern, .value = binding.value, .body = expr, .doc = binding.doc } };
                 expr = let_node;
             }
         }
@@ -1076,7 +1169,16 @@ const Parser = struct {
         var fields = std.ArrayListUnmanaged(ObjectField){};
 
         while (self.current.kind != .r_brace) {
-            if (self.current.kind != .identifier) return error.UnexpectedToken;
+            if (self.current.kind != .identifier) {
+                // Clear any pending doc comments if we don't find an identifier
+                self.tokenizer.clearDocComments();
+                return error.UnexpectedToken;
+            }
+
+            // Consume documentation comments that preceded this identifier
+            // These were accumulated during the last skipWhitespace() call
+            const doc = self.tokenizer.consumeDocComments();
+
             const key = self.current.lexeme;
             try self.advance();
 
@@ -1091,7 +1193,7 @@ const Parser = struct {
                 break :blk node;
             };
 
-            try fields.append(self.arena, .{ .key = key, .value = value_expr });
+            try fields.append(self.arena, .{ .key = key, .value = value_expr, .doc = doc });
 
             if (self.current.kind == .comma) {
                 try self.advance();

@@ -221,7 +221,7 @@ pub const Server = struct {
         var tokens = std.ArrayList(u32){};
         errdefer tokens.deinit(self.allocator);
 
-        var tokenizer = evaluator.Tokenizer.init(text);
+        var tokenizer = evaluator.Tokenizer.init(text, self.allocator);
 
         var prev_line: u32 = 0;
         var prev_col: u32 = 0;
