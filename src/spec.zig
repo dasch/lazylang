@@ -1,6 +1,16 @@
 const std = @import("std");
 const eval_module = @import("eval.zig");
 
+// ANSI color codes
+const Color = struct {
+    const reset = "\x1b[0m";
+    const green = "\x1b[32m";
+    const red = "\x1b[31m";
+    const cyan = "\x1b[36m";
+    const dim = "\x1b[2m";
+    const bold = "\x1b[1m";
+};
+
 pub const SpecResult = struct {
     passed: usize,
     failed: usize,
@@ -96,7 +106,7 @@ fn runTestItem(ctx: anytype, item: eval_module.Value) anyerror!void {
         .object => |obj| obj,
         else => {
             try ctx.writeIndent();
-            try ctx.writer.writeAll("✗ Error: test item is not an object\n");
+            try ctx.writer.print("{s}✗ Error: test item is not an object{s}\n", .{ Color.red, Color.reset });
             ctx.failed += 1;
             return;
         },
@@ -116,7 +126,7 @@ fn runTestItem(ctx: anytype, item: eval_module.Value) anyerror!void {
 
     if (item_type == null) {
         try ctx.writeIndent();
-        try ctx.writer.writeAll("✗ Error: test item missing type field\n");
+        try ctx.writer.print("{s}✗ Error: test item missing type field{s}\n", .{ Color.red, Color.reset });
         ctx.failed += 1;
         return;
     }
@@ -127,7 +137,7 @@ fn runTestItem(ctx: anytype, item: eval_module.Value) anyerror!void {
         try runIt(ctx, object);
     } else {
         try ctx.writeIndent();
-        try ctx.writer.print("✗ Error: unknown test item type '{s}'\n", .{item_type.?});
+        try ctx.writer.print("{s}✗ Error: unknown test item type '{s}'{s}\n", .{ Color.red, item_type.?, Color.reset });
         ctx.failed += 1;
     }
 }
@@ -153,13 +163,13 @@ fn runDescribe(ctx: anytype, desc: eval_module.ObjectValue) anyerror!void {
 
     if (description == null) {
         try ctx.writeIndent();
-        try ctx.writer.writeAll("✗ Error: describe missing description\n");
+        try ctx.writer.print("{s}✗ Error: describe missing description{s}\n", .{ Color.red, Color.reset });
         ctx.failed += 1;
         return;
     }
 
     try ctx.writeIndent();
-    try ctx.writer.print("{s}\n", .{description.?});
+    try ctx.writer.print("{s}{s}{s}\n", .{ Color.cyan, description.?, Color.reset });
 
     if (children) |ch| {
         ctx.indent += 1;
@@ -188,14 +198,14 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue) anyerror!void {
 
     if (description == null) {
         try ctx.writeIndent();
-        try ctx.writer.writeAll("✗ Error: it missing description\n");
+        try ctx.writer.print("{s}✗ Error: it missing description{s}\n", .{ Color.red, Color.reset });
         ctx.failed += 1;
         return;
     }
 
     if (test_value == null) {
         try ctx.writeIndent();
-        try ctx.writer.print("✗ {s}: missing test\n", .{description.?});
+        try ctx.writer.print("{s}✗ {s}: missing test{s}\n", .{ Color.red, description.?, Color.reset });
         ctx.failed += 1;
         return;
     }
@@ -205,7 +215,7 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue) anyerror!void {
         .object => |obj| obj,
         else => {
             try ctx.writeIndent();
-            try ctx.writer.print("✓ {s}\n", .{description.?});
+            try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, description.? });
             ctx.passed += 1;
             return;
         },
@@ -235,14 +245,14 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue) anyerror!void {
     if (is_assertion) {
         if (expected == null or actual == null) {
             try ctx.writeIndent();
-            try ctx.writer.print("✗ {s}: assertion missing expected or actual\n", .{description.?});
+            try ctx.writer.print("{s}✗ {s}: assertion missing expected or actual{s}\n", .{ Color.red, description.?, Color.reset });
             ctx.failed += 1;
             return;
         }
 
         if (valuesEqual(expected.?, actual.?)) {
             try ctx.writeIndent();
-            try ctx.writer.print("✓ {s}\n", .{description.?});
+            try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, description.? });
             ctx.passed += 1;
         } else {
             try ctx.writeIndent();
@@ -250,17 +260,17 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue) anyerror!void {
             defer ctx.allocator.free(expected_str);
             const actual_str = try eval_module.formatValue(ctx.allocator, actual.?);
             defer ctx.allocator.free(actual_str);
-            try ctx.writer.print("✗ {s}\n", .{description.?});
+            try ctx.writer.print("{s}✗ {s}{s}\n", .{ Color.red, description.?, Color.reset });
             try ctx.writeIndent();
-            try ctx.writer.print("  Expected: {s}\n", .{expected_str});
+            try ctx.writer.print("{s}  Expected: {s}{s}\n", .{ Color.dim, expected_str, Color.reset });
             try ctx.writeIndent();
-            try ctx.writer.print("  Actual:   {s}\n", .{actual_str});
+            try ctx.writer.print("{s}  Actual:   {s}{s}\n", .{ Color.dim, actual_str, Color.reset });
             ctx.failed += 1;
         }
     } else {
         // Not an assertion, just check if it's truthy
         try ctx.writeIndent();
-        try ctx.writer.print("✓ {s}\n", .{description.?});
+        try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, description.? });
         ctx.passed += 1;
     }
 }
@@ -297,12 +307,17 @@ pub fn runSpec(
     try writer.writeAll("\n");
     const total = ctx.passed + ctx.failed;
     if (ctx.failed == 0) {
-        try writer.print("✓ {d} test{s} passed\n", .{ total, if (total == 1) "" else "s" });
+        try writer.print("{s}{s}✓ {d} test{s} passed{s}\n", .{ Color.bold, Color.green, total, if (total == 1) "" else "s", Color.reset });
     } else {
-        try writer.print("{d} test{s} passed, {d} failed\n", .{
+        try writer.print("{s}{s}{d}{s} test{s} passed, {s}{d} failed{s}\n", .{
+            Color.bold,
+            Color.green,
             ctx.passed,
+            Color.reset,
             if (ctx.passed == 1) "" else "s",
+            Color.red,
             ctx.failed,
+            Color.reset,
         });
     }
 
