@@ -1,4 +1,6 @@
 const std = @import("std");
+const error_reporter = @import("error_reporter.zig");
+const error_context = @import("error_context.zig");
 
 const TokenKind = enum {
     eof,
@@ -29,6 +31,9 @@ const Token = struct {
     kind: TokenKind,
     lexeme: []const u8,
     preceded_by_newline: bool,
+    line: usize, // 1-indexed line number
+    column: usize, // 1-indexed column number
+    offset: usize, // byte offset in source
 };
 
 const TokenizerError = error{
@@ -171,9 +176,19 @@ const Tokenizer = struct {
     source: []const u8,
     index: usize,
     last_whitespace_had_newline: bool,
+    line: usize, // current line number (1-indexed)
+    column: usize, // current column number (1-indexed)
+    line_start: usize, // byte offset of the current line start
 
     pub fn init(source: []const u8) Tokenizer {
-        return .{ .source = source, .index = 0, .last_whitespace_had_newline = false };
+        return .{
+            .source = source,
+            .index = 0,
+            .last_whitespace_had_newline = false,
+            .line = 1,
+            .column = 1,
+            .line_start = 0,
+        };
     }
 
     fn next(self: *Tokenizer) TokenizerError!Token {
@@ -185,88 +200,93 @@ const Tokenizer = struct {
                 .kind = .eof,
                 .lexeme = self.source[self.source.len..self.source.len],
                 .preceded_by_newline = saw_newline,
+                .line = self.line,
+                .column = self.column,
+                .offset = self.index,
             };
         }
 
         const start = self.index;
+        const start_line = self.line;
+        const start_column = self.column;
         const char = self.source[self.index];
 
         switch (char) {
             '+' => {
-                self.index += 1;
-                return self.makeToken(.plus, start);
+                self.advance();
+                return self.makeToken(.plus, start, start_line, start_column);
             },
             '-' => {
-                self.index += 1;
+                self.advance();
                 if (self.index < self.source.len and self.source[self.index] == '>') {
-                    self.index += 1;
-                    return self.makeToken(.arrow, start);
+                    self.advance();
+                    return self.makeToken(.arrow, start, start_line, start_column);
                 }
-                return self.makeToken(.minus, start);
+                return self.makeToken(.minus, start, start_line, start_column);
             },
             '*' => {
-                self.index += 1;
-                return self.makeToken(.star, start);
+                self.advance();
+                return self.makeToken(.star, start, start_line, start_column);
             },
             '&' => {
-                self.index += 1;
+                self.advance();
                 if (self.index < self.source.len and self.source[self.index] == '&') {
-                    self.index += 1;
-                    return self.makeToken(.ampersand_ampersand, start);
+                    self.advance();
+                    return self.makeToken(.ampersand_ampersand, start, start_line, start_column);
                 }
                 return error.UnexpectedCharacter;
             },
             '|' => {
-                self.index += 1;
+                self.advance();
                 if (self.index < self.source.len and self.source[self.index] == '|') {
-                    self.index += 1;
-                    return self.makeToken(.pipe_pipe, start);
+                    self.advance();
+                    return self.makeToken(.pipe_pipe, start, start_line, start_column);
                 }
                 return error.UnexpectedCharacter;
             },
             '!' => {
-                self.index += 1;
-                return self.makeToken(.bang, start);
+                self.advance();
+                return self.makeToken(.bang, start, start_line, start_column);
             },
             ',' => {
-                self.index += 1;
-                return self.makeToken(.comma, start);
+                self.advance();
+                return self.makeToken(.comma, start, start_line, start_column);
             },
             ':' => {
-                self.index += 1;
-                return self.makeToken(.colon, start);
+                self.advance();
+                return self.makeToken(.colon, start, start_line, start_column);
             },
             ';' => {
-                self.index += 1;
-                return self.makeToken(.semicolon, start);
+                self.advance();
+                return self.makeToken(.semicolon, start, start_line, start_column);
             },
             '=' => {
-                self.index += 1;
-                return self.makeToken(.equals, start);
+                self.advance();
+                return self.makeToken(.equals, start, start_line, start_column);
             },
             '(' => {
-                self.index += 1;
-                return self.makeToken(.l_paren, start);
+                self.advance();
+                return self.makeToken(.l_paren, start, start_line, start_column);
             },
             ')' => {
-                self.index += 1;
-                return self.makeToken(.r_paren, start);
+                self.advance();
+                return self.makeToken(.r_paren, start, start_line, start_column);
             },
             '[' => {
-                self.index += 1;
-                return self.makeToken(.l_bracket, start);
+                self.advance();
+                return self.makeToken(.l_bracket, start, start_line, start_column);
             },
             ']' => {
-                self.index += 1;
-                return self.makeToken(.r_bracket, start);
+                self.advance();
+                return self.makeToken(.r_bracket, start, start_line, start_column);
             },
             '{' => {
-                self.index += 1;
-                return self.makeToken(.l_brace, start);
+                self.advance();
+                return self.makeToken(.l_brace, start, start_line, start_column);
             },
             '}' => {
-                self.index += 1;
-                return self.makeToken(.r_brace, start);
+                self.advance();
+                return self.makeToken(.r_brace, start, start_line, start_column);
             },
             'a'...'z', 'A'...'Z', '_' => {
                 return self.consumeIdentifier();
@@ -289,68 +309,93 @@ const Tokenizer = struct {
 
     fn consumeIdentifier(self: *Tokenizer) Token {
         const start = self.index;
-        while (self.index < self.source.len) : (self.index += 1) {
+        const start_line = self.line;
+        const start_column = self.column;
+        while (self.index < self.source.len) {
             const c = self.source[self.index];
             switch (c) {
-                'a'...'z', 'A'...'Z', '0'...'9', '_' => continue,
+                'a'...'z', 'A'...'Z', '0'...'9', '_' => self.advance(),
                 else => break,
             }
         }
-        return self.makeToken(.identifier, start);
+        return self.makeToken(.identifier, start, start_line, start_column);
     }
 
     fn consumeSymbol(self: *Tokenizer) Token {
         const start = self.index;
-        self.index += 1; // skip '#'
+        const start_line = self.line;
+        const start_column = self.column;
+        self.advance(); // skip '#'
 
         // Symbol must be followed by an identifier character
         if (self.index >= self.source.len) {
-            return self.makeToken(.symbol, start);
+            return self.makeToken(.symbol, start, start_line, start_column);
         }
 
         const c = self.source[self.index];
         if (!((c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or c == '_')) {
-            return self.makeToken(.symbol, start);
+            return self.makeToken(.symbol, start, start_line, start_column);
         }
 
         // Consume the identifier part
-        while (self.index < self.source.len) : (self.index += 1) {
+        while (self.index < self.source.len) {
             const ch = self.source[self.index];
             switch (ch) {
-                'a'...'z', 'A'...'Z', '0'...'9', '_' => continue,
+                'a'...'z', 'A'...'Z', '0'...'9', '_' => self.advance(),
                 else => break,
             }
         }
-        return self.makeToken(.symbol, start);
+        return self.makeToken(.symbol, start, start_line, start_column);
     }
 
     fn consumeNumber(self: *Tokenizer) Token {
         const start = self.index;
-        while (self.index < self.source.len) : (self.index += 1) {
+        const start_line = self.line;
+        const start_column = self.column;
+        while (self.index < self.source.len) {
             const c = self.source[self.index];
             switch (c) {
-                '0'...'9' => continue,
+                '0'...'9' => self.advance(),
                 else => break,
             }
         }
-        return self.makeToken(.number, start);
+        return self.makeToken(.number, start, start_line, start_column);
     }
 
     fn consumeString(self: *Tokenizer, quote_char: u8) TokenizerError!Token {
-        self.index += 1; // skip opening quote
+        const start_line = self.line;
+        const start_column = self.column;
+        self.advance(); // skip opening quote
         const start_content = self.index;
-        while (self.index < self.source.len) : (self.index += 1) {
+        while (self.index < self.source.len) {
             if (self.source[self.index] == quote_char) {
                 const token = Token{
                     .kind = .string,
                     .lexeme = self.source[start_content..self.index],
                     .preceded_by_newline = self.last_whitespace_had_newline,
+                    .line = start_line,
+                    .column = start_column,
+                    .offset = start_content - 1, // include the opening quote
                 };
-                self.index += 1; // skip closing quote
+                self.advance(); // skip closing quote
                 return token;
             }
+            self.advance();
         }
         return error.UnterminatedString;
+    }
+
+    fn advance(self: *Tokenizer) void {
+        if (self.index < self.source.len) {
+            if (self.source[self.index] == '\n') {
+                self.line += 1;
+                self.column = 1;
+                self.line_start = self.index + 1;
+            } else {
+                self.column += 1;
+            }
+            self.index += 1;
+        }
     }
 
     fn skipWhitespace(self: *Tokenizer) bool {
@@ -359,18 +404,18 @@ const Tokenizer = struct {
             const c = self.source[self.index];
             switch (c) {
                 ' ', '\t' => {
-                    self.index += 1;
+                    self.advance();
                 },
                 '\r' => {
                     saw_newline = true;
-                    self.index += 1;
+                    self.advance();
                     if (self.index < self.source.len and self.source[self.index] == '\n') {
-                        self.index += 1;
+                        self.advance();
                     }
                 },
                 '\n' => {
                     saw_newline = true;
-                    self.index += 1;
+                    self.advance();
                 },
                 else => return saw_newline,
             }
@@ -378,11 +423,14 @@ const Tokenizer = struct {
         return saw_newline;
     }
 
-    fn makeToken(self: *Tokenizer, kind: TokenKind, start: usize) Token {
+    fn makeToken(self: *Tokenizer, kind: TokenKind, start: usize, start_line: usize, start_column: usize) Token {
         return .{
             .kind = kind,
             .lexeme = self.source[start..self.index],
             .preceded_by_newline = self.last_whitespace_had_newline,
+            .line = start_line,
+            .column = start_column,
+            .offset = start,
         };
     }
 };
@@ -392,6 +440,8 @@ const Parser = struct {
     tokenizer: Tokenizer,
     current: Token,
     lookahead: Token,
+    source: []const u8,
+    error_ctx: ?*error_context.ErrorContext,
 
     fn init(arena: std.mem.Allocator, source: []const u8) ParseError!Parser {
         var tokenizer = Tokenizer.init(source);
@@ -402,13 +452,37 @@ const Parser = struct {
             .tokenizer = tokenizer,
             .current = first,
             .lookahead = second,
+            .source = source,
+            .error_ctx = null,
         };
     }
 
+    fn setErrorContext(self: *Parser, ctx: *error_context.ErrorContext) void {
+        self.error_ctx = ctx;
+    }
+
+    fn recordError(self: *Parser) void {
+        if (self.error_ctx) |ctx| {
+            ctx.setErrorLocation(
+                self.current.line,
+                self.current.column,
+                self.current.offset,
+                self.current.lexeme.len,
+            );
+            ctx.setErrorToken(self.current.lexeme);
+        }
+    }
+
     fn parse(self: *Parser) ParseError!*Expression {
-        if (self.current.kind == .eof) return error.ExpectedExpression;
+        if (self.current.kind == .eof) {
+            self.recordError();
+            return error.ExpectedExpression;
+        }
         const expr = try self.parseLambda();
-        if (self.current.kind != .eof) return error.UnexpectedToken;
+        if (self.current.kind != .eof) {
+            self.recordError();
+            return error.UnexpectedToken;
+        }
         return expr;
     }
 
@@ -828,7 +902,10 @@ const Parser = struct {
             .l_paren => return self.parseTupleOrParenthesized(),
             .l_bracket => return self.parseArray(),
             .l_brace => return self.parseObject(),
-            else => return error.ExpectedExpression,
+            else => {
+                self.recordError();
+                return error.ExpectedExpression;
+            },
         }
     }
 
@@ -1113,7 +1190,10 @@ const Parser = struct {
     }
 
     fn expect(self: *Parser, kind: TokenKind) ParseError!void {
-        if (self.current.kind != kind) return error.UnexpectedToken;
+        if (self.current.kind != kind) {
+            self.recordError();
+            return error.UnexpectedToken;
+        }
         try self.advance();
     }
 
@@ -1195,6 +1275,7 @@ pub const EvalError = ParseError || std.mem.Allocator.Error || std.process.GetEn
 const EvalContext = struct {
     allocator: std.mem.Allocator,
     lazy_paths: [][]const u8,
+    error_ctx: ?*error_context.ErrorContext = null,
 };
 
 const ModuleFile = struct {
@@ -1696,32 +1777,100 @@ pub const EvalOutput = struct {
     }
 };
 
+/// Extended eval output that includes error context
+pub const EvalResult = struct {
+    output: ?EvalOutput,
+    error_ctx: error_context.ErrorContext,
+
+    pub fn deinit(self: *EvalResult) void {
+        if (self.output) |*out| {
+            out.deinit();
+        }
+        self.error_ctx.deinit();
+    }
+};
+
+fn evalSourceWithContext(
+    allocator: std.mem.Allocator,
+    source: []const u8,
+    current_dir: ?[]const u8,
+) EvalError!EvalResult {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    errdefer arena.deinit();
+
+    const lazy_paths = try collectLazyPaths(arena.allocator());
+    var err_ctx = error_context.ErrorContext.init(allocator);
+    err_ctx.setSource(source);
+
+    const context = EvalContext{
+        .allocator = allocator,
+        .lazy_paths = lazy_paths,
+        .error_ctx = &err_ctx,
+    };
+
+    var parser = try Parser.init(arena.allocator(), source);
+    parser.setErrorContext(&err_ctx);
+    const expression = parser.parse() catch {
+        arena.deinit();
+        return EvalResult{
+            .output = null,
+            .error_ctx = err_ctx,
+        };
+    };
+
+    const builtin_env = try createBuiltinEnvironment(arena.allocator());
+    const value = evaluateExpression(arena.allocator(), expression, builtin_env, current_dir, &context) catch {
+        arena.deinit();
+        return EvalResult{
+            .output = null,
+            .error_ctx = err_ctx,
+        };
+    };
+    const formatted = try formatValue(allocator, value);
+
+    arena.deinit();
+    return EvalResult{
+        .output = .{
+            .allocator = allocator,
+            .text = formatted,
+        },
+        .error_ctx = err_ctx,
+    };
+}
+
 fn evalSource(
     allocator: std.mem.Allocator,
     source: []const u8,
     current_dir: ?[]const u8,
 ) EvalError!EvalOutput {
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
+    var result = try evalSourceWithContext(allocator, source, current_dir);
+    defer result.error_ctx.deinit();
 
-    const lazy_paths = try collectLazyPaths(arena.allocator());
-    const context = EvalContext{ .allocator = allocator, .lazy_paths = lazy_paths };
-
-    var parser = try Parser.init(arena.allocator(), source);
-    const expression = try parser.parse();
-
-    const builtin_env = try createBuiltinEnvironment(arena.allocator());
-    const value = try evaluateExpression(arena.allocator(), expression, builtin_env, current_dir, &context);
-    const formatted = try formatValue(allocator, value);
-
-    return .{
-        .allocator = allocator,
-        .text = formatted,
-    };
+    if (result.output) |output| {
+        return output;
+    } else {
+        // This shouldn't happen since we catch errors in evalSourceWithContext
+        return error.UnknownIdentifier;
+    }
 }
 
 pub fn evalInline(allocator: std.mem.Allocator, source: []const u8) EvalError!EvalOutput {
     return try evalSource(allocator, source, null);
+}
+
+pub fn evalInlineWithContext(allocator: std.mem.Allocator, source: []const u8) EvalError!EvalResult {
+    return try evalSourceWithContext(allocator, source, null);
+}
+
+pub fn evalFileWithContext(allocator: std.mem.Allocator, path: []const u8) EvalError!EvalResult {
+    var file = try std.fs.cwd().openFile(path, .{});
+    defer file.close();
+
+    const contents = try file.readToEndAlloc(allocator, std.math.maxInt(usize));
+    defer allocator.free(contents);
+
+    const directory = std.fs.path.dirname(path);
+    return try evalSourceWithContext(allocator, contents, directory);
 }
 
 pub fn evalFile(allocator: std.mem.Allocator, path: []const u8) EvalError!EvalOutput {
