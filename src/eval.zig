@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const TokenKind = enum {
+pub const TokenKind = enum {
     eof,
     identifier,
     number,
@@ -167,7 +167,7 @@ const ObjectPatternField = struct {
     pattern: *Pattern, // Either identifier for extraction or literal for matching
 };
 
-const Tokenizer = struct {
+pub const Tokenizer = struct {
     source: []const u8,
     index: usize,
     last_whitespace_had_newline: bool,
@@ -176,7 +176,7 @@ const Tokenizer = struct {
         return .{ .source = source, .index = 0, .last_whitespace_had_newline = false };
     }
 
-    fn next(self: *Tokenizer) TokenizerError!Token {
+    pub fn next(self: *Tokenizer) TokenizerError!Token {
         const saw_newline = self.skipWhitespace();
         self.last_whitespace_had_newline = saw_newline;
 

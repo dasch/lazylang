@@ -13,6 +13,18 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/eval.zig"),
     });
 
+    // Create JSON-RPC module for LSP
+    const json_rpc_module = b.addModule("json_rpc", .{
+        .root_source_file = b.path("src/json_rpc.zig"),
+    });
+
+    // Create LSP module
+    const lsp_module = b.createModule(.{
+        .root_source_file = b.path("src/lsp.zig"),
+    });
+    lsp_module.addImport("json_rpc", json_rpc_module);
+    lsp_module.addImport("evaluator", evaluator_module);
+
     // Create executable module
     const exe_module = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
@@ -29,6 +41,24 @@ pub fn build(b: *std.Build) void {
     });
 
     b.installArtifact(exe);
+
+    // Create LSP server executable
+    const lsp_exe_module = b.createModule(.{
+        .root_source_file = b.path("src/lsp_main.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    lsp_exe_module.addImport("lsp", lsp_module);
+    lsp_exe_module.addImport("json_rpc", json_rpc_module);
+    lsp_exe_module.addImport("evaluator", evaluator_module);
+
+    const lsp_exe = b.addExecutable(.{
+        .name = "lazylang-lsp",
+        .root_module = lsp_exe_module,
+    });
+
+    b.installArtifact(lsp_exe);
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
@@ -87,9 +117,25 @@ pub fn build(b: *std.Build) void {
         .root_module = examples_test_module,
     });
 
+    // LSP test module
+    const lsp_test_module = b.createModule(.{
+        .root_source_file = b.path("tests/lsp_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    lsp_test_module.addImport("lsp", lsp_module);
+    lsp_test_module.addImport("json_rpc", json_rpc_module);
+    lsp_test_module.addImport("evaluator", evaluator_module);
+
+    const lsp_tests = b.addTest(.{
+        .root_module = lsp_test_module,
+    });
+
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&b.addRunArtifact(tests).step);
     test_step.dependOn(&b.addRunArtifact(examples_tests).step);
+    test_step.dependOn(&b.addRunArtifact(lsp_tests).step);
 
     for (eval_test_files) |test_file| {
         const eval_test_module = b.createModule(.{

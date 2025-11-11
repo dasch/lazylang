@@ -1,0 +1,54 @@
+// Example Lazylang file to test syntax highlighting
+
+// Simple arithmetic
+let x = 42;
+let y = x + 10;
+
+// Functions
+let add = fn(a) -> fn(b) -> a + b;
+let result = add(5)(3);
+
+// Conditionals
+let max = fn(a) -> fn(b) ->
+  if a > b then a else b;
+
+// Pattern matching
+let describe = fn(value) ->
+  when value matches
+    | 0 -> "zero"
+    | 1 -> "one"
+    | n -> "many";
+
+// Arrays and objects
+let numbers = [1, 2, 3, 4, 5];
+let person = { name: "Alice", age: 30 };
+
+// Symbols
+let status = #active;
+let state = #pending;
+
+// Strings
+let greeting = "Hello, world!";
+let name = 'Lazylang';
+
+// Booleans and null
+let isActive = true;
+let isComplete = false;
+let empty = null;
+
+// Logical operators
+let condition = true && false || !true;
+
+// Let bindings with where
+let compute = fn(x) ->
+  let result = x * factor + offset
+  where
+    factor = 10,
+    offset = 5;
+
+// Do expressions
+let processData = fn(data) ->
+  do
+    let cleaned = cleanData(data);
+    let validated = validate(cleaned);
+    transform(validated);
