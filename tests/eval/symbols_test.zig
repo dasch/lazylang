@@ -18,7 +18,7 @@ test "evaluates symbol in array" {
 }
 
 test "evaluates symbol in object" {
-    try expectEvaluates("{ status: #active }", "{status: #active}");
+    try expectEvaluates("{ status: #active }", "{ status: #active }");
 }
 
 test "evaluates pattern matching with symbol" {

@@ -58,7 +58,7 @@ test "evaluates simple object comprehension from array" {
         \\names = ["Alice", "Bob", "Charlie"]
         \\{ [name]: 1 for name in names }
     ,
-        "{Alice: 1, Bob: 1, Charlie: 1}",
+        "{ Alice: 1, Bob: 1, Charlie: 1 }",
     );
 }
 
@@ -66,7 +66,7 @@ test "evaluates object comprehension with transformation" {
     try expectEvaluates(
         \\{ [x]: x + 1 for x in [1, 2, 3] }
     ,
-        "{1: 2, 2: 3, 3: 4}",
+        "{ 1: 2, 2: 3, 3: 4 }",
     );
 }
 
@@ -75,7 +75,7 @@ test "evaluates object comprehension from object" {
         \\obj = { a: 1, b: 2, c: 3 }
         \\{ [key]: value + 10 for (key, value) in obj }
     ,
-        "{a: 11, b: 12, c: 13}",
+        "{ a: 11, b: 12, c: 13 }",
     );
 }
 
@@ -83,7 +83,7 @@ test "evaluates object comprehension with when filter" {
     try expectEvaluates(
         \\{ [x]: y for (x, y) in [("a", true), ("b", false), ("c", true)] when y }
     ,
-        "{a: true, c: true}",
+        "{ a: true, c: true }",
     );
 }
 
@@ -91,7 +91,7 @@ test "evaluates object comprehension with multiple for clauses" {
     try expectEvaluates(
         \\{ [x + y]: x for x in [1, 2] for y in [10, 20] }
     ,
-        "{11: 1, 21: 1, 12: 2, 22: 2}",
+        "{ 11: 1, 21: 1, 12: 2, 22: 2 }",
     );
 }
 

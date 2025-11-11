@@ -18,7 +18,7 @@ test "evaluates boolean in tuple" {
 }
 
 test "evaluates boolean in object" {
-    try expectEvaluates("{ a: true, b: false }", "{a: true, b: false}");
+    try expectEvaluates("{ a: true, b: false }", "{ a: true, b: false }");
 }
 
 test "evaluates mixed boolean and integer tuple" {

@@ -14,7 +14,7 @@ test "evaluates null in tuple" {
 }
 
 test "evaluates null in object" {
-    try expectEvaluates("{ value: null }", "{value: null}");
+    try expectEvaluates("{ value: null }", "{ value: null }");
 }
 
 test "evaluates mixed types with null" {

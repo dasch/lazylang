@@ -2372,16 +2372,20 @@ pub fn formatValue(allocator: std.mem.Allocator, value: Value) ![]u8 {
             var builder = std.ArrayList(u8){};
             errdefer builder.deinit(allocator);
 
-            try builder.append(allocator, '{');
-            for (obj.fields, 0..) |field, i| {
-                if (i != 0) try builder.appendSlice(allocator, ", ");
-                try builder.appendSlice(allocator, field.key);
-                try builder.appendSlice(allocator, ": ");
-                const formatted = try formatValue(allocator, field.value);
-                defer allocator.free(formatted);
-                try builder.appendSlice(allocator, formatted);
+            if (obj.fields.len == 0) {
+                try builder.appendSlice(allocator, "{}");
+            } else {
+                try builder.appendSlice(allocator, "{ ");
+                for (obj.fields, 0..) |field, i| {
+                    if (i != 0) try builder.appendSlice(allocator, ", ");
+                    try builder.appendSlice(allocator, field.key);
+                    try builder.appendSlice(allocator, ": ");
+                    const formatted = try formatValue(allocator, field.value);
+                    defer allocator.free(formatted);
+                    try builder.appendSlice(allocator, formatted);
+                }
+                try builder.appendSlice(allocator, " }");
             }
-            try builder.append(allocator, '}');
 
             break :blk try builder.toOwnedSlice(allocator);
         },

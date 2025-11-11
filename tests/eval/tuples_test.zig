@@ -34,7 +34,7 @@ test "evaluates tuple with arrays" {
 }
 
 test "evaluates tuple with objects" {
-    try expectEvaluates("({ a: 1 }, { b: 2 })", "({a: 1}, {b: 2})");
+    try expectEvaluates("({ a: 1 }, { b: 2 })", "({ a: 1 }, { b: 2 })");
 }
 
 test "evaluates tuple with strings" {

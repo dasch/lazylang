@@ -36,5 +36,5 @@ test "evaluates where in array" {
 }
 
 test "evaluates where in object" {
-    try expectEvaluates("{ a: x where x = 100 }", "{a: 100}");
+    try expectEvaluates("{ a: x where x = 100 }", "{ a: 100 }");
 }

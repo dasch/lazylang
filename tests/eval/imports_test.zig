@@ -20,5 +20,5 @@ test "imports modules from search paths" {
 
     std.process.changeCurDir(module_path) catch unreachable;
 
-    try expectEvaluates("import 'Helpers/ArrayHelpers'", "{reverse: <function>}");
+    try expectEvaluates("import 'Helpers/ArrayHelpers'", "{ reverse: <function> }");
 }
