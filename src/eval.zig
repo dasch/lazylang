@@ -76,6 +76,8 @@ const Expression = union(enum) {
     tuple: TupleLiteral,
     object: ObjectLiteral,
     import_expr: ImportExpr,
+    array_comprehension: ArrayComprehension,
+    object_comprehension: ObjectComprehension,
 };
 
 const Lambda = struct {
@@ -141,6 +143,24 @@ const ObjectLiteral = struct {
 
 const ImportExpr = struct {
     path: []const u8,
+};
+
+const ForClause = struct {
+    pattern: *Pattern,
+    iterable: *Expression,
+};
+
+const ArrayComprehension = struct {
+    body: *Expression,
+    clauses: []ForClause,
+    filter: ?*Expression,
+};
+
+const ObjectComprehension = struct {
+    key: *Expression,
+    value: *Expression,
+    clauses: []ForClause,
+    filter: ?*Expression,
 };
 
 const Pattern = union(enum) {
