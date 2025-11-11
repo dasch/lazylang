@@ -13,6 +13,7 @@ pub const TokenKind = enum {
     semicolon,
     equals,
     arrow,
+    backslash,
     plus,
     minus,
     star,
@@ -52,6 +53,7 @@ const BinaryOp = enum {
     multiply,
     logical_and,
     logical_or,
+    pipeline,
 };
 
 const UnaryOp = enum {
@@ -322,6 +324,10 @@ pub const Tokenizer = struct {
             },
             '#' => {
                 return self.consumeSymbol();
+            },
+            '\\' => {
+                self.advance();
+                return self.makeToken(.backslash, start, start_line, start_column);
             },
             else => return error.UnexpectedCharacter,
         }
@@ -705,7 +711,20 @@ const Parser = struct {
 
             const op_token = self.current;
             try self.advance();
-            const right = try self.parseBinary(precedence + 1);
+
+            // For pipeline operator, allow lambdas on the right side
+            // Check if the right side is a lambda pattern
+            const right = if (op_token.kind == .backslash and self.isLambdaPattern())
+                blk: {
+                    const param = try self.parsePattern();
+                    try self.expect(.arrow);
+                    const body = try self.parseLambda();
+                    const lambda_node = try self.allocateExpression();
+                    lambda_node.* = .{ .lambda = .{ .param = param, .body = body } };
+                    break :blk lambda_node;
+                }
+            else
+                try self.parseBinary(precedence + 1);
 
             const node = try self.allocateExpression();
             node.* = .{ .binary = .{
@@ -715,6 +734,7 @@ const Parser = struct {
                     .star => .multiply,
                     .ampersand_ampersand => .logical_and,
                     .pipe_pipe => .logical_or,
+                    .backslash => .pipeline,
                     else => unreachable,
                 },
                 .left = left,
@@ -1360,6 +1380,7 @@ const Parser = struct {
 
 fn getPrecedence(kind: TokenKind) ?u32 {
     return switch (kind) {
+        .backslash => 2,
         .pipe_pipe => 3,
         .ampersand_ampersand => 4,
         .plus, .minus => 5,
@@ -1705,6 +1726,21 @@ pub fn evaluateExpression(
                         else => return error.TypeMismatch,
                     };
                     break :blk2 Value{ .boolean = left_bool or right_bool };
+                },
+                .pipeline => blk2: {
+                    // Pipeline operator: x \ f evaluates to f(x)
+                    // The left side is the value, the right side is the function
+                    switch (right_value) {
+                        .function => |function_ptr| {
+                            const bound_env = try matchPattern(arena, function_ptr.param, left_value, function_ptr.env);
+                            break :blk2 try evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx);
+                        },
+                        .native_fn => |native_fn| {
+                            const args = [_]Value{left_value};
+                            break :blk2 try native_fn(arena, &args);
+                        },
+                        else => return error.ExpectedFunction,
+                    }
                 },
             };
             break :blk result;

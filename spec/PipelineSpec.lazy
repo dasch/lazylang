@@ -1,0 +1,43 @@
+{ describe, it, mustEq } = import 'Spec'
+
+double = x -> x * 2
+addOne = x -> x + 1
+square = x -> x * x
+
+describe "Pipeline Operator" [
+  it "applies a function to a value" do
+    mustEq 10 (5 \ double)
+
+  it "chains multiple functions" do
+    mustEq 11 (5 \ double \ addOne)
+
+  it "evaluates left-to-right" do
+    mustEq 12 (5 \ addOne \ double)
+
+  it "has lower precedence than arithmetic" do
+    mustEq 14 (5 + 2 \ double)
+
+  it "chains three functions" do
+    mustEq 121 (5 \ double \ addOne \ square)
+
+  it "works with multi-line pipelines" do
+    result = 42
+      \ double
+      \ addOne
+    mustEq 85 result
+
+  it "works with multi-line lambda pipelines" do
+    result = 10
+      \ (x -> x * 2)
+      \ (x -> x + 5)
+    mustEq 25 result
+
+  it "works with inline lambda in pipeline" do
+    mustEq 85 (42 \ double \ (x -> x + 1))
+
+  it "chains multiple inline lambdas" do
+    mustEq 625 (10 \ (x -> x * 2) \ (x -> x + 5) \ (x -> x * x))
+
+  it "mixes named functions and inline lambdas" do
+    mustEq 400 (5 \ double \ (x -> x + 10) \ square)
+]
