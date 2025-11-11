@@ -368,6 +368,20 @@ fn runDocs(
         else => return err,
     };
 
+    // Collect all module info
+    var modules_list = std.ArrayList(ModuleInfo){};
+    defer {
+        for (modules_list.items) |module| {
+            allocator.free(module.name);
+            for (module.items) |item| {
+                allocator.free(item.name);
+                allocator.free(item.doc);
+            }
+            allocator.free(module.items);
+        }
+        modules_list.deinit(allocator);
+    }
+
     // Check if input is a directory or file
     const stat = std.fs.cwd().statFile(input_path.?) catch |err| switch (err) {
         error.FileNotFound => {
@@ -378,23 +392,33 @@ fn runDocs(
     };
 
     if (stat.kind == .directory) {
-        // Process directory recursively
-        try generateDocsForDirectory(allocator, input_path.?, output_dir, stdout, stderr);
+        // Collect all modules from directory
+        try collectModulesFromDirectory(allocator, input_path.?, &modules_list, stdout);
     } else {
-        // Process single file
-        try generateDocs(allocator, input_path.?, output_dir, stdout, stderr);
+        // Collect single module
+        try stdout.print("Extracting docs from {s}...\n", .{input_path.?});
+        const module_info = try extractModuleInfo(allocator, input_path.?);
+        try modules_list.append(allocator, module_info);
+    }
+
+    // Generate index.html
+    try generateIndexHtml(allocator, modules_list.items, output_dir);
+
+    // Generate HTML for each module
+    for (modules_list.items) |module| {
+        try stdout.print("Generating HTML for {s}...\n", .{module.name});
+        try generateModuleHtml(allocator, module, modules_list.items, output_dir);
     }
 
     try stdout.print("Documentation generated in {s}/\n", .{output_dir});
     return .{ .exit_code = 0 };
 }
 
-fn generateDocsForDirectory(
+fn collectModulesFromDirectory(
     allocator: std.mem.Allocator,
     dir_path: []const u8,
-    output_dir: []const u8,
+    modules: *std.ArrayList(ModuleInfo),
     stdout: anytype,
-    stderr: anytype,
 ) !void {
     var dir = try std.fs.cwd().openDir(dir_path, .{ .iterate = true });
     defer dir.close();
@@ -412,21 +436,16 @@ fn generateDocsForDirectory(
         const full_path = try std.fs.path.join(allocator, &[_][]const u8{ dir_path, entry.path });
         defer allocator.free(full_path);
 
-        try stdout.print("Generating docs for {s}...\n", .{full_path});
-        try generateDocs(allocator, full_path, output_dir, stdout, stderr);
+        try stdout.print("Extracting docs from {s}...\n", .{full_path});
+        const module_info = try extractModuleInfo(allocator, full_path);
+        try modules.append(allocator, module_info);
     }
 }
 
-fn generateDocs(
+fn extractModuleInfo(
     allocator: std.mem.Allocator,
     input_path: []const u8,
-    output_dir: []const u8,
-    stdout: anytype,
-    stderr: anytype,
-) !void {
-    _ = stdout;
-    _ = stderr;
-
+) !ModuleInfo {
     // Parse the file to extract documentation
     const source = try std.fs.cwd().readFileAlloc(allocator, input_path, 100 * 1024 * 1024);
     defer allocator.free(source);
@@ -443,23 +462,52 @@ fn generateDocs(
 
     try extractDocs(expression, &doc_items, allocator);
 
-    // Generate HTML
-    const module_name = std.fs.path.stem(input_path);
-    const html_filename = try std.fmt.allocPrint(allocator, "{s}/{s}.html", .{ output_dir, module_name });
+    const module_name = try allocator.dupe(u8, std.fs.path.stem(input_path));
+
+    return ModuleInfo{
+        .name = module_name,
+        .items = try doc_items.toOwnedSlice(allocator),
+    };
+}
+
+fn generateModuleHtml(
+    allocator: std.mem.Allocator,
+    module: ModuleInfo,
+    all_modules: []const ModuleInfo,
+    output_dir: []const u8,
+) !void {
+    const html_filename = try std.fmt.allocPrint(allocator, "{s}/{s}.html", .{ output_dir, module.name });
     defer allocator.free(html_filename);
 
-    const html_file = try std.fs.cwd().createFile(html_filename, .{});
+    var html_file = try std.fs.cwd().createFile(html_filename, .{});
     defer html_file.close();
 
-    try writeHtmlDocs(&html_file, module_name, doc_items.items);
+    try writeHtmlDocs(html_file, module.name, module.items, all_modules);
+}
 
-    doc_items.deinit(allocator);
+fn generateIndexHtml(
+    allocator: std.mem.Allocator,
+    modules: []const ModuleInfo,
+    output_dir: []const u8,
+) !void {
+    const html_filename = try std.fmt.allocPrint(allocator, "{s}/index.html", .{output_dir});
+    defer allocator.free(html_filename);
+
+    var html_file = try std.fs.cwd().createFile(html_filename, .{});
+    defer html_file.close();
+
+    try writeIndexHtmlContent(html_file, modules);
 }
 
 const DocItem = struct {
     name: []const u8,
     doc: []const u8,
     kind: DocKind,
+};
+
+const ModuleInfo = struct {
+    name: []const u8,
+    items: []const DocItem,
 };
 
 const DocKind = enum {
@@ -477,8 +525,8 @@ fn extractDocs(expr: *const evaluator.Expression, items: *std.ArrayListUnmanaged
                     else => "unknown",
                 };
                 try items.append(allocator, .{
-                    .name = name,
-                    .doc = doc,
+                    .name = try allocator.dupe(u8, name),
+                    .doc = try allocator.dupe(u8, doc),
                     .kind = .variable,
                 });
             }
@@ -488,8 +536,8 @@ fn extractDocs(expr: *const evaluator.Expression, items: *std.ArrayListUnmanaged
             for (obj.fields) |field| {
                 if (field.doc) |doc| {
                     try items.append(allocator, .{
-                        .name = field.key,
-                        .doc = doc,
+                        .name = try allocator.dupe(u8, field.key),
+                        .doc = try allocator.dupe(u8, doc),
                         .kind = .field,
                     });
                 } else {
@@ -628,7 +676,97 @@ fn renderInlineMarkdown(allocator: std.mem.Allocator, result: *std.ArrayListUnma
     }
 }
 
-fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocItem) !void {
+fn writeIndexHtmlContent(file: anytype, modules: []const ModuleInfo) !void {
+    try file.writeAll("<!DOCTYPE html>\n");
+    try file.writeAll("<html lang=\"en\">\n");
+    try file.writeAll("<head>\n");
+    try file.writeAll("  <meta charset=\"UTF-8\">\n");
+    try file.writeAll("  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n");
+    try file.writeAll("  <title>Documentation</title>\n");
+    try file.writeAll("  <style>\n");
+    try file.writeAll(
+        \\    * { margin: 0; padding: 0; box-sizing: border-box; }
+        \\    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; background: #f5f5f5; display: flex; }
+        \\    .sidebar { width: 250px; background: #2c3e50; color: white; min-height: 100vh; position: fixed; top: 0; left: 0; overflow-y: auto; }
+        \\    .sidebar h2 { padding: 20px; font-size: 1.2em; border-bottom: 1px solid #34495e; }
+        \\    .sidebar ul { list-style: none; }
+        \\    .sidebar li { border-bottom: 1px solid #34495e; }
+        \\    .sidebar a { display: block; padding: 12px 20px; color: #ecf0f1; text-decoration: none; transition: background 0.2s; }
+        \\    .sidebar a:hover { background: #34495e; }
+        \\    .sidebar a.active { background: #3498db; font-weight: 600; }
+        \\    .main { margin-left: 250px; flex: 1; }
+        \\    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        \\    header { background: #2c3e50; color: white; padding: 30px 0; margin-bottom: 30px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        \\    h1 { font-size: 2.5em; font-weight: 300; }
+        \\    .module-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+        \\    .module-card { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        \\    .module-card h2 { color: #2c3e50; margin-bottom: 15px; font-size: 1.5em; }
+        \\    .module-card h2 a { color: #2c3e50; text-decoration: none; }
+        \\    .module-card h2 a:hover { color: #3498db; }
+        \\    .module-card .item-count { color: #7f8c8d; font-size: 0.9em; margin-top: 10px; }
+        \\    @media (max-width: 768px) { .sidebar { display: none; } .main { margin-left: 0; } .container { padding: 10px; } .module-list { grid-template-columns: 1fr; } }
+        \\
+    );
+    try file.writeAll("  </style>\n");
+    try file.writeAll("</head>\n");
+    try file.writeAll("<body>\n");
+
+    // Sidebar with module list
+    try file.writeAll("  <div class=\"sidebar\">\n");
+    try file.writeAll("    <h2>Modules</h2>\n");
+    try file.writeAll("    <ul>\n");
+    for (modules) |module| {
+        try file.writeAll("      <li><a href=\"");
+        try file.writeAll(module.name);
+        try file.writeAll(".html\">");
+        try file.writeAll(module.name);
+        try file.writeAll("</a></li>\n");
+    }
+    try file.writeAll("    </ul>\n");
+    try file.writeAll("  </div>\n");
+
+    // Main content
+    try file.writeAll("  <div class=\"main\">\n");
+    try file.writeAll("    <header>\n");
+    try file.writeAll("      <div class=\"container\">\n");
+    try file.writeAll("        <h1>Documentation</h1>\n");
+    try file.writeAll("      </div>\n");
+    try file.writeAll("    </header>\n");
+    try file.writeAll("    <div class=\"container\">\n");
+    try file.writeAll("      <div class=\"module-list\">\n");
+
+    // Module cards
+    for (modules) |module| {
+        try file.writeAll("        <div class=\"module-card\">\n");
+        try file.writeAll("          <h2><a href=\"");
+        try file.writeAll(module.name);
+        try file.writeAll(".html\">");
+        try file.writeAll(module.name);
+        try file.writeAll("</a></h2>\n");
+        try file.writeAll("          <div class=\"item-count\">");
+
+        // Count items
+        var buffer: [32]u8 = undefined;
+        const count_str = try std.fmt.bufPrint(&buffer, "{d}", .{module.items.len});
+        try file.writeAll(count_str);
+        try file.writeAll(" ");
+        if (module.items.len == 1) {
+            try file.writeAll("item");
+        } else {
+            try file.writeAll("items");
+        }
+        try file.writeAll("</div>\n");
+        try file.writeAll("        </div>\n");
+    }
+
+    try file.writeAll("      </div>\n");
+    try file.writeAll("    </div>\n");
+    try file.writeAll("  </div>\n");
+    try file.writeAll("</body>\n");
+    try file.writeAll("</html>\n");
+}
+
+fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocItem, modules: []const ModuleInfo) !void {
     try file.writeAll("<!DOCTYPE html>\n");
     try file.writeAll("<html lang=\"en\">\n");
     try file.writeAll("<head>\n");
@@ -640,7 +778,15 @@ fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocItem)
     try file.writeAll("  <style>\n");
     try file.writeAll(
         \\    * { margin: 0; padding: 0; box-sizing: border-box; }
-        \\    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; background: #f5f5f5; }
+        \\    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; background: #f5f5f5; display: flex; }
+        \\    .sidebar { width: 250px; background: #2c3e50; color: white; min-height: 100vh; position: fixed; top: 0; left: 0; overflow-y: auto; }
+        \\    .sidebar h2 { padding: 20px; font-size: 1.2em; border-bottom: 1px solid #34495e; }
+        \\    .sidebar ul { list-style: none; }
+        \\    .sidebar li { border-bottom: 1px solid #34495e; }
+        \\    .sidebar a { display: block; padding: 12px 20px; color: #ecf0f1; text-decoration: none; transition: background 0.2s; }
+        \\    .sidebar a:hover { background: #34495e; }
+        \\    .sidebar a.active { background: #3498db; font-weight: 600; }
+        \\    .main { margin-left: 250px; flex: 1; }
         \\    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
         \\    header { background: #2c3e50; color: white; padding: 30px 0; margin-bottom: 30px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         \\    h1 { font-size: 2.5em; font-weight: 300; }
@@ -657,20 +803,47 @@ fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocItem)
         \\    .doc-item .doc-content strong { font-weight: 600; color: #2c3e50; }
         \\    .doc-item .doc-content li { margin-left: 20px; margin-bottom: 5px; }
         \\    .no-results { text-align: center; padding: 40px; color: #999; }
-        \\    @media (max-width: 768px) { .container { padding: 10px; } .doc-item { padding: 15px; } }
+        \\    @media (max-width: 768px) { .sidebar { display: none; } .main { margin-left: 0; } .container { padding: 10px; } .doc-item { padding: 15px; } }
         \\
     );
     try file.writeAll("  </style>\n");
     try file.writeAll("</head>\n");
     try file.writeAll("<body>\n");
-    try file.writeAll("  <header>\n");
-    try file.writeAll("    <div class=\"container\">\n");
-    try file.writeAll("      <h1>");
+
+    // Sidebar
+    try file.writeAll("  <div class=\"sidebar\">\n");
+
+    // Home link if there are multiple modules
+    if (modules.len > 1) {
+        try file.writeAll("    <div style=\"padding: 15px; border-bottom: 1px solid #34495e;\">\n");
+        try file.writeAll("      <a href=\"index.html\" style=\"color: #3498db; text-decoration: none;\">← All Modules</a>\n");
+        try file.writeAll("    </div>\n");
+    }
+
+    try file.writeAll("    <h2>");
+    try file.writeAll(module_name);
+    try file.writeAll("</h2>\n");
+    try file.writeAll("    <ul>\n");
+    for (items) |item| {
+        try file.writeAll("      <li><a href=\"#");
+        try file.writeAll(item.name);
+        try file.writeAll("\">");
+        try file.writeAll(item.name);
+        try file.writeAll("</a></li>\n");
+    }
+    try file.writeAll("    </ul>\n");
+    try file.writeAll("  </div>\n");
+
+    // Main content
+    try file.writeAll("  <div class=\"main\">\n");
+    try file.writeAll("    <header>\n");
+    try file.writeAll("      <div class=\"container\">\n");
+    try file.writeAll("        <h1>");
     try file.writeAll(module_name);
     try file.writeAll("</h1>\n");
-    try file.writeAll("    </div>\n");
-    try file.writeAll("  </header>\n");
-    try file.writeAll("  <div class=\"container\">\n");
+    try file.writeAll("      </div>\n");
+    try file.writeAll("    </header>\n");
+    try file.writeAll("    <div class=\"container\">\n");
     try file.writeAll("    <div class=\"search-box\">\n");
     try file.writeAll("      <input type=\"text\" id=\"search\" placeholder=\"Search functions and values...\" />\n");
     try file.writeAll("    </div>\n");
@@ -683,7 +856,9 @@ fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocItem)
     const temp_allocator = fba.allocator();
 
     for (items) |item| {
-        try file.writeAll("      <div class=\"doc-item\" data-name=\"");
+        try file.writeAll("      <div class=\"doc-item\" id=\"");
+        try file.writeAll(item.name);
+        try file.writeAll("\" data-name=\"");
         try file.writeAll(item.name);
         try file.writeAll("\">\n");
         try file.writeAll("        <h2>");
@@ -717,6 +892,7 @@ fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocItem)
         try file.writeAll("      <div class=\"no-results\">No documentation found</div>\n");
     }
 
+    try file.writeAll("    </div>\n");
     try file.writeAll("    </div>\n");
     try file.writeAll("  </div>\n");
     try file.writeAll("  <script>\n");
