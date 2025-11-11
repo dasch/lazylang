@@ -764,7 +764,11 @@ const Parser = struct {
                         std.mem.eql(u8, self.current.lexeme, "else") or
                         std.mem.eql(u8, self.current.lexeme, "matches") or
                         std.mem.eql(u8, self.current.lexeme, "otherwise") or
-                        std.mem.eql(u8, self.current.lexeme, "where")) {
+                        std.mem.eql(u8, self.current.lexeme, "where") or
+                        std.mem.eql(u8, self.current.lexeme, "for") or
+                        std.mem.eql(u8, self.current.lexeme, "in") or
+                        std.mem.eql(u8, self.current.lexeme, "when"))
+                    {
                         break;
                     }
                     const argument = try self.parsePrimary();
@@ -932,25 +936,40 @@ const Parser = struct {
     fn parseArray(self: *Parser) ParseError!*Expression {
         try self.expect(.l_bracket);
 
+        // Empty array
+        if (self.current.kind == .r_bracket) {
+            try self.advance();
+            const node = try self.allocateExpression();
+            node.* = .{ .array = .{ .elements = &[_]*Expression{} } };
+            return node;
+        }
+
+        // Parse first element
+        const first_element = try self.parseLambda();
+
+        // Check if this is a comprehension by looking for 'for' keyword
+        const is_comprehension = self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "for");
+
+        if (is_comprehension) {
+            return self.parseArrayComprehension(first_element);
+        }
+
+        // Regular array: continue parsing elements
         var elements = std.ArrayListUnmanaged(*Expression){};
+        try elements.append(self.arena, first_element);
 
         while (self.current.kind != .r_bracket) {
-            const element = try self.parseLambda();
-            try elements.append(self.arena, element);
-
             if (self.current.kind == .comma) {
                 try self.advance();
                 if (self.current.kind == .r_bracket) break;
-                continue;
+            } else if (self.current.preceded_by_newline) {
+                // Allow newline-separated elements
+            } else {
+                return error.UnexpectedToken;
             }
 
-            if (self.current.kind == .r_bracket) break;
-
-            if (self.current.preceded_by_newline) {
-                continue;
-            }
-
-            return error.UnexpectedToken;
+            const element = try self.parseLambda();
+            try elements.append(self.arena, element);
         }
 
         try self.expect(.r_bracket);
@@ -958,6 +977,47 @@ const Parser = struct {
         const slice = try elements.toOwnedSlice(self.arena);
         const node = try self.allocateExpression();
         node.* = .{ .array = .{ .elements = slice } };
+        return node;
+    }
+
+    fn parseArrayComprehension(self: *Parser, body: *Expression) ParseError!*Expression {
+        var clauses = std.ArrayListUnmanaged(ForClause){};
+
+        // Parse for clauses
+        while (self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "for")) {
+            try self.advance(); // consume 'for'
+
+            // Parse pattern
+            const pattern = try self.parsePattern();
+
+            // Expect 'in'
+            if (self.current.kind != .identifier or !std.mem.eql(u8, self.current.lexeme, "in")) {
+                self.recordError();
+                return error.UnexpectedToken;
+            }
+            try self.advance(); // consume 'in'
+
+            // Parse iterable expression
+            const iterable = try self.parseBinary(0);
+
+            try clauses.append(self.arena, .{ .pattern = pattern, .iterable = iterable });
+        }
+
+        // Parse optional 'when' filter
+        var filter: ?*Expression = null;
+        if (self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "when")) {
+            try self.advance(); // consume 'when'
+            filter = try self.parseBinary(0);
+        }
+
+        try self.expect(.r_bracket);
+
+        const node = try self.allocateExpression();
+        node.* = .{ .array_comprehension = .{
+            .body = body,
+            .clauses = try clauses.toOwnedSlice(self.arena),
+            .filter = filter,
+        } };
         return node;
     }
 
