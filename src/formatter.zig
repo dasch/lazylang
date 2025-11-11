@@ -277,8 +277,8 @@ pub fn formatFile(allocator: std.mem.Allocator, file_path: []const u8) Formatter
 fn needsSpaceBefore(prev: evaluator.TokenKind, current: evaluator.TokenKind, brace_stack: []const BraceInfo) bool {
     _ = brace_stack; // Not currently used, but may be needed for future rules
 
-    // Space before opening paren after number/identifier (function call)
-    if (current == .l_paren and (prev == .number or prev == .identifier)) {
+    // Space before opening paren after number/identifier/symbol (function call)
+    if (current == .l_paren and (prev == .number or prev == .identifier or prev == .symbol)) {
         return true;
     }
 

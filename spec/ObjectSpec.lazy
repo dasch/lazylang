@@ -1,5 +1,5 @@
-{ describe, it, mustEq } = import 'Spec'
-{ get } = import 'Object'
+{ describe, it, mustEq } = import "Spec"
+{ get } = import "Object"
 
 describe "Object" [
   describe "get" [
