@@ -6,17 +6,10 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    const stdout = std.fs.File{ .handle = std.posix.STDOUT_FILENO };
-    const stderr = std.fs.File{ .handle = std.posix.STDERR_FILENO };
-
-    var stdout_buffer: [4096]u8 = undefined;
-    var stderr_buffer: [4096]u8 = undefined;
-
-    var stdout_writer = stdout.writer(&stdout_buffer);
-    var stderr_writer = stderr.writer(&stderr_buffer);
-
-    const stdout_file = &stdout_writer.interface;
-    const stderr_file = &stderr_writer.interface;
+    var stdout_buffer = std.ArrayList(u8){};
+    defer stdout_buffer.deinit(allocator);
+    var stderr_buffer = std.ArrayList(u8){};
+    defer stderr_buffer.deinit(allocator);
 
     var args_iter = std.process.args();
     defer args_iter.deinit();
@@ -28,11 +21,19 @@ pub fn main() !void {
         try args_list.append(allocator, arg);
     }
 
-    const result = try cli.run(allocator, args_list.items, stdout_file, stderr_file);
+    const result = try cli.run(
+        allocator,
+        args_list.items,
+        stdout_buffer.writer(allocator),
+        stderr_buffer.writer(allocator),
+    );
 
-    // Flush output buffers before exiting
-    try stdout_file.flush();
-    try stderr_file.flush();
+    // Write buffered output to actual stdout/stderr
+    const stdout_file = std.fs.File{ .handle = std.posix.STDOUT_FILENO };
+    const stderr_file = std.fs.File{ .handle = std.posix.STDERR_FILENO };
+
+    _ = try stdout_file.writeAll(stdout_buffer.items);
+    _ = try stderr_file.writeAll(stderr_buffer.items);
 
     std.process.exit(result.exit_code);
 }
