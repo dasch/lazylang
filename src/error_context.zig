@@ -1,0 +1,111 @@
+const std = @import("std");
+const error_reporter = @import("error_reporter.zig");
+
+/// Thread-local error context that captures the last error location
+/// This is a workaround for Zig's error system which doesn't allow attaching data to errors
+pub const ErrorContext = struct {
+    last_error_location: ?error_reporter.SourceLocation = null,
+    last_error_token_lexeme: ?[]const u8 = null,
+    source: []const u8 = "",
+    identifiers: std.ArrayList([]const u8),
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator) ErrorContext {
+        return .{
+            .identifiers = std.ArrayList([]const u8){},
+            .allocator = allocator,
+        };
+    }
+
+    pub fn deinit(self: *ErrorContext) void {
+        self.identifiers.deinit(self.allocator);
+    }
+
+    pub fn setSource(self: *ErrorContext, source: []const u8) void {
+        self.source = source;
+    }
+
+    pub fn setErrorLocation(self: *ErrorContext, line: usize, column: usize, offset: usize, length: usize) void {
+        self.last_error_location = .{
+            .line = line,
+            .column = column,
+            .offset = offset,
+            .length = length,
+        };
+    }
+
+    pub fn setErrorToken(self: *ErrorContext, lexeme: []const u8) void {
+        self.last_error_token_lexeme = lexeme;
+    }
+
+    pub fn registerIdentifier(self: *ErrorContext, name: []const u8) !void {
+        try self.identifiers.append(self.allocator, name);
+    }
+
+    pub fn clearError(self: *ErrorContext) void {
+        self.last_error_location = null;
+        self.last_error_token_lexeme = null;
+    }
+
+    /// Find similar identifiers using Levenshtein distance
+    pub fn findSimilarIdentifiers(self: *ErrorContext, target: []const u8, allocator: std.mem.Allocator) !?[]const u8 {
+        if (self.identifiers.items.len == 0) return null;
+
+        var best_match: ?[]const u8 = null;
+        var best_distance: usize = std.math.maxInt(usize);
+
+        for (self.identifiers.items) |ident| {
+            const distance = levenshteinDistance(target, ident);
+            // Only suggest if distance is small relative to target length
+            if (distance < best_distance and distance <= target.len / 2 + 1) {
+                best_distance = distance;
+                best_match = ident;
+            }
+        }
+
+        if (best_match) |match| {
+            return try std.fmt.allocPrint(allocator, "Did you mean '{s}'?", .{match});
+        }
+
+        return null;
+    }
+};
+
+/// Calculate Levenshtein distance between two strings
+fn levenshteinDistance(s1: []const u8, s2: []const u8) usize {
+    if (s1.len == 0) return s2.len;
+    if (s2.len == 0) return s1.len;
+
+    // Use a single array for dynamic programming
+    var prev_row = std.heap.page_allocator.alloc(usize, s2.len + 1) catch return std.math.maxInt(usize);
+    defer std.heap.page_allocator.free(prev_row);
+
+    var curr_row = std.heap.page_allocator.alloc(usize, s2.len + 1) catch return std.math.maxInt(usize);
+    defer std.heap.page_allocator.free(curr_row);
+
+    // Initialize first row
+    for (prev_row, 0..) |*cell, j| {
+        cell.* = j;
+    }
+
+    // Calculate distances
+    for (s1, 0..) |c1, i| {
+        curr_row[0] = i + 1;
+
+        for (s2, 0..) |c2, j| {
+            const cost: usize = if (c1 == c2) 0 else 1;
+            const deletion = prev_row[j + 1] + 1;
+            const insertion = curr_row[j] + 1;
+            const substitution = prev_row[j] + cost;
+
+            curr_row[j + 1] = @min(deletion, @min(insertion, substitution));
+        }
+
+        // Swap rows
+        const temp = prev_row;
+        prev_row = curr_row;
+        curr_row = temp;
+    }
+
+    return prev_row[s2.len];
+}
