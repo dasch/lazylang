@@ -167,7 +167,7 @@ const ObjectComprehension = struct {
     filter: ?*Expression,
 };
 
-const Pattern = union(enum) {
+pub const Pattern = union(enum) {
     identifier: []const u8,
     integer: i64,
     boolean: bool,

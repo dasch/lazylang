@@ -375,6 +375,7 @@ fn runDocs(
             allocator.free(module.name);
             for (module.items) |item| {
                 allocator.free(item.name);
+                allocator.free(item.signature);
                 allocator.free(item.doc);
             }
             allocator.free(module.items);
@@ -501,6 +502,7 @@ fn generateIndexHtml(
 
 const DocItem = struct {
     name: []const u8,
+    signature: []const u8, // Full signature like "min: a -> b ->"
     doc: []const u8,
     kind: DocKind,
 };
@@ -515,6 +517,47 @@ const DocKind = enum {
     field,
 };
 
+fn extractParamNames(pattern: *const evaluator.Pattern, names: *std.ArrayList([]const u8), allocator: std.mem.Allocator) !void {
+    switch (pattern.*) {
+        .identifier => |ident| {
+            try names.append(allocator, ident);
+        },
+        .tuple => |tuple| {
+            for (tuple.elements) |elem| {
+                try extractParamNames(elem, names, allocator);
+            }
+        },
+        else => {},
+    }
+}
+
+fn buildSignature(allocator: std.mem.Allocator, field_name: []const u8, value: *const evaluator.Expression) ![]const u8 {
+    var signature = std.ArrayList(u8){};
+    defer signature.deinit(allocator);
+
+    try signature.appendSlice(allocator, field_name);
+    try signature.appendSlice(allocator, ": ");
+
+    // Extract parameter names if it's a lambda
+    var current_expr = value;
+    while (current_expr.* == .lambda) {
+        const lambda = current_expr.lambda;
+
+        var param_names = std.ArrayList([]const u8){};
+        defer param_names.deinit(allocator);
+        try extractParamNames(lambda.param, &param_names, allocator);
+
+        for (param_names.items) |param_name| {
+            try signature.appendSlice(allocator, param_name);
+            try signature.appendSlice(allocator, " -> ");
+        }
+
+        current_expr = lambda.body;
+    }
+
+    return signature.toOwnedSlice(allocator);
+}
+
 fn extractDocs(expr: *const evaluator.Expression, items: *std.ArrayListUnmanaged(DocItem), allocator: std.mem.Allocator) !void {
     switch (expr.*) {
         .let => |let_expr| {
@@ -524,8 +567,10 @@ fn extractDocs(expr: *const evaluator.Expression, items: *std.ArrayListUnmanaged
                     .identifier => |ident| ident,
                     else => "unknown",
                 };
+                const signature = try buildSignature(allocator, name, let_expr.value);
                 try items.append(allocator, .{
                     .name = try allocator.dupe(u8, name),
+                    .signature = signature,
                     .doc = try allocator.dupe(u8, doc),
                     .kind = .variable,
                 });
@@ -535,8 +580,10 @@ fn extractDocs(expr: *const evaluator.Expression, items: *std.ArrayListUnmanaged
         .object => |obj| {
             for (obj.fields) |field| {
                 if (field.doc) |doc| {
+                    const signature = try buildSignature(allocator, field.key, field.value);
                     try items.append(allocator, .{
                         .name = try allocator.dupe(u8, field.key),
+                        .signature = signature,
                         .doc = try allocator.dupe(u8, doc),
                         .kind = .field,
                     });
@@ -862,11 +909,8 @@ fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocItem,
         try file.writeAll(item.name);
         try file.writeAll("\">\n");
         try file.writeAll("        <h2>");
-        try file.writeAll(item.name);
+        try file.writeAll(item.signature);
         try file.writeAll("</h2>\n");
-        try file.writeAll("        <span class=\"kind\">");
-        try file.writeAll(@tagName(item.kind));
-        try file.writeAll("</span>\n");
         try file.writeAll("        <div class=\"doc-content\">\n");
 
         // Render markdown to HTML
