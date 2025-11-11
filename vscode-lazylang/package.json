@@ -1,8 +1,8 @@
 {
   "name": "lazylang",
   "displayName": "Lazylang",
-  "description": "Language support for Lazylang with LSP-powered features",
-  "version": "0.1.0",
+  "description": "Language support for Lazylang with LSP-powered features and formatting",
+  "version": "0.2.0",
   "publisher": "lazylang",
   "engines": {
     "vscode": "^1.75.0"
@@ -10,9 +10,7 @@
   "categories": [
     "Programming Languages"
   ],
-  "activationEvents": [
-    "onLanguage:lazylang"
-  ],
+  "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
     "languages": [
