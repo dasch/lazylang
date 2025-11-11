@@ -18,7 +18,6 @@ pub fn arrayLength(arena: std.mem.Allocator, args: []const eval.Value) eval.Eval
 }
 
 pub fn arrayGet(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
-    _ = arena;
     if (args.len != 1) return error.WrongNumberOfArguments;
 
     const tuple_arg = switch (args[0]) {
@@ -39,10 +38,14 @@ pub fn arrayGet(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalErr
     };
 
     if (index < 0 or index >= array.elements.len) {
-        return error.InvalidArgument;
+        return eval.Value{ .symbol = "#outOfBounds" };
     }
 
-    return array.elements[@intCast(index)];
+    // Return (#ok, value)
+    const result_elements = try arena.alloc(eval.Value, 2);
+    result_elements[0] = eval.Value{ .symbol = "#ok" };
+    result_elements[1] = array.elements[@intCast(index)];
+    return eval.Value{ .tuple = .{ .elements = result_elements } };
 }
 
 // String builtins
@@ -207,7 +210,6 @@ pub fn objectValues(arena: std.mem.Allocator, args: []const eval.Value) eval.Eva
 }
 
 pub fn objectGet(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
-    _ = arena;
     if (args.len != 1) return error.WrongNumberOfArguments;
 
     const tuple_arg = switch (args[0]) {
@@ -229,11 +231,15 @@ pub fn objectGet(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalEr
 
     for (obj.fields) |field| {
         if (std.mem.eql(u8, field.key, key)) {
-            return field.value;
+            // Return (#ok, value)
+            const result_elements = try arena.alloc(eval.Value, 2);
+            result_elements[0] = eval.Value{ .symbol = "#ok" };
+            result_elements[1] = field.value;
+            return eval.Value{ .tuple = .{ .elements = result_elements } };
         }
     }
 
-    return eval.Value.null_value;
+    return eval.Value{ .symbol = "#noSuchKey" };
 }
 
 // Utility to create a curried native function wrapper
