@@ -1137,17 +1137,19 @@ fn getPrecedence(kind: TokenKind) ?u32 {
     };
 }
 
-const Environment = struct {
+pub const Environment = struct {
     parent: ?*Environment,
     name: []const u8,
     value: Value,
 };
 
-const FunctionValue = struct {
+pub const FunctionValue = struct {
     param: *Pattern,
     body: *Expression,
     env: ?*Environment,
 };
+
+pub const NativeFn = *const fn (arena: std.mem.Allocator, args: []const Value) EvalError!Value;
 
 pub const Value = union(enum) {
     integer: i64,
@@ -1155,6 +1157,7 @@ pub const Value = union(enum) {
     null_value,
     symbol: []const u8,
     function: *FunctionValue,
+    native_fn: NativeFn,
     array: ArrayValue,
     tuple: TupleValue,
     object: ObjectValue,
@@ -1178,13 +1181,15 @@ pub const ObjectValue = struct {
     fields: []ObjectFieldValue,
 };
 
-const EvalError = ParseError || std.mem.Allocator.Error || std.process.GetEnvVarOwnedError || std.fs.File.OpenError || std.fs.File.ReadError || error{
+pub const EvalError = ParseError || std.mem.Allocator.Error || std.process.GetEnvVarOwnedError || std.fs.File.OpenError || std.fs.File.ReadError || error{
     UnknownIdentifier,
     TypeMismatch,
     ExpectedFunction,
     ModuleNotFound,
     Overflow,
     FileTooBig,
+    WrongNumberOfArguments,
+    InvalidArgument,
 };
 
 const EvalContext = struct {
@@ -1268,7 +1273,7 @@ fn openImportFile(ctx: *const EvalContext, import_path: []const u8, current_dir:
     return error.ModuleNotFound;
 }
 
-fn matchPattern(
+pub fn matchPattern(
     arena: std.mem.Allocator,
     pattern: *Pattern,
     value: Value,
@@ -1380,7 +1385,7 @@ fn matchPattern(
     };
 }
 
-fn evaluateExpression(
+pub fn evaluateExpression(
     arena: std.mem.Allocator,
     expr: *Expression,
     env: ?*Environment,
@@ -1396,7 +1401,7 @@ fn evaluateExpression(
             const resolved = lookup(env, name) orelse return error.UnknownIdentifier;
             break :blk resolved;
         },
-        .string_literal => |value| .{ .string = value },
+        .string_literal => |value| .{ .string = try arena.dupe(u8, value) },
         .lambda => |lambda| blk: {
             const function = try arena.create(FunctionValue);
             function.* = .{ .param = lambda.param, .body = lambda.body, .env = env };
@@ -1511,14 +1516,18 @@ fn evaluateExpression(
             const function_value = try evaluateExpression(arena, application.function, env, current_dir, ctx);
             const argument_value = try evaluateExpression(arena, application.argument, env, current_dir, ctx);
 
-            const function_ptr = switch (function_value) {
-                .function => |fn_ptr| fn_ptr,
+            switch (function_value) {
+                .function => |function_ptr| {
+                    const bound_env = try matchPattern(arena, function_ptr.param, argument_value, function_ptr.env);
+                    break :blk try evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx);
+                },
+                .native_fn => |native_fn| {
+                    // Native functions receive a single argument (could be a tuple for multiple args)
+                    const args = [_]Value{argument_value};
+                    break :blk try native_fn(arena, &args);
+                },
                 else => return error.ExpectedFunction,
-            };
-
-            const bound_env = try matchPattern(arena, function_ptr.param, argument_value, function_ptr.env);
-
-            break :blk try evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx);
+            }
         },
         .array => |array| blk: {
             const values = try arena.alloc(Value, array.elements.len);
@@ -1537,7 +1546,8 @@ fn evaluateExpression(
         .object => |object| blk: {
             const fields = try arena.alloc(ObjectFieldValue, object.fields.len);
             for (object.fields, 0..) |field, i| {
-                fields[i] = .{ .key = field.key, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx) };
+                const key_copy = try arena.dupe(u8, field.key);
+                fields[i] = .{ .key = key_copy, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx) };
             }
             break :blk Value{ .object = .{ .fields = fields } };
         },
@@ -1560,8 +1570,46 @@ fn importModule(
     var parser = try Parser.init(arena, contents);
     const expression = try parser.parse();
 
+    const builtin_env = try createBuiltinEnvironment(arena);
     const module_dir = std.fs.path.dirname(module_file.path);
-    return evaluateExpression(arena, expression, null, module_dir, ctx);
+    return evaluateExpression(arena, expression, builtin_env, module_dir, ctx);
+}
+
+pub fn createBuiltinEnvironment(arena: std.mem.Allocator) !?*Environment {
+    const builtins = @import("builtins.zig");
+
+    var env: ?*Environment = null;
+
+    // Array builtins
+    env = try addBuiltin(arena, env, "__array_length", builtins.arrayLength);
+    env = try addBuiltin(arena, env, "__array_get", builtins.arrayGet);
+
+    // String builtins
+    env = try addBuiltin(arena, env, "__string_length", builtins.stringLength);
+    env = try addBuiltin(arena, env, "__string_concat", builtins.stringConcat);
+    env = try addBuiltin(arena, env, "__string_split", builtins.stringSplit);
+
+    // Math builtins
+    env = try addBuiltin(arena, env, "__math_max", builtins.mathMax);
+    env = try addBuiltin(arena, env, "__math_min", builtins.mathMin);
+    env = try addBuiltin(arena, env, "__math_abs", builtins.mathAbs);
+
+    // Object builtins
+    env = try addBuiltin(arena, env, "__object_keys", builtins.objectKeys);
+    env = try addBuiltin(arena, env, "__object_values", builtins.objectValues);
+    env = try addBuiltin(arena, env, "__object_get", builtins.objectGet);
+
+    return env;
+}
+
+fn addBuiltin(arena: std.mem.Allocator, parent: ?*Environment, name: []const u8, function: NativeFn) !?*Environment {
+    const new_env = try arena.create(Environment);
+    new_env.* = .{
+        .parent = parent,
+        .name = name,
+        .value = Value{ .native_fn = function },
+    };
+    return new_env;
 }
 
 fn lookup(env: ?*Environment, name: []const u8) ?Value {
@@ -1582,6 +1630,7 @@ pub fn formatValue(allocator: std.mem.Allocator, value: Value) ![]u8 {
         .null_value => try std.fmt.allocPrint(allocator, "null", .{}),
         .symbol => |s| try std.fmt.allocPrint(allocator, "{s}", .{s}),
         .function => try std.fmt.allocPrint(allocator, "<function>", .{}),
+        .native_fn => try std.fmt.allocPrint(allocator, "<native function>", .{}),
         .array => |arr| blk: {
             var builder = std.ArrayList(u8){};
             errdefer builder.deinit(allocator);
@@ -1657,7 +1706,8 @@ fn evalSource(
     var parser = try Parser.init(arena.allocator(), source);
     const expression = try parser.parse();
 
-    const value = try evaluateExpression(arena.allocator(), expression, null, current_dir, &context);
+    const builtin_env = try createBuiltinEnvironment(arena.allocator());
+    const value = try evaluateExpression(arena.allocator(), expression, builtin_env, current_dir, &context);
     const formatted = try formatValue(allocator, value);
 
     return .{
@@ -1698,6 +1748,7 @@ pub fn evalFileValue(
     var parser = try Parser.init(arena, contents);
     const expression = try parser.parse();
 
+    const builtin_env = try createBuiltinEnvironment(arena);
     const directory = std.fs.path.dirname(path);
-    return try evaluateExpression(arena, expression, null, directory, &context);
+    return try evaluateExpression(arena, expression, builtin_env, directory, &context);
 }

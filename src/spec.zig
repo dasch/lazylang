@@ -49,6 +49,7 @@ fn valuesEqual(a: eval_module.Value, b: eval_module.Value) bool {
             else => false,
         },
         .function => false, // Functions are not comparable
+        .native_fn => false, // Native functions are not comparable
         .array => |av| switch (b) {
             .array => |bv| blk: {
                 if (av.elements.len != bv.elements.len) break :blk false;
