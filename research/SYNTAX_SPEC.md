@@ -2,7 +2,8 @@
 
 ## 1. Source Files and Lexical Structure
 - Lazylang files use the `.lazy` extension and every valid JSON document is a valid Lazylang module, preserving JSON lexical rules for numbers, strings, booleans, and `null`. 【F:README.md†L7-L16】
-- Single-line comments begin with `//` and continue to the end of the line, as shown in object literals and comprehensions. 【F:README.md†L91-L142】
+- Single-line comments begin with `//` and continue to the end of the line. These comments are ignored by the parser and have no semantic meaning. 【F:README.md†L317-L334】
+- Documentation comments begin with `///` and continue to the end of the line. These comments are Markdown-formatted and are attached to the construct they document (the next non-comment token or declaration). Multiple consecutive documentation comments are combined into a single documentation block. Documentation comments are stored alongside the value they document and can be extracted for generating documentation. 【F:README.md†L336-L362】
 - Whitespace is significant in multi-line expressions: subsequent lines in an expression block must be indented by two spaces. Semicolons can be used as explicit separators when not relying on indentation. 【F:README.md†L145-L162】
 
 ## 2. Primitive Values and Tags

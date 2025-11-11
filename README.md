@@ -314,6 +314,53 @@ In general, files/modules should export a single object containing all public va
   parse = str -> ...
 ```
 
+## Comments
+
+Lazylang supports two types of comments:
+
+### Regular comments
+
+Regular comments start with `//` and continue to the end of the line:
+
+```
+// This is a regular comment
+x = 42  // This is also a comment
+
+obj = {
+  // Comments can appear inside objects
+  name: "John"
+  age: 30
+}
+```
+
+### Documentation comments
+
+Documentation comments start with `///` and are used to document fields, functions, and other values. They support Markdown formatting and are attached to the construct they document:
+
+```
+/// Calculates the sum of two numbers.
+/// Returns the result as an integer.
+add = (a, b) -> a + b
+
+user = {
+  /// The user's full name
+  name: "John Doe"
+
+  /// The user's age in years
+  age: 30
+
+  /// Contact information for the user
+  contact {
+    /// Primary email address
+    email: "john@example.com"
+  }
+}
+```
+
+Documentation comments must appear immediately before the construct they document (on the preceding line or lines). Multiple consecutive documentation comments are combined into a single documentation block.
+
+These documentation comments can be extracted using the `lazy docs` command to generate HTML documentation.
+
 ## Testing
 
 ```
@@ -335,12 +382,13 @@ describe "List" [
 
 ## The `lazy` CLI
 
-The `lazy` command line tool can evaluate and execute Lazylang files, and is used for a variety of tasks, such as running tests.
+The `lazy` command line tool can evaluate and execute Lazylang files, and is used for a variety of tasks, such as running tests and generating documentation.
 
 ```
 lazy eval path/to/file.lazy
 lazy run path/to/file.lazy --manifest output/dir
 lazy test tests/
+lazy docs path/to/file.lazy --output docs/
 ```
 
 ### Evaluation and execution
@@ -367,3 +415,18 @@ The object has two fields:
     ...
     target = args[1]
 ```
+
+### Documentation generation
+
+The `lazy docs` command generates HTML documentation from documentation comments in your code:
+
+```
+lazy docs lib/MyModule.lazy --output docs/
+```
+
+This will create an HTML file in the `docs/` directory with all documented values and fields from the module. The generated documentation includes:
+* A searchable index of all documented items
+* Syntax highlighting and formatting
+* Mobile-responsive design
+
+Documentation comments are extracted from `///` comments that appear immediately before variable definitions and object fields.
