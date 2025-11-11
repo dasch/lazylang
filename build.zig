@@ -133,10 +133,30 @@ pub fn build(b: *std.Build) void {
         .root_module = lsp_test_module,
     });
 
+    // Formatter module
+    const formatter_module = b.addModule("formatter", .{
+        .root_source_file = b.path("src/formatter.zig"),
+    });
+
+    // Formatter test module
+    const formatter_test_module = b.createModule(.{
+        .root_source_file = b.path("tests/formatter_tests.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    formatter_test_module.addImport("evaluator", evaluator_module);
+    formatter_test_module.addImport("formatter", formatter_module);
+
+    const formatter_tests = b.addTest(.{
+        .root_module = formatter_test_module,
+    });
+
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&b.addRunArtifact(tests).step);
     test_step.dependOn(&b.addRunArtifact(examples_tests).step);
     test_step.dependOn(&b.addRunArtifact(lsp_tests).step);
+    test_step.dependOn(&b.addRunArtifact(formatter_tests).step);
 
     for (eval_test_files) |test_file| {
         const eval_test_module = b.createModule(.{

@@ -1,0 +1,14 @@
+point = {x: 10, y: 20}
+
+person = {
+name: "Alice"
+age: 30
+}
+
+config = {nested: {value: 42}}
+
+arr = [1, 2, 3]
+
+add = x -> y -> x + y
+
+result = if true then "yes" else "no"
