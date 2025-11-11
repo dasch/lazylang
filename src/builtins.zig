@@ -117,6 +117,70 @@ pub fn stringSplit(arena: std.mem.Allocator, args: []const eval.Value) eval.Eval
     return eval.Value{ .array = .{ .elements = try parts.toOwnedSlice(arena) } };
 }
 
+pub fn stringToUpper(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const str = switch (args[0]) {
+        .string => |s| s,
+        else => return error.TypeMismatch,
+    };
+
+    const result = try arena.alloc(u8, str.len);
+    for (str, 0..) |c, i| {
+        result[i] = std.ascii.toUpper(c);
+    }
+
+    return eval.Value{ .string = result };
+}
+
+pub fn stringToLower(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const str = switch (args[0]) {
+        .string => |s| s,
+        else => return error.TypeMismatch,
+    };
+
+    const result = try arena.alloc(u8, str.len);
+    for (str, 0..) |c, i| {
+        result[i] = std.ascii.toLower(c);
+    }
+
+    return eval.Value{ .string = result };
+}
+
+pub fn stringChars(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const str = switch (args[0]) {
+        .string => |s| s,
+        else => return error.TypeMismatch,
+    };
+
+    const chars = try arena.alloc(eval.Value, str.len);
+    for (str, 0..) |c, i| {
+        const char_str = try arena.alloc(u8, 1);
+        char_str[0] = c;
+        chars[i] = eval.Value{ .string = char_str };
+    }
+
+    return eval.Value{ .array = .{ .elements = chars } };
+}
+
+pub fn stringTrim(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const str = switch (args[0]) {
+        .string => |s| s,
+        else => return error.TypeMismatch,
+    };
+
+    const trimmed = std.mem.trim(u8, str, &std.ascii.whitespace);
+    const result = try arena.dupe(u8, trimmed);
+
+    return eval.Value{ .string = result };
+}
+
 // Math builtins
 pub fn mathMax(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
     _ = arena;

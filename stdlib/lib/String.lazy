@@ -75,8 +75,8 @@
   ///
   /// **Example:**
   /// ```
-  /// String.isEmpty ""       // Returns #true
-  /// String.isEmpty "hello"  // Returns #false
+  /// String.isEmpty ""       // Returns true
+  /// String.isEmpty "hello"  // Returns false
   /// ```
   isEmpty: str -> __string_length str == 0
 

@@ -75,14 +75,14 @@ describe "String" [
   ]
 
   describe "isEmpty" [
-    it "returns #true for empty string" do
-      mustEq #true (isEmpty "")
+    it "returns true for empty string" do
+      mustEq true (isEmpty "")
 
-    it "returns #false for non-empty string" do
-      mustEq #false (isEmpty "hello")
+    it "returns false for non-empty string" do
+      mustEq false (isEmpty "hello")
 
-    it "returns #false for whitespace string" do
-      mustEq #false (isEmpty " ")
+    it "returns false for whitespace string" do
+      mustEq false (isEmpty " ")
   ]
 
   describe "trim" [

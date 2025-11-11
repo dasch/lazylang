@@ -2159,6 +2159,10 @@ pub fn createBuiltinEnvironment(arena: std.mem.Allocator) !?*Environment {
     env = try addBuiltin(arena, env, "__string_length", builtins.stringLength);
     env = try addBuiltin(arena, env, "__string_concat", builtins.stringConcat);
     env = try addBuiltin(arena, env, "__string_split", builtins.stringSplit);
+    env = try addBuiltin(arena, env, "__string_to_upper", builtins.stringToUpper);
+    env = try addBuiltin(arena, env, "__string_to_lower", builtins.stringToLower);
+    env = try addBuiltin(arena, env, "__string_chars", builtins.stringChars);
+    env = try addBuiltin(arena, env, "__string_trim", builtins.stringTrim);
 
     // Math builtins
     env = try addBuiltin(arena, env, "__math_max", builtins.mathMax);
