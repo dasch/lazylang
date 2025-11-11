@@ -105,14 +105,34 @@ fn runSpec(
         return .{ .exit_code = result.exitCode() };
     }
 
-    // If one argument, run that specific spec file
+    // If one argument, check if it's a directory or file
     if (args.len == 1) {
-        const file_path = args[0];
-        const result = spec.runSpec(allocator, file_path, stdout) catch |err| {
-            try stderr.print("error: failed to run spec: {}\n", .{err});
-            return .{ .exit_code = 1 };
+        const path = args[0];
+
+        // Check if it's a directory
+        const stat = std.fs.cwd().statFile(path) catch |err| switch (err) {
+            error.FileNotFound => {
+                try stderr.print("error: path not found: {s}\n", .{path});
+                return .{ .exit_code = 1 };
+            },
+            else => return err,
         };
-        return .{ .exit_code = result.exitCode() };
+
+        if (stat.kind == .directory) {
+            // Run all specs in the directory recursively
+            const result = spec.runAllSpecs(allocator, path, stdout) catch |err| {
+                try stderr.print("error: failed to run specs: {}\n", .{err});
+                return .{ .exit_code = 1 };
+            };
+            return .{ .exit_code = result.exitCode() };
+        } else {
+            // Run the specific spec file
+            const result = spec.runSpec(allocator, path, stdout) catch |err| {
+                try stderr.print("error: failed to run spec: {}\n", .{err});
+                return .{ .exit_code = 1 };
+            };
+            return .{ .exit_code = result.exitCode() };
+        }
     }
 
     try stderr.print("error: unexpected arguments\n", .{});

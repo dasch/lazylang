@@ -327,6 +327,32 @@ pub fn runSpec(
     };
 }
 
+fn runAllSpecsRecursive(
+    allocator: std.mem.Allocator,
+    spec_dir: []const u8,
+    writer: anytype,
+    total_passed: *usize,
+    total_failed: *usize,
+) !void {
+    var dir = try std.fs.cwd().openDir(spec_dir, .{ .iterate = true });
+    defer dir.close();
+
+    var iterator = dir.iterate();
+    while (try iterator.next()) |entry| {
+        const full_path = try std.fs.path.join(allocator, &[_][]const u8{ spec_dir, entry.name });
+        defer allocator.free(full_path);
+
+        if (entry.kind == .file and std.mem.endsWith(u8, entry.name, "Spec.lazy")) {
+            const result = try runSpec(allocator, full_path, writer);
+            total_passed.* += result.passed;
+            total_failed.* += result.failed;
+        } else if (entry.kind == .directory) {
+            // Recursively search subdirectories
+            try runAllSpecsRecursive(allocator, full_path, writer, total_passed, total_failed);
+        }
+    }
+}
+
 pub fn runAllSpecs(
     allocator: std.mem.Allocator,
     spec_dir: []const u8,
@@ -335,20 +361,7 @@ pub fn runAllSpecs(
     var total_passed: usize = 0;
     var total_failed: usize = 0;
 
-    var dir = try std.fs.cwd().openDir(spec_dir, .{ .iterate = true });
-    defer dir.close();
-
-    var iterator = dir.iterate();
-    while (try iterator.next()) |entry| {
-        if (entry.kind == .file and std.mem.endsWith(u8, entry.name, "Spec.lazy")) {
-            const file_path = try std.fs.path.join(allocator, &[_][]const u8{ spec_dir, entry.name });
-            defer allocator.free(file_path);
-
-            const result = try runSpec(allocator, file_path, writer);
-            total_passed += result.passed;
-            total_failed += result.failed;
-        }
-    }
+    try runAllSpecsRecursive(allocator, spec_dir, writer, &total_passed, &total_failed);
 
     return SpecResult{
         .passed = total_passed,
