@@ -1,0 +1,107 @@
+{ describe, it, mustEq } = import 'Spec'
+{ length, concat, split, toUpperCase, toLowerCase, chars, isEmpty, trim } = import 'String'
+
+describe "String" [
+  describe "length" [
+    it "returns the length of a non-empty string" do
+      mustEq 5 (length "hello")
+
+    it "returns 0 for an empty string" do
+      mustEq 0 (length "")
+  ]
+
+  describe "concat" [
+    it "concatenates two non-empty strings" do
+      mustEq "Hello, world!" (concat "Hello, " "world!")
+
+    it "concatenates with empty string prefix" do
+      mustEq "world" (concat "" "world")
+
+    it "concatenates with empty string subject" do
+      mustEq "Hello" (concat "Hello" "")
+  ]
+
+  describe "split" [
+    it "splits a string by comma delimiter" do
+      mustEq ["apple", "banana", "cherry"] (split "," "apple,banana,cherry")
+
+    it "splits a string by space delimiter" do
+      mustEq ["hello", "world"] (split " " "hello world")
+
+    it "returns single element array when delimiter not found" do
+      mustEq ["hello"] (split "," "hello")
+
+    it "returns empty strings when delimiter is at boundaries" do
+      mustEq ["", "hello", ""] (split "," ",hello,")
+  ]
+
+  describe "toUpperCase" [
+    it "converts lowercase string to uppercase" do
+      mustEq "HELLO" (toUpperCase "hello")
+
+    it "leaves uppercase string unchanged" do
+      mustEq "HELLO" (toUpperCase "HELLO")
+
+    it "converts mixed case string to uppercase" do
+      mustEq "HELLO WORLD" (toUpperCase "Hello World")
+
+    it "returns empty string for empty input" do
+      mustEq "" (toUpperCase "")
+  ]
+
+  describe "toLowerCase" [
+    it "converts uppercase string to lowercase" do
+      mustEq "hello" (toLowerCase "HELLO")
+
+    it "leaves lowercase string unchanged" do
+      mustEq "hello" (toLowerCase "hello")
+
+    it "converts mixed case string to lowercase" do
+      mustEq "hello world" (toLowerCase "Hello World")
+
+    it "returns empty string for empty input" do
+      mustEq "" (toLowerCase "")
+  ]
+
+  describe "chars" [
+    it "splits a string into individual characters" do
+      mustEq ["h", "e", "l", "l", "o"] (chars "hello")
+
+    it "returns empty array for empty string" do
+      mustEq [] (chars "")
+
+    it "handles single character string" do
+      mustEq ["a"] (chars "a")
+  ]
+
+  describe "isEmpty" [
+    it "returns #true for empty string" do
+      mustEq #true (isEmpty "")
+
+    it "returns #false for non-empty string" do
+      mustEq #false (isEmpty "hello")
+
+    it "returns #false for whitespace string" do
+      mustEq #false (isEmpty " ")
+  ]
+
+  describe "trim" [
+    it "removes leading and trailing whitespace" do
+      mustEq "hello" (trim "  hello  ")
+
+    it "removes only leading whitespace" do
+      mustEq "hello" (trim "  hello")
+
+    it "removes only trailing whitespace" do
+      mustEq "hello" (trim "hello  ")
+
+    it "leaves string without whitespace unchanged" do
+      mustEq "hello" (trim "hello")
+
+    it "preserves internal whitespace" do
+      mustEq "hello world" (trim "  hello world  ")
+
+    it "returns empty string when only whitespace" do
+      mustEq "" (trim "   ")
+  ]
+]

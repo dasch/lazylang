@@ -5,22 +5,22 @@ describe "Array" [
   describe "get" [
     it "returns (#ok, value) when the index is in-bounds" do
       arr = [10, 20, 30]
-      mustEq (#ok, 20) (get (arr, 1))
+      mustEq (#ok, 20) (get 1 arr)
 
     it "returns (#ok, value) for the first element" do
       arr = [10, 20, 30]
-      mustEq (#ok, 10) (get (arr, 0))
+      mustEq (#ok, 10) (get 0 arr)
 
     it "returns (#ok, value) for the last element" do
       arr = [10, 20, 30]
-      mustEq (#ok, 30) (get (arr, 2))
+      mustEq (#ok, 30) (get 2 arr)
 
     it "returns #outOfBounds when index equals array length" do
       arr = [10, 20, 30]
-      mustEq #outOfBounds (get (arr, 3))
+      mustEq #outOfBounds (get 3 arr)
 
     it "returns #outOfBounds when index exceeds array length" do
       arr = [10, 20, 30]
-      mustEq #outOfBounds (get (arr, 10))
+      mustEq #outOfBounds (get 10 arr)
   ]
 ]

@@ -8,7 +8,7 @@
   /// ```
   /// Object.keys { name: "John", age: 30 }  // Returns ["name", "age"]
   /// ```
-  keys: (obj) -> __object_keys obj,
+  keys: obj -> __object_keys obj
 
   /// Returns an array of all values in an object.
   ///
@@ -19,17 +19,17 @@
   /// ```
   /// Object.values { name: "John", age: 30 }  // Returns ["John", 30]
   /// ```
-  values: (obj) -> __object_values obj,
+  values: obj -> __object_values obj
 
   /// Retrieves the value associated with a key in an object.
   ///
   /// **Parameters:**
-  /// - `obj`: The object to access
   /// - `key`: The key to look up
+  /// - `obj`: The object to access
   ///
   /// **Example:**
   /// ```
-  /// Object.get { name: "John", age: 30 } "name"  // Returns "John"
+  /// Object.get "name" { name: "John", age: 30 }  // Returns "John"
   /// ```
-  get: (obj, key) -> __object_get (obj, key)
+  get: key -> obj -> __object_get (obj, key)
 }

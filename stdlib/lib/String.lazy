@@ -1,0 +1,93 @@
+{
+  /// Returns the number of characters in a string.
+  ///
+  /// **Parameter:**
+  /// - `str`: The string to measure
+  ///
+  /// **Example:**
+  /// ```
+  /// String.length "hello"  // Returns 5
+  /// ```
+  length: str -> __string_length str
+
+  /// Concatenates two strings together.
+  ///
+  /// **Parameters:**
+  /// - `prefix`: String to prepend
+  /// - `str`: String to append to (the subject)
+  ///
+  /// **Example:**
+  /// ```
+  /// String.concat "Hello, " "world!"  // Returns "Hello, world!"
+  /// ```
+  concat: prefix -> str -> __string_concat (prefix, str)
+
+  /// Splits a string into an array of substrings using a delimiter.
+  ///
+  /// **Parameters:**
+  /// - `delimiter`: The delimiter to split on
+  /// - `str`: The string to split
+  ///
+  /// **Example:**
+  /// ```
+  /// String.split "," "apple,banana,cherry"  // Returns ["apple", "banana", "cherry"]
+  /// String.split " " "hello world"          // Returns ["hello", "world"]
+  /// ```
+  split: delimiter -> str -> __string_split (str, delimiter)
+
+  /// Converts a string to uppercase.
+  ///
+  /// **Parameter:**
+  /// - `str`: The string to convert
+  ///
+  /// **Example:**
+  /// ```
+  /// String.toUpperCase "hello"  // Returns "HELLO"
+  /// ```
+  toUpperCase: str -> __string_to_upper str
+
+  /// Converts a string to lowercase.
+  ///
+  /// **Parameter:**
+  /// - `str`: The string to convert
+  ///
+  /// **Example:**
+  /// ```
+  /// String.toLowerCase "HELLO"  // Returns "hello"
+  /// ```
+  toLowerCase: str -> __string_to_lower str
+
+  /// Converts a string into an array of individual characters.
+  ///
+  /// **Parameter:**
+  /// - `str`: The string to split into characters
+  ///
+  /// **Example:**
+  /// ```
+  /// String.chars "hello"  // Returns ["h", "e", "l", "l", "o"]
+  /// ```
+  chars: str -> __string_chars str
+
+  /// Checks if a string is empty.
+  ///
+  /// **Parameter:**
+  /// - `str`: The string to check
+  ///
+  /// **Example:**
+  /// ```
+  /// String.isEmpty ""       // Returns #true
+  /// String.isEmpty "hello"  // Returns #false
+  /// ```
+  isEmpty: str -> __string_length str == 0
+
+  /// Removes whitespace from both ends of a string.
+  ///
+  /// **Parameter:**
+  /// - `str`: The string to trim
+  ///
+  /// **Example:**
+  /// ```
+  /// String.trim "  hello  "  // Returns "hello"
+  /// ```
+  trim: str -> __string_trim str
+}

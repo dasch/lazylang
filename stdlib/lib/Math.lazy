@@ -10,7 +10,7 @@
   /// Math.max 5 10   // Returns 10
   /// Math.max -3 -7  // Returns -3
   /// ```
-  max: (a, b) -> __math_max (a, b),
+  max: a -> b -> __math_max (a, b)
 
   /// Returns the minimum of two numbers.
   ///
@@ -23,7 +23,7 @@
   /// Math.min 5 10   // Returns 5
   /// Math.min -3 -7  // Returns -7
   /// ```
-  min: (a, b) -> __math_min (a, b),
+  min: a -> b -> __math_min (a, b)
 
   /// Returns the absolute value of a number.
   ///
@@ -35,5 +35,5 @@
   /// Math.abs -5   // Returns 5
   /// Math.abs 10   // Returns 10
   /// ```
-  abs: (n) -> __math_abs n
+  abs: n -> __math_abs n
 }
