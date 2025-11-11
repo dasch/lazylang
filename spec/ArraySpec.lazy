@@ -1,0 +1,26 @@
+{ describe, it, mustEq } = import 'Spec'
+{ get } = import 'Array'
+
+describe "Array" [
+  describe "get" [
+    it "returns (#ok, value) when the index is in-bounds" do
+      arr = [10, 20, 30]
+      mustEq (#ok, 20) (get (arr, 1))
+
+    it "returns (#ok, value) for the first element" do
+      arr = [10, 20, 30]
+      mustEq (#ok, 10) (get (arr, 0))
+
+    it "returns (#ok, value) for the last element" do
+      arr = [10, 20, 30]
+      mustEq (#ok, 30) (get (arr, 2))
+
+    it "returns #outOfBounds when index equals array length" do
+      arr = [10, 20, 30]
+      mustEq #outOfBounds (get (arr, 3))
+
+    it "returns #outOfBounds when index exceeds array length" do
+      arr = [10, 20, 30]
+      mustEq #outOfBounds (get (arr, 10))
+  ]
+]

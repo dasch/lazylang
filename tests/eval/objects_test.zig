@@ -40,3 +40,33 @@ test "evaluates short object syntax with multiple fields" {
         "{a: 1, b: 2, c: 3}",
     );
 }
+
+test "Object.get returns ok tuple when key exists" {
+    try expectEvaluates(
+        \\{ get } = import 'Object'
+        \\obj = { name: "Alice" }
+        \\get (obj, "name")
+    ,
+        "(#ok, \"Alice\")",
+    );
+}
+
+test "Object.get returns noSuchKey tag when key does not exist" {
+    try expectEvaluates(
+        \\{ get } = import 'Object'
+        \\obj = { name: "Alice" }
+        \\get (obj, "email")
+    ,
+        "#noSuchKey",
+    );
+}
+
+test "Object.get returns ok tuple for nested values" {
+    try expectEvaluates(
+        \\{ get } = import 'Object'
+        \\obj = { user: { name: "Bob" } }
+        \\get (obj, "user")
+    ,
+        "(#ok, {name: \"Bob\"})",
+    );
+}

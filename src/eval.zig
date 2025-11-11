@@ -1400,7 +1400,7 @@ pub fn evaluateExpression(
         .integer => |value| .{ .integer = value },
         .boolean => |value| .{ .boolean = value },
         .null_literal => .null_value,
-        .symbol => |value| .{ .symbol = value },
+        .symbol => |value| .{ .symbol = try arena.dupe(u8, value) },
         .identifier => |name| blk: {
             const resolved = lookup(env, name) orelse return error.UnknownIdentifier;
             break :blk resolved;
