@@ -1,0 +1,5 @@
+{
+  length: __string_length,
+  concat: (a, b) -> __string_concat (a, b),
+  split: (str, delimiter) -> __string_split (str, delimiter)
+}

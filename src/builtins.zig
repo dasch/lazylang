@@ -1,0 +1,257 @@
+const std = @import("std");
+const eval = @import("eval.zig");
+
+// Array builtins
+// Note: Higher-order functions like map, filter, fold should be implemented in Lazylang
+// since they need to evaluate user-provided functions
+
+pub fn arrayLength(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const array = switch (args[0]) {
+        .array => |a| a,
+        else => return error.TypeMismatch,
+    };
+
+    return eval.Value{ .integer = @intCast(array.elements.len) };
+}
+
+pub fn arrayGet(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple_arg = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
+
+    const array = switch (tuple_arg.elements[0]) {
+        .array => |a| a,
+        else => return error.TypeMismatch,
+    };
+
+    const index = switch (tuple_arg.elements[1]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    if (index < 0 or index >= array.elements.len) {
+        return error.InvalidArgument;
+    }
+
+    return array.elements[@intCast(index)];
+}
+
+// String builtins
+pub fn stringLength(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const str = switch (args[0]) {
+        .string => |s| s,
+        else => return error.TypeMismatch,
+    };
+
+    return eval.Value{ .integer = @intCast(str.len) };
+}
+
+pub fn stringConcat(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple_arg = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
+
+    const a = switch (tuple_arg.elements[0]) {
+        .string => |s| s,
+        else => return error.TypeMismatch,
+    };
+
+    const b = switch (tuple_arg.elements[1]) {
+        .string => |s| s,
+        else => return error.TypeMismatch,
+    };
+
+    const result = try std.fmt.allocPrint(arena, "{s}{s}", .{ a, b });
+    return eval.Value{ .string = result };
+}
+
+pub fn stringSplit(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple_arg = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
+
+    const str = switch (tuple_arg.elements[0]) {
+        .string => |s| s,
+        else => return error.TypeMismatch,
+    };
+
+    const delimiter = switch (tuple_arg.elements[1]) {
+        .string => |s| s,
+        else => return error.TypeMismatch,
+    };
+
+    var parts = std.ArrayList(eval.Value){};
+    defer parts.deinit(arena);
+
+    var iter = std.mem.splitSequence(u8, str, delimiter);
+    while (iter.next()) |part| {
+        const part_copy = try arena.dupe(u8, part);
+        try parts.append(arena, eval.Value{ .string = part_copy });
+    }
+
+    return eval.Value{ .array = .{ .elements = try parts.toOwnedSlice(arena) } };
+}
+
+// Math builtins
+pub fn mathMax(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple_arg = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
+
+    const a = switch (tuple_arg.elements[0]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    const b = switch (tuple_arg.elements[1]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    return eval.Value{ .integer = @max(a, b) };
+}
+
+pub fn mathMin(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple_arg = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
+
+    const a = switch (tuple_arg.elements[0]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    const b = switch (tuple_arg.elements[1]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    return eval.Value{ .integer = @min(a, b) };
+}
+
+pub fn mathAbs(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const n = switch (args[0]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    return eval.Value{ .integer = if (n < 0) -n else n };
+}
+
+// Object builtins
+pub fn objectKeys(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const obj = switch (args[0]) {
+        .object => |o| o,
+        else => return error.TypeMismatch,
+    };
+
+    const keys = try arena.alloc(eval.Value, obj.fields.len);
+    for (obj.fields, 0..) |field, i| {
+        keys[i] = eval.Value{ .string = field.key };
+    }
+    return eval.Value{ .array = .{ .elements = keys } };
+}
+
+pub fn objectValues(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const obj = switch (args[0]) {
+        .object => |o| o,
+        else => return error.TypeMismatch,
+    };
+
+    const values = try arena.alloc(eval.Value, obj.fields.len);
+    for (obj.fields, 0..) |field, i| {
+        values[i] = field.value;
+    }
+    return eval.Value{ .array = .{ .elements = values } };
+}
+
+pub fn objectGet(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple_arg = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
+
+    const obj = switch (tuple_arg.elements[0]) {
+        .object => |o| o,
+        else => return error.TypeMismatch,
+    };
+
+    const key = switch (tuple_arg.elements[1]) {
+        .string => |s| s,
+        else => return error.TypeMismatch,
+    };
+
+    for (obj.fields) |field| {
+        if (std.mem.eql(u8, field.key, key)) {
+            return field.value;
+        }
+    }
+
+    return eval.Value.null_value;
+}
+
+// Utility to create a curried native function wrapper
+// This allows native functions to be partially applied like regular functions
+pub fn curry2(comptime impl: fn (std.mem.Allocator, eval.Value, eval.Value) eval.EvalError!eval.Value) eval.NativeFn {
+    const Wrapper = struct {
+        fn call(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+            if (args.len != 1) return error.WrongNumberOfArguments;
+
+            const tuple_arg = switch (args[0]) {
+                .tuple => |t| t,
+                else => return error.TypeMismatch,
+            };
+
+            if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
+
+            return impl(arena, tuple_arg.elements[0], tuple_arg.elements[1]);
+        }
+    };
+    return Wrapper.call;
+}
