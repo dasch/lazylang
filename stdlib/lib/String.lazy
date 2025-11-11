@@ -90,4 +90,43 @@
   /// String.trim "  hello  "  // Returns "hello"
   /// ```
   trim: str -> __string_trim str
+
+  /// Checks if a string starts with a given prefix.
+  ///
+  /// **Parameters:**
+  /// - `prefix`: The prefix to check for
+  /// - `str`: The string to check
+  ///
+  /// **Example:**
+  /// ```
+  /// String.startsWith "hello" "hello world"  // Returns true
+  /// String.startsWith "world" "hello world"  // Returns false
+  /// ```
+  startsWith: prefix -> str -> __string_starts_with (str, prefix)
+
+  /// Checks if a string ends with a given suffix.
+  ///
+  /// **Parameters:**
+  /// - `suffix`: The suffix to check for
+  /// - `str`: The string to check
+  ///
+  /// **Example:**
+  /// ```
+  /// String.endsWith "world" "hello world"  // Returns true
+  /// String.endsWith "hello" "hello world"  // Returns false
+  /// ```
+  endsWith: suffix -> str -> __string_ends_with (str, suffix)
+
+  /// Checks if a string contains a given substring.
+  ///
+  /// **Parameters:**
+  /// - `substring`: The substring to search for
+  /// - `str`: The string to search in
+  ///
+  /// **Example:**
+  /// ```
+  /// String.contains "lo wo" "hello world"  // Returns true
+  /// String.contains "xyz" "hello world"    // Returns false
+  /// ```
+  contains: substring -> str -> __string_contains (str, substring)
 }

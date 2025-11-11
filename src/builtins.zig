@@ -181,6 +181,81 @@ pub fn stringTrim(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalE
     return eval.Value{ .string = result };
 }
 
+pub fn stringStartsWith(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple_arg = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
+
+    const str = switch (tuple_arg.elements[0]) {
+        .string => |s| s,
+        else => return error.TypeMismatch,
+    };
+
+    const prefix = switch (tuple_arg.elements[1]) {
+        .string => |s| s,
+        else => return error.TypeMismatch,
+    };
+
+    const result = std.mem.startsWith(u8, str, prefix);
+    return eval.Value{ .boolean = result };
+}
+
+pub fn stringEndsWith(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple_arg = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
+
+    const str = switch (tuple_arg.elements[0]) {
+        .string => |s| s,
+        else => return error.TypeMismatch,
+    };
+
+    const suffix = switch (tuple_arg.elements[1]) {
+        .string => |s| s,
+        else => return error.TypeMismatch,
+    };
+
+    const result = std.mem.endsWith(u8, str, suffix);
+    return eval.Value{ .boolean = result };
+}
+
+pub fn stringContains(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple_arg = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
+
+    const str = switch (tuple_arg.elements[0]) {
+        .string => |s| s,
+        else => return error.TypeMismatch,
+    };
+
+    const substring = switch (tuple_arg.elements[1]) {
+        .string => |s| s,
+        else => return error.TypeMismatch,
+    };
+
+    const result = std.mem.indexOf(u8, str, substring) != null;
+    return eval.Value{ .boolean = result };
+}
+
 // Math builtins
 pub fn mathMax(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
     _ = arena;

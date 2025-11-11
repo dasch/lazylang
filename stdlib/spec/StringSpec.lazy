@@ -1,5 +1,5 @@
 { describe, it, mustEq } = import 'Spec'
-{ length, concat, split, toUpperCase, toLowerCase, chars, isEmpty, trim } = import 'String'
+{ length, concat, split, toUpperCase, toLowerCase, chars, isEmpty, trim, startsWith, endsWith, contains } = import 'String'
 
 describe "String" [
   describe "length" [
@@ -103,5 +103,62 @@ describe "String" [
 
     it "returns empty string when only whitespace" do
       mustEq "" (trim "   ")
+  ]
+
+  describe "startsWith" [
+    it "returns true when string starts with prefix" do
+      mustEq true (startsWith "hello" "hello world")
+
+    it "returns false when string does not start with prefix" do
+      mustEq false (startsWith "world" "hello world")
+
+    it "returns true for empty prefix" do
+      mustEq true (startsWith "" "hello")
+
+    it "returns true when prefix equals string" do
+      mustEq true (startsWith "hello" "hello")
+
+    it "returns false when prefix is longer than string" do
+      mustEq false (startsWith "hello world!" "hello")
+  ]
+
+  describe "endsWith" [
+    it "returns true when string ends with suffix" do
+      mustEq true (endsWith "world" "hello world")
+
+    it "returns false when string does not end with suffix" do
+      mustEq false (endsWith "hello" "hello world")
+
+    it "returns true for empty suffix" do
+      mustEq true (endsWith "" "hello")
+
+    it "returns true when suffix equals string" do
+      mustEq true (endsWith "hello" "hello")
+
+    it "returns false when suffix is longer than string" do
+      mustEq false (endsWith "hello world!" "world")
+  ]
+
+  describe "contains" [
+    it "returns true when string contains substring" do
+      mustEq true (contains "lo wo" "hello world")
+
+    it "returns false when string does not contain substring" do
+      mustEq false (contains "xyz" "hello world")
+
+    it "returns true for empty substring" do
+      mustEq true (contains "" "hello")
+
+    it "returns true when substring equals string" do
+      mustEq true (contains "hello" "hello")
+
+    it "returns true when substring is at the start" do
+      mustEq true (contains "hello" "hello world")
+
+    it "returns true when substring is at the end" do
+      mustEq true (contains "world" "hello world")
+
+    it "returns false when substring is longer than string" do
+      mustEq false (contains "hello world!" "hello")
   ]
 ]
