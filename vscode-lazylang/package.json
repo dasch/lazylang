@@ -1,0 +1,83 @@
+{
+  "name": "lazylang",
+  "displayName": "Lazylang",
+  "description": "Language support for Lazylang with LSP-powered features",
+  "version": "0.1.0",
+  "publisher": "lazylang",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onLanguage:lazylang"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "lazylang",
+        "aliases": [
+          "Lazylang",
+          "lazy"
+        ],
+        "extensions": [
+          ".lazy"
+        ],
+        "configuration": "./language-configuration.json",
+        "icon": {
+          "light": "./icon.png",
+          "dark": "./icon.png"
+        }
+      }
+    ],
+    "grammars": [
+      {
+        "language": "lazylang",
+        "scopeName": "source.lazylang",
+        "path": "./syntaxes/lazylang.tmLanguage.json"
+      }
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "Lazylang",
+      "properties": {
+        "lazylang.lspPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the Lazylang LSP server executable. If empty, will look for 'lazylang-lsp' in PATH or in the workspace."
+        },
+        "lazylang.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Traces the communication between VS Code and the Lazylang language server."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/node": "^18.x",
+    "@types/vscode": "^1.75.0",
+    "@typescript-eslint/eslint-plugin": "^6.x",
+    "@typescript-eslint/parser": "^6.x",
+    "eslint": "^8.x",
+    "typescript": "^5.x"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  }
+}

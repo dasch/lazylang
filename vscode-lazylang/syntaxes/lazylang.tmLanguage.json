@@ -1,0 +1,108 @@
+{
+    "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+    "name": "Lazylang",
+    "scopeName": "source.lazylang",
+    "patterns": [
+        {
+            "include": "#comments"
+        },
+        {
+            "include": "#keywords"
+        },
+        {
+            "include": "#strings"
+        },
+        {
+            "include": "#numbers"
+        },
+        {
+            "include": "#symbols"
+        },
+        {
+            "include": "#operators"
+        },
+        {
+            "include": "#functions"
+        }
+    ],
+    "repository": {
+        "comments": {
+            "patterns": [
+                {
+                    "name": "comment.line.double-slash.lazylang",
+                    "match": "//.*$"
+                }
+            ]
+        },
+        "keywords": {
+            "patterns": [
+                {
+                    "name": "keyword.control.lazylang",
+                    "match": "\\b(if|then|else|let|in|when|matches|do|where|import|from)\\b"
+                },
+                {
+                    "name": "constant.language.lazylang",
+                    "match": "\\b(true|false|null)\\b"
+                }
+            ]
+        },
+        "strings": {
+            "patterns": [
+                {
+                    "name": "string.quoted.double.lazylang",
+                    "begin": "\"",
+                    "end": "\"",
+                    "patterns": [
+                        {
+                            "name": "constant.character.escape.lazylang",
+                            "match": "\\\\."
+                        }
+                    ]
+                },
+                {
+                    "name": "string.quoted.single.lazylang",
+                    "begin": "'",
+                    "end": "'",
+                    "patterns": [
+                        {
+                            "name": "constant.character.escape.lazylang",
+                            "match": "\\\\."
+                        }
+                    ]
+                }
+            ]
+        },
+        "numbers": {
+            "patterns": [
+                {
+                    "name": "constant.numeric.lazylang",
+                    "match": "\\b\\d+(\\.\\d+)?\\b"
+                }
+            ]
+        },
+        "symbols": {
+            "patterns": [
+                {
+                    "name": "constant.other.symbol.lazylang",
+                    "match": "#[a-zA-Z_][a-zA-Z0-9_]*"
+                }
+            ]
+        },
+        "operators": {
+            "patterns": [
+                {
+                    "name": "keyword.operator.lazylang",
+                    "match": "(->|=>|\\+|\\-|\\*|/|==|!=|<=|>=|<|>|&&|\\|\\||!|=)"
+                }
+            ]
+        },
+        "functions": {
+            "patterns": [
+                {
+                    "name": "entity.name.function.lazylang",
+                    "match": "\\b[a-zA-Z_][a-zA-Z0-9_]*(?=\\s*\\()"
+                }
+            ]
+        }
+    }
+}
