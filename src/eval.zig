@@ -1787,8 +1787,124 @@ pub fn evaluateExpression(
             }
             break :blk Value{ .object = .{ .fields = fields } };
         },
+        .array_comprehension => |comp| blk: {
+            var result_list = std.ArrayListUnmanaged(Value){};
+            try evaluateArrayComprehension(arena, &result_list, comp, 0, env, current_dir, ctx);
+            break :blk Value{ .array = .{ .elements = try result_list.toOwnedSlice(arena) } };
+        },
+        .object_comprehension => |comp| blk: {
+            var result_fields = std.ArrayListUnmanaged(ObjectFieldValue){};
+            try evaluateObjectComprehension(arena, &result_fields, comp, 0, env, current_dir, ctx);
+            break :blk Value{ .object = .{ .fields = try result_fields.toOwnedSlice(arena) } };
+        },
         .import_expr => |import_expr| try importModule(arena, import_expr.path, current_dir, ctx),
     };
+}
+
+fn evaluateArrayComprehension(
+    arena: std.mem.Allocator,
+    result: *std.ArrayListUnmanaged(Value),
+    comp: ArrayComprehension,
+    clause_index: usize,
+    env: ?*Environment,
+    current_dir: ?[]const u8,
+    ctx: *const EvalContext,
+) EvalError!void {
+    // Base case: all for clauses have been processed
+    if (clause_index >= comp.clauses.len) {
+        // Check the filter condition if present
+        if (comp.filter) |filter| {
+            const filter_value = try evaluateExpression(arena, filter, env, current_dir, ctx);
+            const filter_bool = switch (filter_value) {
+                .boolean => |b| b,
+                else => return error.TypeMismatch,
+            };
+            if (!filter_bool) return; // Skip this iteration
+        }
+
+        // Evaluate and add the body to the result
+        const value = try evaluateExpression(arena, comp.body, env, current_dir, ctx);
+        try result.append(arena, value);
+        return;
+    }
+
+    // Process current for clause
+    const clause = comp.clauses[clause_index];
+    const iterable_value = try evaluateExpression(arena, clause.iterable, env, current_dir, ctx);
+
+    switch (iterable_value) {
+        .array => |arr| {
+            for (arr.elements) |element| {
+                const new_env = try matchPattern(arena, clause.pattern, element, env);
+                try evaluateArrayComprehension(arena, result, comp, clause_index + 1, new_env, current_dir, ctx);
+            }
+        },
+        else => return error.TypeMismatch,
+    }
+}
+
+fn evaluateObjectComprehension(
+    arena: std.mem.Allocator,
+    result: *std.ArrayListUnmanaged(ObjectFieldValue),
+    comp: ObjectComprehension,
+    clause_index: usize,
+    env: ?*Environment,
+    current_dir: ?[]const u8,
+    ctx: *const EvalContext,
+) EvalError!void {
+    // Base case: all for clauses have been processed
+    if (clause_index >= comp.clauses.len) {
+        // Check the filter condition if present
+        if (comp.filter) |filter| {
+            const filter_value = try evaluateExpression(arena, filter, env, current_dir, ctx);
+            const filter_bool = switch (filter_value) {
+                .boolean => |b| b,
+                else => return error.TypeMismatch,
+            };
+            if (!filter_bool) return; // Skip this iteration
+        }
+
+        // Evaluate key and value
+        const key_value = try evaluateExpression(arena, comp.key, env, current_dir, ctx);
+        const value_value = try evaluateExpression(arena, comp.value, env, current_dir, ctx);
+
+        // Convert key to string
+        const key_string = switch (key_value) {
+            .string => |s| try arena.dupe(u8, s),
+            .integer => |i| try std.fmt.allocPrint(arena, "{d}", .{i}),
+            .symbol => |s| try arena.dupe(u8, s),
+            else => return error.TypeMismatch,
+        };
+
+        try result.append(arena, .{ .key = key_string, .value = value_value });
+        return;
+    }
+
+    // Process current for clause
+    const clause = comp.clauses[clause_index];
+    const iterable_value = try evaluateExpression(arena, clause.iterable, env, current_dir, ctx);
+
+    switch (iterable_value) {
+        .array => |arr| {
+            for (arr.elements) |element| {
+                const new_env = try matchPattern(arena, clause.pattern, element, env);
+                try evaluateObjectComprehension(arena, result, comp, clause_index + 1, new_env, current_dir, ctx);
+            }
+        },
+        .object => |obj| {
+            for (obj.fields) |field| {
+                // Create a tuple (key, value) for object iteration
+                const tuple_elements = try arena.alloc(Value, 2);
+                tuple_elements[0] = .{ .string = try arena.dupe(u8, field.key) };
+                tuple_elements[1] = field.value;
+                const tuple_value = Value{ .tuple = .{ .elements = tuple_elements } };
+
+                const new_env = try matchPattern(arena, clause.pattern, tuple_value, env);
+                try evaluateObjectComprehension(arena, result, comp, clause_index + 1, new_env, current_dir, ctx);
+            }
+        },
+        else => return error.TypeMismatch,
+    }
 }
 
 fn importModule(
