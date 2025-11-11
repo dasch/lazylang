@@ -1621,8 +1621,8 @@ fn collectLazyPaths(arena: std.mem.Allocator) EvalError![][]const u8 {
     var list = std.ArrayList([]const u8){};
     defer list.deinit(arena);
 
-    // Always include ./lib as a default search path
-    const default_lib = try arena.dupe(u8, "lib");
+    // Always include ./stdlib/lib as a default search path
+    const default_lib = try arena.dupe(u8, "stdlib/lib");
     try list.append(arena, default_lib);
 
     const env_value = std.process.getEnvVarOwned(arena, "LAZYLANG_PATH") catch |err| switch (err) {

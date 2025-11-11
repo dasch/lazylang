@@ -45,7 +45,7 @@ test "Object.get returns ok tuple when key exists" {
     try expectEvaluates(
         \\{ get } = import 'Object'
         \\obj = { name: "Alice" }
-        \\get (obj, "name")
+        \\get "name" obj
     ,
         "(#ok, \"Alice\")",
     );
@@ -55,7 +55,7 @@ test "Object.get returns noSuchKey tag when key does not exist" {
     try expectEvaluates(
         \\{ get } = import 'Object'
         \\obj = { name: "Alice" }
-        \\get (obj, "email")
+        \\get "email" obj
     ,
         "#noSuchKey",
     );
@@ -65,7 +65,7 @@ test "Object.get returns ok tuple for nested values" {
     try expectEvaluates(
         \\{ get } = import 'Object'
         \\obj = { user: { name: "Bob" } }
-        \\get (obj, "user")
+        \\get "user" obj
     ,
         "(#ok, {name: \"Bob\"})",
     );
