@@ -1024,6 +1024,35 @@ const Parser = struct {
     fn parseObject(self: *Parser) ParseError!*Expression {
         try self.expect(.l_brace);
 
+        // Empty object
+        if (self.current.kind == .r_brace) {
+            try self.advance();
+            const node = try self.allocateExpression();
+            node.* = .{ .object = .{ .fields = &[_]ObjectField{} } };
+            return node;
+        }
+
+        // Check for object comprehension with dynamic field syntax: { [key]: value for ... }
+        if (self.current.kind == .l_bracket) {
+            try self.advance(); // consume '['
+            const key_expr = try self.parseLambda();
+            try self.expect(.r_bracket);
+            try self.expect(.colon);
+            const value_expr = try self.parseLambda();
+
+            // Check if this is a comprehension
+            const is_comprehension = self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "for");
+
+            if (is_comprehension) {
+                return self.parseObjectComprehension(key_expr, value_expr);
+            }
+
+            // TODO: Support dynamic fields in regular objects
+            // For now, just return an error
+            self.recordError();
+            return error.UnexpectedToken;
+        }
+
         var fields = std.ArrayListUnmanaged(ObjectField){};
 
         while (self.current.kind != .r_brace) {
@@ -1064,6 +1093,48 @@ const Parser = struct {
         const slice = try fields.toOwnedSlice(self.arena);
         const node = try self.allocateExpression();
         node.* = .{ .object = .{ .fields = slice } };
+        return node;
+    }
+
+    fn parseObjectComprehension(self: *Parser, key: *Expression, value: *Expression) ParseError!*Expression {
+        var clauses = std.ArrayListUnmanaged(ForClause){};
+
+        // Parse for clauses
+        while (self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "for")) {
+            try self.advance(); // consume 'for'
+
+            // Parse pattern
+            const pattern = try self.parsePattern();
+
+            // Expect 'in'
+            if (self.current.kind != .identifier or !std.mem.eql(u8, self.current.lexeme, "in")) {
+                self.recordError();
+                return error.UnexpectedToken;
+            }
+            try self.advance(); // consume 'in'
+
+            // Parse iterable expression
+            const iterable = try self.parseBinary(0);
+
+            try clauses.append(self.arena, .{ .pattern = pattern, .iterable = iterable });
+        }
+
+        // Parse optional 'when' filter
+        var filter: ?*Expression = null;
+        if (self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "when")) {
+            try self.advance(); // consume 'when'
+            filter = try self.parseBinary(0);
+        }
+
+        try self.expect(.r_brace);
+
+        const node = try self.allocateExpression();
+        node.* = .{ .object_comprehension = .{
+            .key = key,
+            .value = value,
+            .clauses = try clauses.toOwnedSlice(self.arena),
+            .filter = filter,
+        } };
         return node;
     }
 
