@@ -757,13 +757,22 @@ pub const Parser = struct {
 
     fn isPatternBinding(self: *Parser) bool {
         // Simple heuristic: if we see an opening delimiter, count depth and look for '='
-        const saved_tokenizer = self.tokenizer;
+        // Save parser state before lookahead
+        const saved_index = self.tokenizer.index;
+        const saved_last_newline = self.tokenizer.last_whitespace_had_newline;
         const saved_current = self.current;
         const saved_lookahead = self.lookahead;
+        // Save doc comments length - we'll truncate back to this after lookahead
+        const saved_doc_comments_len = self.tokenizer.pending_doc_comments.items.len;
+
         defer {
-            self.tokenizer = saved_tokenizer;
+            // Restore parser state
+            self.tokenizer.index = saved_index;
+            self.tokenizer.last_whitespace_had_newline = saved_last_newline;
             self.current = saved_current;
             self.lookahead = saved_lookahead;
+            // Discard any doc comments accumulated during lookahead
+            self.tokenizer.pending_doc_comments.items.len = saved_doc_comments_len;
         }
 
         var depth: usize = 0;
@@ -1166,7 +1175,12 @@ pub const Parser = struct {
             return error.UnexpectedToken;
         }
 
+        // Consume doc comments that were accumulated during lookahead tokenization
+        // These will be for the first field (if there is one)
+        const first_field_doc = self.tokenizer.consumeDocComments();
+
         var fields = std.ArrayListUnmanaged(ObjectField){};
+        var is_first_field = true;
 
         while (self.current.kind != .r_brace) {
             if (self.current.kind != .identifier) {
@@ -1175,9 +1189,12 @@ pub const Parser = struct {
                 return error.UnexpectedToken;
             }
 
-            // Consume documentation comments that preceded this identifier
-            // These were accumulated during the last skipWhitespace() call
-            const doc = self.tokenizer.consumeDocComments();
+            // Use the doc comments we saved for the first field,
+            // or consume fresh ones for subsequent fields
+            const doc = if (is_first_field) blk: {
+                is_first_field = false;
+                break :blk first_field_doc;
+            } else self.tokenizer.consumeDocComments();
 
             const key = self.current.lexeme;
             try self.advance();
