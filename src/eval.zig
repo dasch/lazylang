@@ -20,6 +20,12 @@ pub const TokenKind = enum {
     ampersand_ampersand,
     pipe_pipe,
     bang,
+    equals_equals,
+    bang_equals,
+    less,
+    greater,
+    less_equals,
+    greater_equals,
     l_paren,
     r_paren,
     l_bracket,
@@ -54,6 +60,12 @@ const BinaryOp = enum {
     logical_and,
     logical_or,
     pipeline,
+    equal,
+    not_equal,
+    less_than,
+    greater_than,
+    less_or_equal,
+    greater_or_equal,
 };
 
 const UnaryOp = enum {
@@ -274,6 +286,10 @@ pub const Tokenizer = struct {
             },
             '!' => {
                 self.advance();
+                if (self.index < self.source.len and self.source[self.index] == '=') {
+                    self.advance();
+                    return self.makeToken(.bang_equals, start, start_line, start_column);
+                }
                 return self.makeToken(.bang, start, start_line, start_column);
             },
             ',' => {
@@ -290,6 +306,10 @@ pub const Tokenizer = struct {
             },
             '=' => {
                 self.advance();
+                if (self.index < self.source.len and self.source[self.index] == '=') {
+                    self.advance();
+                    return self.makeToken(.equals_equals, start, start_line, start_column);
+                }
                 return self.makeToken(.equals, start, start_line, start_column);
             },
             '(' => {
@@ -330,6 +350,22 @@ pub const Tokenizer = struct {
             },
             '#' => {
                 return self.consumeSymbol();
+            },
+            '<' => {
+                self.advance();
+                if (self.index < self.source.len and self.source[self.index] == '=') {
+                    self.advance();
+                    return self.makeToken(.less_equals, start, start_line, start_column);
+                }
+                return self.makeToken(.less, start, start_line, start_column);
+            },
+            '>' => {
+                self.advance();
+                if (self.index < self.source.len and self.source[self.index] == '=') {
+                    self.advance();
+                    return self.makeToken(.greater_equals, start, start_line, start_column);
+                }
+                return self.makeToken(.greater, start, start_line, start_column);
             },
             '\\' => {
                 self.advance();
@@ -837,6 +873,12 @@ pub const Parser = struct {
                     .ampersand_ampersand => .logical_and,
                     .pipe_pipe => .logical_or,
                     .backslash => .pipeline,
+                    .equals_equals => .equal,
+                    .bang_equals => .not_equal,
+                    .less => .less_than,
+                    .greater => .greater_than,
+                    .less_equals => .less_or_equal,
+                    .greater_equals => .greater_or_equal,
                     else => unreachable,
                 },
                 .left = left,
@@ -1502,8 +1544,9 @@ fn getPrecedence(kind: TokenKind) ?u32 {
         .backslash => 2,
         .pipe_pipe => 3,
         .ampersand_ampersand => 4,
-        .plus, .minus => 5,
-        .star => 6,
+        .equals_equals, .bang_equals, .less, .greater, .less_equals, .greater_equals => 5,
+        .plus, .minus => 6,
+        .star => 7,
         else => null,
     };
 }
@@ -1845,6 +1888,27 @@ pub fn evaluateExpression(
                         else => return error.TypeMismatch,
                     };
                     break :blk2 Value{ .boolean = left_bool or right_bool };
+                },
+                .equal, .not_equal, .less_than, .greater_than, .less_or_equal, .greater_or_equal => blk2: {
+                    const left_int = switch (left_value) {
+                        .integer => |v| v,
+                        else => return error.TypeMismatch,
+                    };
+                    const right_int = switch (right_value) {
+                        .integer => |v| v,
+                        else => return error.TypeMismatch,
+                    };
+
+                    const bool_result = switch (binary.op) {
+                        .equal => left_int == right_int,
+                        .not_equal => left_int != right_int,
+                        .less_than => left_int < right_int,
+                        .greater_than => left_int > right_int,
+                        .less_or_equal => left_int <= right_int,
+                        .greater_or_equal => left_int >= right_int,
+                        else => unreachable,
+                    };
+                    break :blk2 Value{ .boolean = bool_result };
                 },
                 .pipeline => blk2: {
                     // Pipeline operator: x \ f evaluates to f(x)
