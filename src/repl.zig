@@ -114,6 +114,7 @@ pub fn runReplDirect(
             }
             if (std.mem.eql(u8, line, ":help") or std.mem.eql(u8, line, ":h")) {
                 try printHelp(stdout);
+                try stdout.print("\n", .{});
                 continue;
             }
             if (std.mem.eql(u8, line, ":clear") or std.mem.eql(u8, line, ":c")) {
@@ -122,6 +123,7 @@ pub fn runReplDirect(
                 arena.deinit();
                 arena = std.heap.ArenaAllocator.init(allocator);
                 try colored(.gray, "Environment cleared\n", &stdout);
+                try stdout.print("\n", .{});
                 continue;
             }
         }
@@ -256,6 +258,7 @@ pub fn runReplDirect(
             try stdout.print("{s}\n", .{formatted});
         }
 
+        try stdout.print("\n", .{});
         input_buffer.clearRetainingCapacity();
     }
 
