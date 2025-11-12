@@ -46,6 +46,21 @@ pub fn runReplDirect(
 ) !void {
     var stdin_file = std.fs.File{ .handle = std.posix.STDIN_FILENO };
 
+    // Disable terminal echo for cleaner input (only if stdin is a terminal)
+    const is_tty = std.posix.isatty(stdin_file.handle);
+    const original_termios = if (is_tty) std.posix.tcgetattr(stdin_file.handle) catch null else null;
+    if (original_termios) |orig| {
+        var raw_termios = orig;
+        raw_termios.lflag.ECHO = false;
+        std.posix.tcsetattr(stdin_file.handle, .FLUSH, raw_termios) catch {};
+    }
+    defer {
+        // Restore original terminal settings
+        if (original_termios) |orig| {
+            std.posix.tcsetattr(stdin_file.handle, .FLUSH, orig) catch {};
+        }
+    }
+
     // Create print contexts that write directly to files
     const stdout = PrintContext{ .file = stdout_file, .allocator = allocator };
     const stderr = PrintContext{ .file = stderr_file, .allocator = allocator };
