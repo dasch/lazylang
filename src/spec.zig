@@ -9,11 +9,13 @@ const Color = struct {
     const cyan = "\x1b[36m";
     const dim = "\x1b[2m";
     const bold = "\x1b[1m";
+    const grey = "\x1b[90m";
 };
 
 pub const SpecResult = struct {
     passed: usize,
     failed: usize,
+    ignored: usize,
 
     pub fn exitCode(self: SpecResult) u8 {
         return if (self.failed == 0) @as(u8, 0) else @as(u8, 1);
@@ -26,6 +28,7 @@ fn RunContext(comptime WriterType: type) type {
         writer: WriterType,
         passed: usize,
         failed: usize,
+        ignored: usize,
         indent: usize,
         needs_blank_line: bool,
 
@@ -135,7 +138,9 @@ fn runTestItem(ctx: anytype, item: eval_module.Value) anyerror!void {
     if (std.mem.eql(u8, item_type.?, "describe")) {
         try runDescribe(ctx, object);
     } else if (std.mem.eql(u8, item_type.?, "it")) {
-        try runIt(ctx, object);
+        try runIt(ctx, object, false);
+    } else if (std.mem.eql(u8, item_type.?, "xit")) {
+        try runIt(ctx, object, true);
     } else {
         try ctx.writeIndent();
         try ctx.writer.print("{s}✗ Error: unknown test item type '{s}'{s}\n", .{ Color.red, item_type.?, Color.reset });
@@ -217,7 +222,7 @@ fn runDescribe(ctx: anytype, desc: eval_module.ObjectValue) anyerror!void {
     }
 }
 
-fn runIt(ctx: anytype, test_case: eval_module.ObjectValue) anyerror!void {
+fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) anyerror!void {
     // Get description and test expression result
     var description: ?[]const u8 = null;
     var test_value: ?eval_module.Value = null;
@@ -237,6 +242,14 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue) anyerror!void {
         try ctx.writeIndent();
         try ctx.writer.print("{s}✗ Error: it missing description{s}\n", .{ Color.red, Color.reset });
         ctx.failed += 1;
+        return;
+    }
+
+    // If the test is ignored (xit), just display it and return
+    if (is_ignored) {
+        try ctx.writeIndent();
+        try ctx.writer.print("{s}○{s} {s}\n", .{ Color.grey, Color.reset, description.? });
+        ctx.ignored += 1;
         return;
     }
 
@@ -340,6 +353,7 @@ pub fn runSpec(
         return SpecResult{
             .passed = 0,
             .failed = 1,
+            .ignored = 0,
         };
     };
 
@@ -349,6 +363,7 @@ pub fn runSpec(
         .writer = writer,
         .passed = 0,
         .failed = 0,
+        .ignored = 0,
         .indent = 0,
         .needs_blank_line = false,
     };
@@ -358,6 +373,7 @@ pub fn runSpec(
     return SpecResult{
         .passed = ctx.passed,
         .failed = ctx.failed,
+        .ignored = ctx.ignored,
     };
 }
 
@@ -367,6 +383,7 @@ fn runAllSpecsRecursive(
     writer: anytype,
     total_passed: *usize,
     total_failed: *usize,
+    total_ignored: *usize,
     first_file: *bool,
 ) !void {
     var dir = try std.fs.cwd().openDir(spec_dir, .{ .iterate = true });
@@ -387,9 +404,10 @@ fn runAllSpecsRecursive(
             const result = try runSpec(allocator, full_path, writer);
             total_passed.* += result.passed;
             total_failed.* += result.failed;
+            total_ignored.* += result.ignored;
         } else if (entry.kind == .directory) {
             // Recursively search subdirectories
-            try runAllSpecsRecursive(allocator, full_path, writer, total_passed, total_failed, first_file);
+            try runAllSpecsRecursive(allocator, full_path, writer, total_passed, total_failed, total_ignored, first_file);
         }
     }
 }
@@ -401,17 +419,22 @@ pub fn runAllSpecs(
 ) !SpecResult {
     var total_passed: usize = 0;
     var total_failed: usize = 0;
+    var total_ignored: usize = 0;
     var first_file = true;
 
-    try runAllSpecsRecursive(allocator, spec_dir, writer, &total_passed, &total_failed, &first_file);
+    try runAllSpecsRecursive(allocator, spec_dir, writer, &total_passed, &total_failed, &total_ignored, &first_file);
 
     // Print summary
     try writer.writeAll("\n");
     const total = total_passed + total_failed;
     if (total_failed == 0) {
-        try writer.print("{s}{s}✓ {d} test{s} passed{s}\n", .{ Color.bold, Color.green, total, if (total == 1) "" else "s", Color.reset });
+        try writer.print("{s}{s}✓ {d} test{s} passed{s}", .{ Color.bold, Color.green, total, if (total == 1) "" else "s", Color.reset });
+        if (total_ignored > 0) {
+            try writer.print(", {s}{d} ignored{s}", .{ Color.grey, total_ignored, Color.reset });
+        }
+        try writer.writeAll("\n");
     } else {
-        try writer.print("{s}{s}{d}{s} test{s} passed, {s}{d} failed{s}\n", .{
+        try writer.print("{s}{s}{d}{s} test{s} passed, {s}{d} failed{s}", .{
             Color.bold,
             Color.green,
             total_passed,
@@ -421,10 +444,15 @@ pub fn runAllSpecs(
             total_failed,
             Color.reset,
         });
+        if (total_ignored > 0) {
+            try writer.print(", {s}{d} ignored{s}", .{ Color.grey, total_ignored, Color.reset });
+        }
+        try writer.writeAll("\n");
     }
 
     return SpecResult{
         .passed = total_passed,
         .failed = total_failed,
+        .ignored = total_ignored,
     };
 }

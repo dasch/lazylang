@@ -35,6 +35,24 @@
     test: testExpr
   },
 
+  /// Creates an ignored test case that will be skipped during test execution.
+  /// Useful for temporarily disabling tests without removing them.
+  ///
+  /// **Parameters:**
+  /// - `description`: A string describing what should happen
+  /// - `testExpr`: An assertion expression (not evaluated)
+  ///
+  /// **Example:**
+  /// ```
+  /// xit "adds two numbers correctly" (mustEq 5 result) where
+  ///   result = 2 + 3
+  /// ```
+  xit: description -> testExpr -> {
+    type: "xit",
+    description: description,
+    test: testExpr
+  },
+
   /// Creates an equality assertion that checks if the actual value matches the expected value.
   /// The test passes if both values are equal, otherwise it fails.
   ///
