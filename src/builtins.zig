@@ -576,6 +576,23 @@ pub fn mathExp(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalErro
     return eval.Value{ .integer = @intFromFloat(result) };
 }
 
+// Error handling builtins
+pub fn crash(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const message = switch (args[0]) {
+        .string => |s| s,
+        else => return error.TypeMismatch,
+    };
+
+    // Duplicate the message using page_allocator so it persists after arena is freed
+    // The message will be freed when clearUserCrashMessage is called
+    const message_copy = try std.heap.page_allocator.dupe(u8, message);
+    eval.setUserCrashMessage(message_copy);
+    return error.UserCrash;
+}
+
 // Utility to create a curried native function wrapper
 // This allows native functions to be partially applied like regular functions
 pub fn curry2(comptime impl: fn (std.mem.Allocator, eval.Value, eval.Value) eval.EvalError!eval.Value) eval.NativeFn {

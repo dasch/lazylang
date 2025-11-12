@@ -2,6 +2,24 @@ const std = @import("std");
 const error_reporter = @import("error_reporter.zig");
 const error_context = @import("error_context.zig");
 
+/// Thread-local storage for user crash messages
+threadlocal var user_crash_message: ?[]const u8 = null;
+
+pub fn setUserCrashMessage(message: []const u8) void {
+    user_crash_message = message;
+}
+
+pub fn getUserCrashMessage() ?[]const u8 {
+    return user_crash_message;
+}
+
+pub fn clearUserCrashMessage() void {
+    if (user_crash_message) |msg| {
+        std.heap.page_allocator.free(msg);
+    }
+    user_crash_message = null;
+}
+
 pub const TokenKind = enum {
     eof,
     identifier,
@@ -1953,6 +1971,7 @@ pub const EvalError = ParseError || std.mem.Allocator.Error || std.process.GetEn
     WrongNumberOfArguments,
     InvalidArgument,
     UnknownField,
+    UserCrash,
 };
 
 pub const EvalContext = struct {
@@ -2832,6 +2851,9 @@ pub fn createBuiltinEnvironment(arena: std.mem.Allocator) !?*Environment {
     env = try addBuiltin(arena, env, "__object_keys", builtins.objectKeys);
     env = try addBuiltin(arena, env, "__object_values", builtins.objectValues);
     env = try addBuiltin(arena, env, "__object_get", builtins.objectGet);
+
+    // Error handling builtins
+    env = try addBuiltin(arena, env, "crash", builtins.crash);
 
     return env;
 }

@@ -155,6 +155,19 @@ fn runEval(
 }
 
 fn reportErrorWithContext(stderr: anytype, filename: []const u8, source: []const u8, err_ctx: *const error_context.ErrorContext) !void {
+    // Check if it's a user crash
+    if (evaluator.getUserCrashMessage()) |crash_message| {
+        const error_info = error_reporter.ErrorInfo{
+            .title = "Runtime error",
+            .location = null,
+            .message = crash_message,
+            .suggestion = null,
+        };
+        try error_reporter.reportError(stderr, source, filename, error_info);
+        evaluator.clearUserCrashMessage();
+        return;
+    }
+
     // Determine which error to report (we don't have the error type here, so use the location)
     const error_info = if (err_ctx.last_error_location) |loc| blk: {
         // We have location info - show it!
@@ -241,6 +254,15 @@ fn reportError(stderr: anytype, filename: []const u8, source: []const u8, err: a
             .message = error_reporter.ErrorMessages.invalidArgument(),
             .suggestion = "Check that the argument value is valid for this operation.",
         },
+        error.UserCrash => blk: {
+            const crash_message = evaluator.getUserCrashMessage() orelse "Program crashed with no message.";
+            break :blk error_reporter.ErrorInfo{
+                .title = "Runtime error",
+                .location = null,
+                .message = crash_message,
+                .suggestion = null,
+            };
+        },
         else => error_reporter.ErrorInfo{
             .title = "Error",
             .location = null,
@@ -250,6 +272,9 @@ fn reportError(stderr: anytype, filename: []const u8, source: []const u8, err: a
     };
 
     try error_reporter.reportError(stderr, source, filename, error_info);
+
+    // Clear the crash message after reporting
+    evaluator.clearUserCrashMessage();
 }
 
 fn runSpec(
