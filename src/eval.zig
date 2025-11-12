@@ -2620,7 +2620,9 @@ pub fn evaluateExpression(
                             // Patch: merge with existing field if it exists and is an object
                             const existing_value = findObjectField(base_obj, field.key);
                             if (existing_value) |existing| {
-                                const existing_obj = switch (existing) {
+                                // Force the existing value if it's a thunk
+                                const forced_existing = try force(arena, existing);
+                                const existing_obj = switch (forced_existing) {
                                     .object => |o| o,
                                     else => return error.TypeMismatch,
                                 };
@@ -2826,7 +2828,8 @@ fn evaluateObjectComprehension(
                 // Create a tuple (key, value) for object iteration
                 const tuple_elements = try arena.alloc(Value, 2);
                 tuple_elements[0] = .{ .string = try arena.dupe(u8, field.key) };
-                tuple_elements[1] = field.value;
+                // Force the thunk if the value is a thunk
+                tuple_elements[1] = try force(arena, field.value);
                 const tuple_value = Value{ .tuple = .{ .elements = tuple_elements } };
 
                 const new_env = try matchPattern(arena, clause.pattern, tuple_value, env);
