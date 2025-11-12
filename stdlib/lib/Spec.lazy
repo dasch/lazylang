@@ -11,13 +11,13 @@
 /// { describe, it, mustEq } = import 'Spec'
 ///
 /// describe "Math operations" [
-///   it "adds numbers correctly" (
-///     mustEq 5 (2 + 3)
-///   )
+///   it "adds numbers correctly" do
+///     result = 2 + 3
+///     mustEq 5 result
 ///
-///   it "multiplies numbers correctly" (
-///     mustEq 10 (2 * 5)
-///   )
+///   it "multiplies numbers correctly" do
+///     result = 2 * 5
+///     mustEq 10 result
 /// ]
 /// ```
 ///
@@ -41,8 +41,8 @@
   ///
   /// **Example:**
   /// ```
-  /// it "doesn't throw an error" do
-  ///   functionThatShouldWork()
+  /// it "evaluates without error" do
+  ///   x = 2 + 2
   ///   pass
   /// ```
   pass: {
@@ -58,13 +58,14 @@
   /// **Example:**
   /// ```
   /// it "validates input" do
-  ///   if (isInvalid input) then
+  ///   input = "invalid"
+  ///   if (input == "invalid") then
   ///     fail "Input validation failed"
   ///   else
   ///     pass
   ///
-  /// // Or with structured details
-  /// fail { kind: "eq", expected: 5, actual: 10 }
+  /// it "provides structured failure details" do
+  ///   fail { kind: "eq", expected: 5, actual: 10 }
   /// ```
   fail: details -> {
     type: "fail",
@@ -81,7 +82,9 @@
   /// **Example:**
   /// ```
   /// describe "Array operations" [
-  ///   it "should concatenate arrays" (mustEq [1,2,3] result)
+  ///   it "concatenates arrays" do
+  ///     result = [1, 2] ++ [3]
+  ///     mustEq [1, 2, 3] result
   /// ]
   /// ```
   describe: description -> children -> {
@@ -98,8 +101,9 @@
   ///
   /// **Example:**
   /// ```
-  /// it "adds two numbers correctly" (mustEq 5 result) where
+  /// it "adds two numbers correctly" do
   ///   result = 2 + 3
+  ///   mustEq 5 result
   /// ```
   it: description -> testExpr -> {
     type: "it",
@@ -116,8 +120,9 @@
   ///
   /// **Example:**
   /// ```
-  /// xit "adds two numbers correctly" (mustEq 5 result) where
+  /// xit "adds two numbers correctly" do
   ///   result = 2 + 3
+  ///   mustEq 5 result
   /// ```
   xit: description -> testExpr -> {
     type: "xit",
