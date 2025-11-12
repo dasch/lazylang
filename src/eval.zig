@@ -3527,6 +3527,213 @@ fn jsonEscapeString(builder: *std.ArrayList(u8), allocator: std.mem.Allocator, s
     }
 }
 
+pub fn formatValueAsYaml(allocator: std.mem.Allocator, value: Value) ![]u8 {
+    return formatValueAsYamlImpl(allocator, allocator, value, 0);
+}
+
+fn formatValueAsYamlImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator, value: Value, indent: usize) error{OutOfMemory}![]u8 {
+    return switch (value) {
+        .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
+        .float => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
+        .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
+        .null_value => try std.fmt.allocPrint(allocator, "null", .{}),
+        .symbol => |s| blk: {
+            // Symbols are represented as strings in YAML
+            if (yamlNeedsQuoting(s)) {
+                var builder = std.ArrayList(u8){};
+                errdefer builder.deinit(allocator);
+                try builder.append(allocator, '"');
+                try yamlEscapeString(&builder, allocator, s);
+                try builder.append(allocator, '"');
+                break :blk try builder.toOwnedSlice(allocator);
+            } else {
+                break :blk try allocator.dupe(u8, s);
+            }
+        },
+        .function => try std.fmt.allocPrint(allocator, "null", .{}),
+        .native_fn => try std.fmt.allocPrint(allocator, "null", .{}),
+        .thunk => blk: {
+            const forced = force(arena, value) catch break :blk try std.fmt.allocPrint(allocator, "null", .{});
+            break :blk try formatValueAsYamlImpl(allocator, arena, forced, indent);
+        },
+        .array => |arr| blk: {
+            if (arr.elements.len == 0) {
+                break :blk try std.fmt.allocPrint(allocator, "[]", .{});
+            }
+
+            var builder = std.ArrayList(u8){};
+            errdefer builder.deinit(allocator);
+
+            for (arr.elements) |element| {
+                if (builder.items.len > 0) {
+                    try builder.append(allocator, '\n');
+                }
+                for (0..indent) |_| {
+                    try builder.appendSlice(allocator, "  ");
+                }
+                try builder.appendSlice(allocator, "- ");
+
+                const formatted = try formatValueAsYamlImpl(allocator, arena, element, indent + 1);
+                defer allocator.free(formatted);
+
+                // If the formatted value contains newlines, we need to indent it
+                if (std.mem.indexOf(u8, formatted, "\n")) |_| {
+                    var is_first = true;
+                    var iter = std.mem.splitScalar(u8, formatted, '\n');
+                    while (iter.next()) |line| {
+                        if (!is_first) {
+                            try builder.append(allocator, '\n');
+                            for (0..indent + 1) |_| {
+                                try builder.appendSlice(allocator, "  ");
+                            }
+                        }
+                        try builder.appendSlice(allocator, line);
+                        is_first = false;
+                    }
+                } else {
+                    try builder.appendSlice(allocator, formatted);
+                }
+            }
+
+            break :blk try builder.toOwnedSlice(allocator);
+        },
+        .tuple => |tup| blk: {
+            // Tuples are represented as arrays in YAML
+            if (tup.elements.len == 0) {
+                break :blk try std.fmt.allocPrint(allocator, "[]", .{});
+            }
+
+            var builder = std.ArrayList(u8){};
+            errdefer builder.deinit(allocator);
+
+            for (tup.elements) |element| {
+                if (builder.items.len > 0) {
+                    try builder.append(allocator, '\n');
+                }
+                for (0..indent) |_| {
+                    try builder.appendSlice(allocator, "  ");
+                }
+                try builder.appendSlice(allocator, "- ");
+                const formatted = try formatValueAsYamlImpl(allocator, arena, element, indent + 1);
+                defer allocator.free(formatted);
+                try builder.appendSlice(allocator, formatted);
+            }
+
+            break :blk try builder.toOwnedSlice(allocator);
+        },
+        .object => |obj| blk: {
+            if (obj.fields.len == 0) {
+                break :blk try std.fmt.allocPrint(allocator, "{{}}", .{});
+            }
+
+            var builder = std.ArrayList(u8){};
+            errdefer builder.deinit(allocator);
+
+            for (obj.fields, 0..) |field, i| {
+                if (i > 0) {
+                    try builder.append(allocator, '\n');
+                }
+                for (0..indent) |_| {
+                    try builder.appendSlice(allocator, "  ");
+                }
+
+                // Format the key
+                if (yamlNeedsQuoting(field.key)) {
+                    try builder.append(allocator, '"');
+                    try yamlEscapeString(&builder, allocator, field.key);
+                    try builder.append(allocator, '"');
+                } else {
+                    try builder.appendSlice(allocator, field.key);
+                }
+                try builder.appendSlice(allocator, ": ");
+
+                const formatted = try formatValueAsYamlImpl(allocator, arena, field.value, indent + 1);
+                defer allocator.free(formatted);
+
+                // If the formatted value contains newlines, put it on the next line
+                if (std.mem.indexOf(u8, formatted, "\n")) |_| {
+                    try builder.append(allocator, '\n');
+                    var is_first = true;
+                    var iter = std.mem.splitScalar(u8, formatted, '\n');
+                    while (iter.next()) |line| {
+                        if (!is_first) {
+                            try builder.append(allocator, '\n');
+                        }
+                        for (0..indent + 1) |_| {
+                            try builder.appendSlice(allocator, "  ");
+                        }
+                        try builder.appendSlice(allocator, line);
+                        is_first = false;
+                    }
+                } else {
+                    try builder.appendSlice(allocator, formatted);
+                }
+            }
+
+            break :blk try builder.toOwnedSlice(allocator);
+        },
+        .string => |str| blk: {
+            if (yamlNeedsQuoting(str)) {
+                var builder = std.ArrayList(u8){};
+                errdefer builder.deinit(allocator);
+                try builder.append(allocator, '"');
+                try yamlEscapeString(&builder, allocator, str);
+                try builder.append(allocator, '"');
+                break :blk try builder.toOwnedSlice(allocator);
+            } else {
+                break :blk try allocator.dupe(u8, str);
+            }
+        },
+    };
+}
+
+fn yamlNeedsQuoting(str: []const u8) bool {
+    if (str.len == 0) return true;
+
+    // Check for special YAML values that need quoting
+    if (std.mem.eql(u8, str, "true") or std.mem.eql(u8, str, "false") or
+        std.mem.eql(u8, str, "null") or std.mem.eql(u8, str, "~") or
+        std.mem.eql(u8, str, "yes") or std.mem.eql(u8, str, "no"))
+    {
+        return true;
+    }
+
+    // Check if string starts with special characters
+    switch (str[0]) {
+        '-', '?', ':', '@', '`', '|', '>', '&', '*', '!', '%', '#', '[', ']', '{', '}', ',', '"', '\'', ' ' => return true,
+        else => {},
+    }
+
+    // Check for special characters in the string
+    for (str) |c| {
+        switch (c) {
+            '\n', '\r', '\t', ':', '#', ',', '[', ']', '{', '}', '"', '\'' => return true,
+            else => if (c < 0x20 or c == 0x7F) return true,
+        }
+    }
+
+    return false;
+}
+
+fn yamlEscapeString(builder: *std.ArrayList(u8), allocator: std.mem.Allocator, str: []const u8) !void {
+    for (str) |c| {
+        switch (c) {
+            '"' => try builder.appendSlice(allocator, "\\\""),
+            '\\' => try builder.appendSlice(allocator, "\\\\"),
+            '\n' => try builder.appendSlice(allocator, "\\n"),
+            '\r' => try builder.appendSlice(allocator, "\\r"),
+            '\t' => try builder.appendSlice(allocator, "\\t"),
+            else => {
+                if (c < 0x20 or c == 0x7F) {
+                    try builder.appendSlice(allocator, try std.fmt.allocPrint(allocator, "\\x{x:0>2}", .{c}));
+                } else {
+                    try builder.append(allocator, c);
+                }
+            },
+        }
+    }
+}
+
 fn formatValuePrettyImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator, value: Value, indent: usize) error{OutOfMemory}![]u8 {
     return switch (value) {
         .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
@@ -3807,6 +4014,7 @@ pub const EvalResult = struct {
 pub const FormatStyle = enum {
     pretty,
     json,
+    yaml,
 };
 
 fn evalSourceWithContext(
@@ -3859,6 +4067,7 @@ fn evalSourceWithFormat(
     const formatted = switch (format) {
         .pretty => try formatValuePrettyImpl(allocator, arena.allocator(), value, 0),
         .json => try formatValueAsJsonImpl(allocator, arena.allocator(), value),
+        .yaml => try formatValueAsYamlImpl(allocator, arena.allocator(), value, 0),
     };
 
     arena.deinit();

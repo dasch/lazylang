@@ -49,6 +49,7 @@ pub fn run(
 const OutputFormat = enum {
     pretty,
     json,
+    yaml,
 };
 
 fn runEval(
@@ -83,6 +84,10 @@ fn runEval(
             output_format = .json;
             continue;
         }
+        if (std.mem.eql(u8, arg, "--yaml")) {
+            output_format = .yaml;
+            continue;
+        }
 
         // Positional argument - treat as file path
         if (file_path != null) {
@@ -102,6 +107,7 @@ fn runEval(
         const format: evaluator.FormatStyle = switch (output_format) {
             .pretty => .pretty,
             .json => .json,
+            .yaml => .yaml,
         };
 
         var result = evaluator.evalInlineWithFormat(allocator, inline_expr.?, format) catch |err| {
@@ -143,6 +149,7 @@ fn runEval(
     const format: evaluator.FormatStyle = switch (output_format) {
         .pretty => .pretty,
         .json => .json,
+        .yaml => .yaml,
     };
 
     var result = evaluator.evalFileWithFormat(allocator, file_path.?, format) catch |err| {
