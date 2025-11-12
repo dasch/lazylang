@@ -141,6 +141,152 @@ pub fn arrayConcatAll(arena: std.mem.Allocator, args: []const eval.Value) eval.E
     return eval.Value{ .string = result };
 }
 
+pub fn arraySlice(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple_arg = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    if (tuple_arg.elements.len != 3) return error.WrongNumberOfArguments;
+
+    const start_val = switch (tuple_arg.elements[0]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    const end_val = switch (tuple_arg.elements[1]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    const array = switch (tuple_arg.elements[2]) {
+        .array => |a| a,
+        else => return error.TypeMismatch,
+    };
+
+    const len = @as(i64, @intCast(array.elements.len));
+
+    // Normalize negative indices
+    const start = if (start_val < 0) @max(0, len + start_val) else @min(start_val, len);
+    const end = if (end_val < 0) @max(0, len + end_val) else @min(end_val, len);
+
+    // Handle invalid ranges
+    if (start >= end or start >= len) {
+        const empty = try arena.alloc(eval.Value, 0);
+        return eval.Value{ .array = .{ .elements = empty } };
+    }
+
+    const slice_start = @as(usize, @intCast(start));
+    const slice_end = @as(usize, @intCast(end));
+    const slice_len = slice_end - slice_start;
+
+    const result = try arena.alloc(eval.Value, slice_len);
+    @memcpy(result, array.elements[slice_start..slice_end]);
+
+    return eval.Value{ .array = .{ .elements = result } };
+}
+
+pub fn arraySort(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const array = switch (args[0]) {
+        .array => |a| a,
+        else => return error.TypeMismatch,
+    };
+
+    // Create a copy to sort
+    const result = try arena.alloc(eval.Value, array.elements.len);
+    @memcpy(result, array.elements);
+
+    // Sort using a simple comparison
+    const Context = struct {
+        fn lessThan(_: void, a: eval.Value, b: eval.Value) bool {
+            return switch (a) {
+                .integer => |av| switch (b) {
+                    .integer => |bv| av < bv,
+                    else => false,
+                },
+                .string => |av| switch (b) {
+                    .string => |bv| std.mem.order(u8, av, bv) == .lt,
+                    else => false,
+                },
+                else => false,
+            };
+        }
+    };
+
+    std.mem.sort(eval.Value, result, {}, Context.lessThan);
+
+    return eval.Value{ .array = .{ .elements = result } };
+}
+
+pub fn arrayUniq(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const array = switch (args[0]) {
+        .array => |a| a,
+        else => return error.TypeMismatch,
+    };
+
+    if (array.elements.len == 0) {
+        const empty = try arena.alloc(eval.Value, 0);
+        return eval.Value{ .array = .{ .elements = empty } };
+    }
+
+    // Use ArrayList to build result
+    var seen = std.ArrayList(eval.Value){};
+    defer seen.deinit(arena);
+
+    for (array.elements) |elem| {
+        // Check if element is already in seen
+        var found = false;
+        for (seen.items) |seen_elem| {
+            if (valuesEqual(arena, elem, seen_elem)) {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found) {
+            try seen.append(arena, elem);
+        }
+    }
+
+    return eval.Value{ .array = .{ .elements = try seen.toOwnedSlice(arena) } };
+}
+
+fn valuesEqual(arena: std.mem.Allocator, a: eval.Value, b: eval.Value) bool {
+    // Force thunks before comparison
+    const a_forced = eval.force(arena, a) catch a;
+    const b_forced = eval.force(arena, b) catch b;
+
+    return switch (a_forced) {
+        .integer => |av| switch (b_forced) {
+            .integer => |bv| av == bv,
+            else => false,
+        },
+        .boolean => |av| switch (b_forced) {
+            .boolean => |bv| av == bv,
+            else => false,
+        },
+        .null_value => switch (b_forced) {
+            .null_value => true,
+            else => false,
+        },
+        .symbol => |av| switch (b_forced) {
+            .symbol => |bv| std.mem.eql(u8, av, bv),
+            else => false,
+        },
+        .string => |av| switch (b_forced) {
+            .string => |bv| std.mem.eql(u8, av, bv),
+            else => false,
+        },
+        else => false, // Functions, arrays, objects, tuples not compared
+    };
+}
+
 // String builtins
 pub fn stringLength(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
     _ = arena;
@@ -347,6 +493,224 @@ pub fn stringContains(arena: std.mem.Allocator, args: []const eval.Value) eval.E
 
     const result = std.mem.indexOf(u8, str, substring) != null;
     return eval.Value{ .boolean = result };
+}
+
+pub fn stringRepeat(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple_arg = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
+
+    const count = switch (tuple_arg.elements[0]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    const str = switch (tuple_arg.elements[1]) {
+        .string => |s| s,
+        else => return error.TypeMismatch,
+    };
+
+    if (count < 0) return error.TypeMismatch;
+    if (count == 0) {
+        const empty = try arena.alloc(u8, 0);
+        return eval.Value{ .string = empty };
+    }
+
+    const total_len = str.len * @as(usize, @intCast(count));
+    const result = try arena.alloc(u8, total_len);
+
+    var offset: usize = 0;
+    var i: i64 = 0;
+    while (i < count) : (i += 1) {
+        @memcpy(result[offset..][0..str.len], str);
+        offset += str.len;
+    }
+
+    return eval.Value{ .string = result };
+}
+
+pub fn stringReplace(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple_arg = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    if (tuple_arg.elements.len != 3) return error.WrongNumberOfArguments;
+
+    const from = switch (tuple_arg.elements[0]) {
+        .string => |s| s,
+        else => return error.TypeMismatch,
+    };
+
+    const to = switch (tuple_arg.elements[1]) {
+        .string => |s| s,
+        else => return error.TypeMismatch,
+    };
+
+    const str = switch (tuple_arg.elements[2]) {
+        .string => |s| s,
+        else => return error.TypeMismatch,
+    };
+
+    // Handle empty 'from' string - return original
+    if (from.len == 0) {
+        const result = try arena.dupe(u8, str);
+        return eval.Value{ .string = result };
+    }
+
+    // Count occurrences
+    var count: usize = 0;
+    var pos: usize = 0;
+    while (std.mem.indexOfPos(u8, str, pos, from)) |found| {
+        count += 1;
+        pos = found + from.len;
+    }
+
+    if (count == 0) {
+        const result = try arena.dupe(u8, str);
+        return eval.Value{ .string = result };
+    }
+
+    // Calculate result length
+    const result_len = str.len - (from.len * count) + (to.len * count);
+    const result = try arena.alloc(u8, result_len);
+
+    // Perform replacement
+    var src_pos: usize = 0;
+    var dst_pos: usize = 0;
+    while (std.mem.indexOfPos(u8, str, src_pos, from)) |found| {
+        // Copy text before match
+        const before_len = found - src_pos;
+        @memcpy(result[dst_pos..][0..before_len], str[src_pos..found]);
+        dst_pos += before_len;
+
+        // Copy replacement
+        @memcpy(result[dst_pos..][0..to.len], to);
+        dst_pos += to.len;
+
+        src_pos = found + from.len;
+    }
+
+    // Copy remaining text
+    const remaining = str[src_pos..];
+    @memcpy(result[dst_pos..][0..remaining.len], remaining);
+
+    return eval.Value{ .string = result };
+}
+
+pub fn stringSlice(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple_arg = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    if (tuple_arg.elements.len != 3) return error.WrongNumberOfArguments;
+
+    const start_val = switch (tuple_arg.elements[0]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    const end_val = switch (tuple_arg.elements[1]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    const str = switch (tuple_arg.elements[2]) {
+        .string => |s| s,
+        else => return error.TypeMismatch,
+    };
+
+    const len = @as(i64, @intCast(str.len));
+
+    // Normalize negative indices
+    const start = if (start_val < 0) @max(0, len + start_val) else @min(start_val, len);
+    const end = if (end_val < 0) @max(0, len + end_val) else @min(end_val, len);
+
+    // Handle invalid ranges
+    if (start >= end or start >= len) {
+        const empty = try arena.alloc(u8, 0);
+        return eval.Value{ .string = empty };
+    }
+
+    const slice_start = @as(usize, @intCast(start));
+    const slice_end = @as(usize, @intCast(end));
+
+    const result = try arena.dupe(u8, str[slice_start..slice_end]);
+    return eval.Value{ .string = result };
+}
+
+pub fn stringJoin(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple_arg = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
+
+    const separator = switch (tuple_arg.elements[0]) {
+        .string => |s| s,
+        else => return error.TypeMismatch,
+    };
+
+    const array = switch (tuple_arg.elements[1]) {
+        .array => |a| a,
+        else => return error.TypeMismatch,
+    };
+
+    if (array.elements.len == 0) {
+        const empty = try arena.alloc(u8, 0);
+        return eval.Value{ .string = empty };
+    }
+
+    if (array.elements.len == 1) {
+        const str = switch (array.elements[0]) {
+            .string => |s| s,
+            else => return error.TypeMismatch,
+        };
+        const result = try arena.dupe(u8, str);
+        return eval.Value{ .string = result };
+    }
+
+    // Calculate total length
+    var total_len: usize = 0;
+    for (array.elements, 0..) |elem, i| {
+        const str = switch (elem) {
+            .string => |s| s,
+            else => return error.TypeMismatch,
+        };
+        total_len += str.len;
+        if (i < array.elements.len - 1) {
+            total_len += separator.len;
+        }
+    }
+
+    // Build result
+    const result = try arena.alloc(u8, total_len);
+    var offset: usize = 0;
+    for (array.elements, 0..) |elem, i| {
+        const str = elem.string;
+        @memcpy(result[offset..][0..str.len], str);
+        offset += str.len;
+
+        if (i < array.elements.len - 1) {
+            @memcpy(result[offset..][0..separator.len], separator);
+            offset += separator.len;
+        }
+    }
+
+    return eval.Value{ .string = result };
 }
 
 // Math builtins
