@@ -322,7 +322,21 @@ pub fn runSpec(
 
     // Evaluate the spec file
     const value = eval_module.evalFileValue(arena.allocator(), allocator, file_path) catch |err| {
-        try writer.print("Error evaluating spec file: {}\n", .{err});
+        // Extract just the filename or relative path for display
+        const display_path = if (std.mem.lastIndexOf(u8, file_path, "spec/")) |idx|
+            file_path[idx..]
+        else if (std.mem.lastIndexOfScalar(u8, file_path, '/')) |idx|
+            file_path[idx + 1 ..]
+        else
+            file_path;
+
+        try writer.print("{s}{s} failed with a syntax error: {s}{}{s}\n", .{
+            Color.red,
+            display_path,
+            Color.dim,
+            err,
+            Color.reset,
+        });
         return SpecResult{
             .passed = 0,
             .failed = 1,
