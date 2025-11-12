@@ -92,6 +92,21 @@ export function activate(context: ExtensionContext) {
                             console.log(`Formatter stderr: ${stderr}`);
                         }
 
+                        // If there's any stderr output, treat it as an error even if exit code is 0
+                        if (stderr && stderr.trim().length > 0) {
+                            console.error('Formatter produced error output:', stderr);
+                            window.showErrorMessage(`Formatting failed: ${stderr.trim()}`);
+                            return [];
+                        }
+
+                        // Validate that we got output from the formatter
+                        // If stdout is empty, the formatter likely failed internally
+                        if (!stdout || stdout.length === 0) {
+                            console.error('Formatter returned empty output');
+                            window.showErrorMessage('Formatting failed: formatter returned empty output');
+                            return [];
+                        }
+
                         // Replace the entire document with the formatted output
                         const fullRange = new Range(
                             document.positionAt(0),
