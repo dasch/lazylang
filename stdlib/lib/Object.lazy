@@ -22,14 +22,20 @@
   values: obj -> __object_values obj
 
   /// Retrieves the value associated with a key in an object.
+  /// Returns `(#ok, value)` if the key exists, or `#noSuchKey` if the key is not found.
   ///
   /// **Parameters:**
   /// - `key`: The key to look up
   /// - `obj`: The object to access
   ///
+  /// **Returns:**
+  /// - `(#ok, value)`: When the key exists in the object
+  /// - `#noSuchKey`: When the key is not found
+  ///
   /// **Example:**
   /// ```
-  /// Object.get "name" { name: "John", age: 30 }  // Returns "John"
+  /// Object.get "name" { name: "John", age: 30 }  // Returns (#ok, "John")
+  /// Object.get "email" { name: "John", age: 30 }  // Returns #noSuchKey
   /// ```
   get: key -> obj -> __object_get (obj, key)
 }

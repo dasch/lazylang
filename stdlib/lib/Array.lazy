@@ -11,15 +11,20 @@
   length: arr -> __array_length arr
 
   /// Retrieves the element at the specified index in an array.
-  /// Returns the element if the index is valid, otherwise behavior is undefined.
+  /// Returns `(#ok, value)` if the index is valid, or `#outOfBounds` if the index is out of range.
   ///
   /// **Parameters:**
   /// - `idx`: The zero-based index of the element to retrieve
   /// - `arr`: The array to access
   ///
+  /// **Returns:**
+  /// - `(#ok, value)`: When the index is within bounds
+  /// - `#outOfBounds`: When the index is negative or >= array length
+  ///
   /// **Example:**
   /// ```
-  /// Array.get 1 [10, 20, 30]  // Returns 20
+  /// Array.get 1 [10, 20, 30]  // Returns (#ok, 20)
+  /// Array.get 5 [10, 20, 30]  // Returns #outOfBounds
   /// ```
   get: idx -> arr -> __array_get (arr, idx)
 }
