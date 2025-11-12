@@ -436,6 +436,10 @@ fn encodeValue(value: eval.Value, buf: *std.ArrayList(u8), indent: usize, arena:
             const str = try std.fmt.allocPrint(arena, "{d}", .{i});
             try buf.appendSlice(arena, str);
         },
+        .float => |f| {
+            const str = try std.fmt.allocPrint(arena, "{d}", .{f});
+            try buf.appendSlice(arena, str);
+        },
         .string => |s| {
             // Check if string needs quoting
             const needs_quotes = blk: {

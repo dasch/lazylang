@@ -70,7 +70,7 @@ const TokenizerError = error{
     UnterminatedString,
 };
 
-const ParseError = TokenizerError || std.mem.Allocator.Error || std.fmt.ParseIntError || error{
+const ParseError = TokenizerError || std.mem.Allocator.Error || std.fmt.ParseIntError || std.fmt.ParseFloatError || error{
     ExpectedExpression,
     UnexpectedToken,
 };
@@ -97,6 +97,7 @@ const UnaryOp = enum {
 
 pub const Expression = union(enum) {
     integer: i64,
+    float: f64,
     boolean: bool,
     null_literal,
     symbol: []const u8,
@@ -245,6 +246,7 @@ const FieldProjection = struct {
 pub const Pattern = union(enum) {
     identifier: []const u8,
     integer: i64,
+    float: f64,
     boolean: bool,
     null_literal,
     symbol: []const u8,
@@ -500,6 +502,8 @@ pub const Tokenizer = struct {
         const start = self.index;
         const start_line = self.line;
         const start_column = self.column;
+
+        // Consume integer part
         while (self.index < self.source.len) {
             const c = self.source[self.index];
             switch (c) {
@@ -507,6 +511,27 @@ pub const Tokenizer = struct {
                 else => break,
             }
         }
+
+        // Check for decimal point followed by digits
+        if (self.index < self.source.len and self.source[self.index] == '.') {
+            // Look ahead to ensure there's a digit after the dot
+            // This prevents treating "foo.bar" as "foo" followed by ".bar"
+            if (self.index + 1 < self.source.len) {
+                const next_char = self.source[self.index + 1];
+                if (next_char >= '0' and next_char <= '9') {
+                    self.advance(); // consume '.'
+                    // Consume fractional part
+                    while (self.index < self.source.len) {
+                        const c = self.source[self.index];
+                        switch (c) {
+                            '0'...'9' => self.advance(),
+                            else => break,
+                        }
+                    }
+                }
+            }
+        }
+
         return self.makeToken(.number, start, start_line, start_column);
     }
 
@@ -1152,10 +1177,17 @@ pub const Parser = struct {
         switch (self.current.kind) {
             .number => {
                 const lexeme = self.current.lexeme;
-                const value = try std.fmt.parseInt(i64, lexeme, 10);
+                // Check if the number contains a decimal point
+                const has_decimal_point = std.mem.indexOfScalar(u8, lexeme, '.') != null;
                 try self.advance();
                 const node = try self.allocateExpression();
-                node.* = .{ .integer = value };
+                if (has_decimal_point) {
+                    const value = try std.fmt.parseFloat(f64, lexeme);
+                    node.* = .{ .float = value };
+                } else {
+                    const value = try std.fmt.parseInt(i64, lexeme, 10);
+                    node.* = .{ .integer = value };
+                }
                 return node;
             },
             .identifier => {
@@ -1625,10 +1657,17 @@ pub const Parser = struct {
         switch (self.current.kind) {
             .number => {
                 const lexeme = self.current.lexeme;
-                const value = try std.fmt.parseInt(i64, lexeme, 10);
+                // Check if the number contains a decimal point
+                const has_decimal_point = std.mem.indexOfScalar(u8, lexeme, '.') != null;
                 try self.advance();
                 const pattern = try self.arena.create(Pattern);
-                pattern.* = .{ .integer = value };
+                if (has_decimal_point) {
+                    const value = try std.fmt.parseFloat(f64, lexeme);
+                    pattern.* = .{ .float = value };
+                } else {
+                    const value = try std.fmt.parseInt(i64, lexeme, 10);
+                    pattern.* = .{ .integer = value };
+                }
                 return pattern;
             },
             .string => {
@@ -1937,6 +1976,7 @@ pub const Thunk = struct {
 
 pub const Value = union(enum) {
     integer: i64,
+    float: f64,
     boolean: bool,
     null_value,
     symbol: []const u8,
@@ -1975,6 +2015,10 @@ fn valuesEqual(arena: std.mem.Allocator, a: Value, b: Value) bool {
     return switch (a_forced) {
         .integer => |av| switch (b_forced) {
             .integer => |bv| av == bv,
+            else => false,
+        },
+        .float => |av| switch (b_forced) {
+            .float => |bv| av == bv,
             else => false,
         },
         .boolean => |av| switch (b_forced) {
@@ -2049,6 +2093,7 @@ pub const EvalError = ParseError || std.mem.Allocator.Error || std.process.GetEn
     UnknownField,
     UserCrash,
     CyclicReference,
+    DivisionByZero,
 };
 
 pub const EvalContext = struct {
@@ -2156,6 +2201,14 @@ pub fn matchPattern(
         .integer => |expected| blk: {
             const actual = switch (value) {
                 .integer => |v| v,
+                else => return error.TypeMismatch,
+            };
+            if (expected != actual) return error.TypeMismatch;
+            break :blk base_env;
+        },
+        .float => |expected| blk: {
+            const actual = switch (value) {
+                .float => |v| v,
                 else => return error.TypeMismatch,
             };
             if (expected != actual) return error.TypeMismatch;
@@ -2359,6 +2412,7 @@ pub fn evaluateExpression(
 ) EvalError!Value {
     return switch (expr.*) {
         .integer => |value| .{ .integer = value },
+        .float => |value| .{ .float = value },
         .boolean => |value| .{ .boolean = value },
         .null_literal => .null_value,
         .symbol => |value| .{ .symbol = try arena.dupe(u8, value) },
@@ -2440,22 +2494,108 @@ pub fn evaluateExpression(
 
             const result = switch (binary.op) {
                 .add, .subtract, .multiply => blk2: {
-                    const left_int = switch (left_value) {
-                        .integer => |v| v,
-                        else => return error.TypeMismatch,
-                    };
-                    const right_int = switch (right_value) {
-                        .integer => |v| v,
-                        else => return error.TypeMismatch,
-                    };
+                    // Check if either operand is a float
+                    const is_float_op = (left_value == .float or right_value == .float);
 
-                    const int_result = switch (binary.op) {
-                        .add => try std.math.add(i64, left_int, right_int),
-                        .subtract => try std.math.sub(i64, left_int, right_int),
-                        .multiply => try std.math.mul(i64, left_int, right_int),
-                        else => unreachable,
-                    };
-                    break :blk2 Value{ .integer = int_result };
+                    if (is_float_op) {
+                        // At least one operand is float, promote to float arithmetic
+                        const left_float = switch (left_value) {
+                            .integer => |v| @as(f64, @floatFromInt(v)),
+                            .float => |v| v,
+                            else => {
+                                if (ctx.error_ctx) |err_ctx| {
+                                    const op_name = switch (binary.op) {
+                                        .add => "addition",
+                                        .subtract => "subtraction",
+                                        .multiply => "multiplication",
+                                        else => unreachable,
+                                    };
+                                    err_ctx.setErrorData(.{ .type_mismatch = .{
+                                        .expected = "number (integer or float)",
+                                        .found = getValueTypeName(left_value),
+                                        .operation = op_name,
+                                    } });
+                                }
+                                return error.TypeMismatch;
+                            },
+                        };
+                        const right_float = switch (right_value) {
+                            .integer => |v| @as(f64, @floatFromInt(v)),
+                            .float => |v| v,
+                            else => {
+                                if (ctx.error_ctx) |err_ctx| {
+                                    const op_name = switch (binary.op) {
+                                        .add => "addition",
+                                        .subtract => "subtraction",
+                                        .multiply => "multiplication",
+                                        else => unreachable,
+                                    };
+                                    err_ctx.setErrorData(.{ .type_mismatch = .{
+                                        .expected = "number (integer or float)",
+                                        .found = getValueTypeName(right_value),
+                                        .operation = op_name,
+                                    } });
+                                }
+                                return error.TypeMismatch;
+                            },
+                        };
+
+                        const float_result = switch (binary.op) {
+                            .add => left_float + right_float,
+                            .subtract => left_float - right_float,
+                            .multiply => left_float * right_float,
+                            else => unreachable,
+                        };
+                        break :blk2 Value{ .float = float_result };
+                    } else {
+                        // Both operands are integers
+                        const left_int = switch (left_value) {
+                            .integer => |v| v,
+                            else => {
+                                if (ctx.error_ctx) |err_ctx| {
+                                    const op_name = switch (binary.op) {
+                                        .add => "addition",
+                                        .subtract => "subtraction",
+                                        .multiply => "multiplication",
+                                        else => unreachable,
+                                    };
+                                    err_ctx.setErrorData(.{ .type_mismatch = .{
+                                        .expected = "integer",
+                                        .found = getValueTypeName(left_value),
+                                        .operation = op_name,
+                                    } });
+                                }
+                                return error.TypeMismatch;
+                            },
+                        };
+                        const right_int = switch (right_value) {
+                            .integer => |v| v,
+                            else => {
+                                if (ctx.error_ctx) |err_ctx| {
+                                    const op_name = switch (binary.op) {
+                                        .add => "addition",
+                                        .subtract => "subtraction",
+                                        .multiply => "multiplication",
+                                        else => unreachable,
+                                    };
+                                    err_ctx.setErrorData(.{ .type_mismatch = .{
+                                        .expected = "integer",
+                                        .found = getValueTypeName(right_value),
+                                        .operation = op_name,
+                                    } });
+                                }
+                                return error.TypeMismatch;
+                            },
+                        };
+
+                        const int_result = switch (binary.op) {
+                            .add => try std.math.add(i64, left_int, right_int),
+                            .subtract => try std.math.sub(i64, left_int, right_int),
+                            .multiply => try std.math.mul(i64, left_int, right_int),
+                            else => unreachable,
+                        };
+                        break :blk2 Value{ .integer = int_result };
+                    }
                 },
                 .logical_and => blk2: {
                     const left_bool = switch (left_value) {
@@ -2488,21 +2628,111 @@ pub fn evaluateExpression(
                     break :blk2 Value{ .boolean = bool_result };
                 },
                 .less_than, .greater_than, .less_or_equal, .greater_or_equal => blk2: {
-                    const left_int = switch (left_value) {
-                        .integer => |v| v,
-                        else => return error.TypeMismatch,
-                    };
-                    const right_int = switch (right_value) {
-                        .integer => |v| v,
-                        else => return error.TypeMismatch,
-                    };
+                    // Check if either operand is a float
+                    const is_float_op = (left_value == .float or right_value == .float);
 
-                    const bool_result = switch (binary.op) {
-                        .less_than => left_int < right_int,
-                        .greater_than => left_int > right_int,
-                        .less_or_equal => left_int <= right_int,
-                        .greater_or_equal => left_int >= right_int,
-                        else => unreachable,
+                    const bool_result = if (is_float_op) blk3: {
+                        // At least one operand is float, promote to float comparison
+                        const left_float = switch (left_value) {
+                            .integer => |v| @as(f64, @floatFromInt(v)),
+                            .float => |v| v,
+                            else => {
+                                if (ctx.error_ctx) |err_ctx| {
+                                    const op_name = switch (binary.op) {
+                                        .less_than => "comparison (<)",
+                                        .greater_than => "comparison (>)",
+                                        .less_or_equal => "comparison (<=)",
+                                        .greater_or_equal => "comparison (>=)",
+                                        else => unreachable,
+                                    };
+                                    err_ctx.setErrorData(.{ .type_mismatch = .{
+                                        .expected = "number (integer or float)",
+                                        .found = getValueTypeName(left_value),
+                                        .operation = op_name,
+                                    } });
+                                }
+                                return error.TypeMismatch;
+                            },
+                        };
+                        const right_float = switch (right_value) {
+                            .integer => |v| @as(f64, @floatFromInt(v)),
+                            .float => |v| v,
+                            else => {
+                                if (ctx.error_ctx) |err_ctx| {
+                                    const op_name = switch (binary.op) {
+                                        .less_than => "comparison (<)",
+                                        .greater_than => "comparison (>)",
+                                        .less_or_equal => "comparison (<=)",
+                                        .greater_or_equal => "comparison (>=)",
+                                        else => unreachable,
+                                    };
+                                    err_ctx.setErrorData(.{ .type_mismatch = .{
+                                        .expected = "number (integer or float)",
+                                        .found = getValueTypeName(right_value),
+                                        .operation = op_name,
+                                    } });
+                                }
+                                return error.TypeMismatch;
+                            },
+                        };
+
+                        break :blk3 switch (binary.op) {
+                            .less_than => left_float < right_float,
+                            .greater_than => left_float > right_float,
+                            .less_or_equal => left_float <= right_float,
+                            .greater_or_equal => left_float >= right_float,
+                            else => unreachable,
+                        };
+                    } else blk3: {
+                        // Both operands are integers
+                        const left_int = switch (left_value) {
+                            .integer => |v| v,
+                            else => {
+                                if (ctx.error_ctx) |err_ctx| {
+                                    const op_name = switch (binary.op) {
+                                        .less_than => "comparison (<)",
+                                        .greater_than => "comparison (>)",
+                                        .less_or_equal => "comparison (<=)",
+                                        .greater_or_equal => "comparison (>=)",
+                                        else => unreachable,
+                                    };
+                                    err_ctx.setErrorData(.{ .type_mismatch = .{
+                                        .expected = "integer",
+                                        .found = getValueTypeName(left_value),
+                                        .operation = op_name,
+                                    } });
+                                }
+                                return error.TypeMismatch;
+                            },
+                        };
+                        const right_int = switch (right_value) {
+                            .integer => |v| v,
+                            else => {
+                                if (ctx.error_ctx) |err_ctx| {
+                                    const op_name = switch (binary.op) {
+                                        .less_than => "comparison (<)",
+                                        .greater_than => "comparison (>)",
+                                        .less_or_equal => "comparison (<=)",
+                                        .greater_or_equal => "comparison (>=)",
+                                        else => unreachable,
+                                    };
+                                    err_ctx.setErrorData(.{ .type_mismatch = .{
+                                        .expected = "integer",
+                                        .found = getValueTypeName(right_value),
+                                        .operation = op_name,
+                                    } });
+                                }
+                                return error.TypeMismatch;
+                            },
+                        };
+
+                        break :blk3 switch (binary.op) {
+                            .less_than => left_int < right_int,
+                            .greater_than => left_int > right_int,
+                            .less_or_equal => left_int <= right_int,
+                            .greater_or_equal => left_int >= right_int,
+                            else => unreachable,
+                        };
                     };
                     break :blk2 Value{ .boolean = bool_result };
                 },
@@ -2978,6 +3208,20 @@ pub fn createBuiltinEnvironment(arena: std.mem.Allocator) !?*Environment {
     env = try addBuiltin(arena, env, "__yaml_parse", builtins.yamlParse);
     env = try addBuiltin(arena, env, "__yaml_encode", builtins.yamlEncode);
 
+    // JSON builtins
+    env = try addBuiltin(arena, env, "__json_parse", builtins.jsonParse);
+    env = try addBuiltin(arena, env, "__json_encode", builtins.jsonEncode);
+
+    // Float builtins
+    env = try addBuiltin(arena, env, "__float_round", builtins.floatRound);
+    env = try addBuiltin(arena, env, "__float_floor", builtins.floatFloor);
+    env = try addBuiltin(arena, env, "__float_ceil", builtins.floatCeil);
+    env = try addBuiltin(arena, env, "__float_abs", builtins.floatAbs);
+    env = try addBuiltin(arena, env, "__float_sqrt", builtins.floatSqrt);
+    env = try addBuiltin(arena, env, "__float_pow", builtins.floatPow);
+    env = try addBuiltin(arena, env, "__math_mod", builtins.mathMod);
+    env = try addBuiltin(arena, env, "__math_rem", builtins.mathRem);
+
     return env;
 }
 
@@ -3002,9 +3246,27 @@ fn lookup(env: ?*Environment, name: []const u8) ?Value {
     return null;
 }
 
+fn getValueTypeName(value: Value) []const u8 {
+    return switch (value) {
+        .integer => "integer",
+        .float => "float",
+        .boolean => "boolean",
+        .null_value => "null",
+        .symbol => "symbol",
+        .string => "string",
+        .array => "array",
+        .tuple => "tuple",
+        .object => "object",
+        .function => "function",
+        .native_fn => "native function",
+        .thunk => "thunk",
+    };
+}
+
 fn valueToString(allocator: std.mem.Allocator, value: Value) ![]u8 {
     return switch (value) {
         .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
+        .float => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
         .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
         .null_value => try std.fmt.allocPrint(allocator, "null", .{}),
         .symbol => |s| try allocator.dupe(u8, s),
@@ -3020,6 +3282,7 @@ pub fn formatValue(allocator: std.mem.Allocator, value: Value) ![]u8 {
 fn formatValueWithArena(allocator: std.mem.Allocator, arena: std.mem.Allocator, value: Value) error{OutOfMemory}![]u8 {
     return switch (value) {
         .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
+        .float => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
         .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
         .null_value => try std.fmt.allocPrint(allocator, "null", .{}),
         .symbol => |s| try std.fmt.allocPrint(allocator, "{s}", .{s}),

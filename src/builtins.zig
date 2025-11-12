@@ -1082,3 +1082,192 @@ pub fn jsonEncode(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalE
     };
     return eval.Value{ .string = json_str };
 }
+
+// Float/Math builtins
+
+/// Round a float to the nearest integer
+pub fn floatRound(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const value = switch (args[0]) {
+        .float => |f| f,
+        .integer => |i| @as(f64, @floatFromInt(i)),
+        else => return error.TypeMismatch,
+    };
+
+    return eval.Value{ .integer = @intFromFloat(@round(value)) };
+}
+
+/// Floor of a float (round down)
+pub fn floatFloor(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const value = switch (args[0]) {
+        .float => |f| f,
+        .integer => |i| @as(f64, @floatFromInt(i)),
+        else => return error.TypeMismatch,
+    };
+
+    return eval.Value{ .integer = @intFromFloat(@floor(value)) };
+}
+
+/// Ceiling of a float (round up)
+pub fn floatCeil(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const value = switch (args[0]) {
+        .float => |f| f,
+        .integer => |i| @as(f64, @floatFromInt(i)),
+        else => return error.TypeMismatch,
+    };
+
+    return eval.Value{ .integer = @intFromFloat(@ceil(value)) };
+}
+
+/// Absolute value
+pub fn floatAbs(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    return switch (args[0]) {
+        .float => |f| eval.Value{ .float = @abs(f) },
+        .integer => |i| eval.Value{ .integer = if (i < 0) -i else i },
+        else => error.TypeMismatch,
+    };
+}
+
+/// Square root
+pub fn floatSqrt(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const value = switch (args[0]) {
+        .float => |f| f,
+        .integer => |i| @as(f64, @floatFromInt(i)),
+        else => return error.TypeMismatch,
+    };
+
+    return eval.Value{ .float = @sqrt(value) };
+}
+
+/// Power (x^y)
+pub fn floatPow(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple_arg = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
+
+    const base = switch (tuple_arg.elements[0]) {
+        .float => |f| f,
+        .integer => |i| @as(f64, @floatFromInt(i)),
+        else => return error.TypeMismatch,
+    };
+
+    const exponent = switch (tuple_arg.elements[1]) {
+        .float => |f| f,
+        .integer => |i| @as(f64, @floatFromInt(i)),
+        else => return error.TypeMismatch,
+    };
+
+    return eval.Value{ .float = std.math.pow(f64, base, exponent) };
+}
+
+/// Modulo operation (remainder with sign of divisor)
+pub fn mathMod(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple_arg = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
+
+    // Check if we're dealing with floats
+    const is_float = (tuple_arg.elements[0] == .float or tuple_arg.elements[1] == .float);
+
+    if (is_float) {
+        const a = switch (tuple_arg.elements[0]) {
+            .float => |f| f,
+            .integer => |i| @as(f64, @floatFromInt(i)),
+            else => return error.TypeMismatch,
+        };
+
+        const b = switch (tuple_arg.elements[1]) {
+            .float => |f| f,
+            .integer => |i| @as(f64, @floatFromInt(i)),
+            else => return error.TypeMismatch,
+        };
+
+        if (b == 0.0) return error.DivisionByZero;
+        return eval.Value{ .float = @mod(a, b) };
+    } else {
+        const a = switch (tuple_arg.elements[0]) {
+            .integer => |i| i,
+            else => return error.TypeMismatch,
+        };
+
+        const b = switch (tuple_arg.elements[1]) {
+            .integer => |i| i,
+            else => return error.TypeMismatch,
+        };
+
+        if (b == 0) return error.DivisionByZero;
+        return eval.Value{ .integer = @mod(a, b) };
+    }
+}
+
+/// Remainder operation (remainder with sign of dividend)
+pub fn mathRem(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple_arg = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
+
+    // Check if we're dealing with floats
+    const is_float = (tuple_arg.elements[0] == .float or tuple_arg.elements[1] == .float);
+
+    if (is_float) {
+        const a = switch (tuple_arg.elements[0]) {
+            .float => |f| f,
+            .integer => |i| @as(f64, @floatFromInt(i)),
+            else => return error.TypeMismatch,
+        };
+
+        const b = switch (tuple_arg.elements[1]) {
+            .float => |f| f,
+            .integer => |i| @as(f64, @floatFromInt(i)),
+            else => return error.TypeMismatch,
+        };
+
+        if (b == 0.0) return error.DivisionByZero;
+        return eval.Value{ .float = @rem(a, b) };
+    } else {
+        const a = switch (tuple_arg.elements[0]) {
+            .integer => |i| i,
+            else => return error.TypeMismatch,
+        };
+
+        const b = switch (tuple_arg.elements[1]) {
+            .integer => |i| i,
+            else => return error.TypeMismatch,
+        };
+
+        if (b == 0) return error.DivisionByZero;
+        return eval.Value{ .integer = @rem(a, b) };
+    }
+}

@@ -1,0 +1,34 @@
+/// Float examples for Lazylang
+Float = import 'Float'
+
+{
+  /// Basic float literals
+  pi: 3.14159
+  e: 2.71828
+
+  /// Arithmetic with floats
+  sum: 3.14 + 2.86
+  difference: 10.5 - 3.2
+  product: 2.5 * 4.0
+
+  /// Mixed integer and float operations
+  mixed_sum: 5 + 3.14
+  mixed_product: 3 * 2.5
+
+  /// Float functions
+  rounded: Float.round 3.7
+  floored: Float.floor 3.7
+  ceiled: Float.ceil 3.2
+  absolute: Float.abs (0.0 - 5.5)
+  square_root: Float.sqrt 16.0
+
+  /// Power and modulo
+  power: Float.pow 2.0 3.0
+  modulo: Float.mod 10.5 3.0
+  remainder: Float.rem 10.5 3.0
+
+  /// Comparisons
+  less_than: 3.14 < 3.15
+  greater_than: 3.15 > 3.14
+  equal: 3.14 == 3.14
+}
