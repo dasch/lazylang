@@ -3504,6 +3504,7 @@ pub const EvalOutput = struct {
 pub const EvalResult = struct {
     output: ?EvalOutput,
     error_ctx: error_context.ErrorContext,
+    err: ?EvalError = null,
 
     pub fn deinit(self: *EvalResult) void {
         if (self.output) |*out| {
@@ -3533,20 +3534,22 @@ fn evalSourceWithContext(
 
     var parser = try Parser.init(arena.allocator(), source);
     parser.setErrorContext(&err_ctx);
-    const expression = parser.parse() catch {
+    const expression = parser.parse() catch |err| {
         arena.deinit();
         return EvalResult{
             .output = null,
             .error_ctx = err_ctx,
+            .err = err,
         };
     };
 
     const builtin_env = try createBuiltinEnvironment(arena.allocator());
-    const value = evaluateExpression(arena.allocator(), expression, builtin_env, current_dir, &context) catch {
+    const value = evaluateExpression(arena.allocator(), expression, builtin_env, current_dir, &context) catch |err| {
         arena.deinit();
         return EvalResult{
             .output = null,
             .error_ctx = err_ctx,
+            .err = err,
         };
     };
     const formatted = try formatValueWithArena(allocator, arena.allocator(), value);
@@ -3572,8 +3575,8 @@ fn evalSource(
     if (result.output) |output| {
         return output;
     } else {
-        // This shouldn't happen since we catch errors in evalSourceWithContext
-        return error.UnknownIdentifier;
+        // Return the actual error that occurred
+        return result.err orelse error.UnknownIdentifier;
     }
 }
 
