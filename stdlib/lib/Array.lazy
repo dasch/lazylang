@@ -50,7 +50,7 @@
   /// ```
   /// Array.flatMap (x -> [x, x]) [1, 2]  // Returns [1, 1, 2, 2]
   /// ```
-  flatMap: fn -> arr -> [y for x in arr, y in (fn x)]
+  flatMap: fn -> arr -> [y for x in arr for y in (fn x)]
 
   /// Filters an array, keeping only elements that satisfy the predicate.
   ///
@@ -75,4 +75,44 @@
   /// Array.skip (x -> x > 2) [1, 2, 3, 4]  // Returns [1, 2]
   /// ```
   skip: pred -> arr -> [x for x in arr when !(pred x)]
+
+  /// Folds an array from the left using an accumulator function.
+  ///
+  /// **Parameters:**
+  /// - `fn`: Binary function (acc -> elem -> new_acc)
+  /// - `init`: Initial accumulator value
+  /// - `arr`: The array to fold
+  ///
+  /// **Example:**
+  /// ```
+  /// Array.fold (acc -> x -> acc + x) 0 [1, 2, 3]  // Returns 6
+  /// Array.fold (acc -> x -> acc * x) 1 [2, 3, 4]  // Returns 24
+  /// ```
+  fold: fn -> init -> arr -> __array_fold (fn, init, arr)
+
+  /// Reverses an array.
+  ///
+  /// **Parameter:**
+  /// - `arr`: The array to reverse
+  ///
+  /// **Example:**
+  /// ```
+  /// Array.reverse [1, 2, 3]  // Returns [3, 2, 1]
+  /// Array.reverse []          // Returns []
+  /// ```
+  reverse: arr -> __array_reverse arr
+
+  /// Concatenates an array of strings into a single string.
+  /// Returns an empty string if the array is empty.
+  ///
+  /// **Parameter:**
+  /// - `strs`: Array of strings to concatenate
+  ///
+  /// **Example:**
+  /// ```
+  /// Array.concatAll ["hello", " ", "world"]  // Returns "hello world"
+  /// Array.concatAll ["a", "b", "c"]          // Returns "abc"
+  /// Array.concatAll []                       // Returns ""
+  /// ```
+  concatAll: strs -> __array_concat_all strs
 }

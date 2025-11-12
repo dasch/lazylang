@@ -2,8 +2,6 @@ const std = @import("std");
 const eval = @import("eval.zig");
 
 // Array builtins
-// Note: Higher-order functions like map, filter, fold should be implemented in Lazylang
-// since they need to evaluate user-provided functions
 
 pub fn arrayLength(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
     _ = arena;
@@ -46,6 +44,100 @@ pub fn arrayGet(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalErr
     result_elements[0] = eval.Value{ .symbol = "#ok" };
     result_elements[1] = array.elements[@intCast(index)];
     return eval.Value{ .tuple = .{ .elements = result_elements } };
+}
+
+pub fn arrayReverse(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const array = switch (args[0]) {
+        .array => |a| a,
+        else => return error.TypeMismatch,
+    };
+
+    const reversed = try arena.alloc(eval.Value, array.elements.len);
+    for (array.elements, 0..) |elem, i| {
+        reversed[array.elements.len - 1 - i] = elem;
+    }
+
+    return eval.Value{ .array = .{ .elements = reversed } };
+}
+
+pub fn arrayFold(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple_arg = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    if (tuple_arg.elements.len != 3) return error.WrongNumberOfArguments;
+
+    const function = tuple_arg.elements[0];
+    var accumulator = tuple_arg.elements[1];
+    const array = switch (tuple_arg.elements[2]) {
+        .array => |a| a,
+        else => return error.TypeMismatch,
+    };
+
+    // Apply function to each element: fold(fn, init, [x, y, z]) = fn(fn(fn(init, x), y), z)
+    // Function is curried: acc -> x -> result
+    const ctx = eval.EvalContext{
+        .allocator = arena,
+        .lazy_paths = &[_][]const u8{},
+        .error_ctx = null,
+    };
+
+    for (array.elements) |element| {
+        // Apply function to accumulator: fn(acc)(elem)
+        accumulator = switch (function) {
+            .function => |func| blk: {
+                // Apply first argument (accumulator)
+                const env1 = try eval.matchPattern(arena, func.param, accumulator, func.env);
+                const intermediate = try eval.evaluateExpression(arena, func.body, env1, null, &ctx);
+
+                // The result should be a function, apply second argument (element)
+                const func2 = switch (intermediate) {
+                    .function => |f| f,
+                    else => return error.TypeMismatch,
+                };
+                const env2 = try eval.matchPattern(arena, func2.param, element, func2.env);
+                break :blk try eval.evaluateExpression(arena, func2.body, env2, null, &ctx);
+            },
+            else => return error.TypeMismatch,
+        };
+    }
+
+    return accumulator;
+}
+
+pub fn arrayConcatAll(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const array = switch (args[0]) {
+        .array => |a| a,
+        else => return error.TypeMismatch,
+    };
+
+    // Calculate total length
+    var total_len: usize = 0;
+    for (array.elements) |elem| {
+        const str = switch (elem) {
+            .string => |s| s,
+            else => return error.TypeMismatch,
+        };
+        total_len += str.len;
+    }
+
+    // Concatenate all strings
+    const result = try arena.alloc(u8, total_len);
+    var offset: usize = 0;
+    for (array.elements) |elem| {
+        const str = elem.string;
+        @memcpy(result[offset..][0..str.len], str);
+        offset += str.len;
+    }
+
+    return eval.Value{ .string = result };
 }
 
 // String builtins

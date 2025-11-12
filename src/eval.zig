@@ -2701,6 +2701,9 @@ pub fn createBuiltinEnvironment(arena: std.mem.Allocator) !?*Environment {
     // Array builtins
     env = try addBuiltin(arena, env, "__array_length", builtins.arrayLength);
     env = try addBuiltin(arena, env, "__array_get", builtins.arrayGet);
+    env = try addBuiltin(arena, env, "__array_reverse", builtins.arrayReverse);
+    env = try addBuiltin(arena, env, "__array_fold", builtins.arrayFold);
+    env = try addBuiltin(arena, env, "__array_concat_all", builtins.arrayConcatAll);
 
     // String builtins
     env = try addBuiltin(arena, env, "__string_length", builtins.stringLength);
