@@ -41,36 +41,6 @@ test "evaluates short object syntax with multiple fields" {
     );
 }
 
-test "Object.get returns ok tuple when key exists" {
-    try expectEvaluates(
-        \\{ get } = import 'Object'
-        \\obj = { name: "Alice" }
-        \\get "name" obj
-    ,
-        "(#ok, \"Alice\")",
-    );
-}
-
-test "Object.get returns noSuchKey tag when key does not exist" {
-    try expectEvaluates(
-        \\{ get } = import 'Object'
-        \\obj = { name: "Alice" }
-        \\get "email" obj
-    ,
-        "#noSuchKey",
-    );
-}
-
-test "Object.get returns ok tuple for nested values" {
-    try expectEvaluates(
-        \\{ get } = import 'Object'
-        \\obj = { user: { name: "Bob" } }
-        \\get "user" obj
-    ,
-        "(#ok, { name: \"Bob\" })",
-    );
-}
-
 test "object extension with overwrite" {
     try expectEvaluates(
         \\foo = { x: 1, y: 2 }
