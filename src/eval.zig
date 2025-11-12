@@ -1866,6 +1866,20 @@ pub const FunctionValue = struct {
 
 pub const NativeFn = *const fn (arena: std.mem.Allocator, args: []const Value) EvalError!Value;
 
+pub const ThunkState = union(enum) {
+    unevaluated,
+    evaluating, // For cycle detection
+    evaluated: Value,
+};
+
+pub const Thunk = struct {
+    expr: *Expression,
+    env: ?*Environment,
+    current_dir: ?[]const u8,
+    ctx: *const EvalContext,
+    state: ThunkState,
+};
+
 pub const Value = union(enum) {
     integer: i64,
     boolean: bool,
@@ -1877,6 +1891,7 @@ pub const Value = union(enum) {
     tuple: TupleValue,
     object: ObjectValue,
     string: []const u8,
+    thunk: *Thunk,
 };
 
 pub const ArrayValue = struct {
@@ -1972,6 +1987,7 @@ pub const EvalError = ParseError || std.mem.Allocator.Error || std.process.GetEn
     InvalidArgument,
     UnknownField,
     UserCrash,
+    CyclicReference,
 };
 
 pub const EvalContext = struct {
@@ -2187,8 +2203,9 @@ pub fn matchPattern(
                 var found = false;
                 for (object_value.fields) |value_field| {
                     if (std.mem.eql(u8, value_field.key, pattern_field.key)) {
-                        // Match the field's pattern against the field's value
-                        current_env = try matchPattern(arena, pattern_field.pattern, value_field.value, current_env);
+                        // Force the field value if it's a thunk, then match the pattern
+                        const forced_value = try force(arena, value_field.value);
+                        current_env = try matchPattern(arena, pattern_field.pattern, forced_value, current_env);
                         found = true;
                         break;
                     }
@@ -2249,6 +2266,25 @@ fn mergeObjects(arena: std.mem.Allocator, base: ObjectValue, extension: ObjectVa
     }
 
     return Value{ .object = .{ .fields = try result_fields.toOwnedSlice(arena) } };
+}
+
+/// Force evaluation of a thunk if needed
+pub fn force(arena: std.mem.Allocator, value: Value) EvalError!Value {
+    return switch (value) {
+        .thunk => |thunk| {
+            switch (thunk.state) {
+                .evaluated => |v| return v,
+                .evaluating => return error.CyclicReference,
+                .unevaluated => {
+                    thunk.state = .evaluating;
+                    const result = try evaluateExpression(arena, thunk.expr, thunk.env, thunk.current_dir, thunk.ctx);
+                    thunk.state = .{ .evaluated = result };
+                    return result;
+                },
+            }
+        },
+        else => value,
+    };
 }
 
 pub fn evaluateExpression(
@@ -2532,7 +2568,16 @@ pub fn evaluateExpression(
             const fields = try arena.alloc(ObjectFieldValue, object.fields.len);
             for (object.fields, 0..) |field, i| {
                 const key_copy = try arena.dupe(u8, field.key);
-                fields[i] = .{ .key = key_copy, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx) };
+                // Wrap field value in a thunk for lazy evaluation
+                const thunk = try arena.create(Thunk);
+                thunk.* = .{
+                    .expr = field.value,
+                    .env = env,
+                    .current_dir = current_dir,
+                    .ctx = ctx,
+                    .state = .unevaluated,
+                };
+                fields[i] = .{ .key = key_copy, .value = .{ .thunk = thunk } };
             }
             break :blk Value{ .object = .{ .fields = fields } };
         },
@@ -2615,7 +2660,7 @@ pub fn evaluateExpression(
         .import_expr => |import_expr| try importModule(arena, import_expr.path, current_dir, ctx),
         .field_access => |field_access| blk: {
             const object_value = try evaluateExpression(arena, field_access.object, env, current_dir, ctx);
-            break :blk try accessField(object_value, field_access.field);
+            break :blk try accessField(arena, object_value, field_access.field);
         },
         .field_accessor => |field_accessor| blk: {
             // Create a function that accesses the specified fields
@@ -2656,7 +2701,7 @@ pub fn evaluateExpression(
             // Create new object with only the specified fields
             const new_fields = try arena.alloc(ObjectFieldValue, field_projection.fields.len);
             for (field_projection.fields, 0..) |field_name, i| {
-                const field_value = try accessField(object_value, field_name);
+                const field_value = try accessField(arena, object_value, field_name);
                 new_fields[i] = .{
                     .key = try arena.dupe(u8, field_name),
                     .value = field_value,
@@ -2668,7 +2713,7 @@ pub fn evaluateExpression(
     };
 }
 
-fn accessField(object_value: Value, field_name: []const u8) EvalError!Value {
+fn accessField(arena: std.mem.Allocator, object_value: Value, field_name: []const u8) EvalError!Value {
     const object = switch (object_value) {
         .object => |obj| obj,
         else => return error.TypeMismatch,
@@ -2677,7 +2722,8 @@ fn accessField(object_value: Value, field_name: []const u8) EvalError!Value {
     // Look for the field
     for (object.fields) |field| {
         if (std.mem.eql(u8, field.key, field_name)) {
-            return field.value;
+            // Force the thunk if the value is a thunk
+            return try force(arena, field.value);
         }
     }
 
@@ -2891,6 +2937,10 @@ fn valueToString(allocator: std.mem.Allocator, value: Value) ![]u8 {
 }
 
 pub fn formatValue(allocator: std.mem.Allocator, value: Value) ![]u8 {
+    return formatValueWithArena(allocator, allocator, value);
+}
+
+fn formatValueWithArena(allocator: std.mem.Allocator, arena: std.mem.Allocator, value: Value) error{OutOfMemory}![]u8 {
     return switch (value) {
         .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
         .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
@@ -2898,6 +2948,11 @@ pub fn formatValue(allocator: std.mem.Allocator, value: Value) ![]u8 {
         .symbol => |s| try std.fmt.allocPrint(allocator, "{s}", .{s}),
         .function => try std.fmt.allocPrint(allocator, "<function>", .{}),
         .native_fn => try std.fmt.allocPrint(allocator, "<native function>", .{}),
+        .thunk => blk: {
+            // Force the thunk and format the result
+            const forced = force(arena, value) catch break :blk try std.fmt.allocPrint(allocator, "<thunk error>", .{});
+            break :blk try formatValueWithArena(allocator, arena, forced);
+        },
         .array => |arr| blk: {
             var builder = std.ArrayList(u8){};
             errdefer builder.deinit(allocator);
@@ -2905,7 +2960,7 @@ pub fn formatValue(allocator: std.mem.Allocator, value: Value) ![]u8 {
             try builder.append(allocator, '[');
             for (arr.elements, 0..) |element, i| {
                 if (i != 0) try builder.appendSlice(allocator, ", ");
-                const formatted = try formatValue(allocator, element);
+                const formatted = try formatValueWithArena(allocator, arena, element);
                 defer allocator.free(formatted);
                 try builder.appendSlice(allocator, formatted);
             }
@@ -2920,7 +2975,7 @@ pub fn formatValue(allocator: std.mem.Allocator, value: Value) ![]u8 {
             try builder.append(allocator, '(');
             for (tup.elements, 0..) |element, i| {
                 if (i != 0) try builder.appendSlice(allocator, ", ");
-                const formatted = try formatValue(allocator, element);
+                const formatted = try formatValueWithArena(allocator, arena, element);
                 defer allocator.free(formatted);
                 try builder.appendSlice(allocator, formatted);
             }
@@ -2940,7 +2995,7 @@ pub fn formatValue(allocator: std.mem.Allocator, value: Value) ![]u8 {
                     if (i != 0) try builder.appendSlice(allocator, ", ");
                     try builder.appendSlice(allocator, field.key);
                     try builder.appendSlice(allocator, ": ");
-                    const formatted = try formatValue(allocator, field.value);
+                    const formatted = try formatValueWithArena(allocator, arena, field.value);
                     defer allocator.free(formatted);
                     try builder.appendSlice(allocator, formatted);
                 }
@@ -3012,7 +3067,7 @@ fn evalSourceWithContext(
             .error_ctx = err_ctx,
         };
     };
-    const formatted = try formatValue(allocator, value);
+    const formatted = try formatValueWithArena(allocator, arena.allocator(), value);
 
     arena.deinit();
     return EvalResult{
