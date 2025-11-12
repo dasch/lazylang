@@ -248,7 +248,7 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
     // If the test is ignored (xit), just display it and return
     if (is_ignored) {
         try ctx.writeIndent();
-        try ctx.writer.print("{s}○{s} {s}\n", .{ Color.grey, Color.reset, description.? });
+        try ctx.writer.print("{s}○ {s}{s}\n", .{ Color.grey, description.?, Color.reset });
         ctx.ignored += 1;
         return;
     }
