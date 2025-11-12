@@ -564,6 +564,8 @@ lazylang repl
 
 - **Interactive evaluation**: Type expressions and see results immediately
 - **Variable persistence**: Variables defined in the REPL persist across inputs
+- **Command history**: Use UP/DOWN arrow keys to navigate through previous commands
+- **Line editing**: Backspace to edit, Ctrl+C to cancel current line
 - **Multi-line support**: Enter complex expressions across multiple lines
 - **Formatted output**: Results are nicely formatted using the built-in formatter
 - **Colored output**: Syntax highlighting for better readability

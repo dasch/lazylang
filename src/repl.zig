@@ -44,7 +44,7 @@ pub fn runReplDirect(
     stdout_file: *std.fs.File,
     stderr_file: *std.fs.File,
 ) !void {
-    const stdin_file = std.fs.File{ .handle = std.posix.STDIN_FILENO };
+    var stdin_file = std.fs.File{ .handle = std.posix.STDIN_FILENO };
 
     // Create print contexts that write directly to files
     const stdout = PrintContext{ .file = stdout_file, .allocator = allocator };
@@ -73,6 +73,16 @@ pub fn runReplDirect(
     var input_buffer = std.ArrayList(u8){};
     defer input_buffer.deinit(allocator);
 
+    // Command history
+    var history = std.ArrayList([]const u8){};
+    defer {
+        for (history.items) |cmd| {
+            allocator.free(cmd);
+        }
+        history.deinit(allocator);
+    }
+    var history_index: ?usize = null;
+
     while (true) {
         // Show prompt
         if (input_buffer.items.len == 0) {
@@ -81,31 +91,21 @@ pub fn runReplDirect(
             try colored(.gray, ".. ", &stdout);
         }
 
-        // Read a line using a simple byte-by-byte approach
-        var read_buffer: [4096]u8 = undefined;
-        var pos: usize = 0;
-        while (pos < read_buffer.len) {
-            var byte: [1]u8 = undefined;
-            const n = stdin_file.read(&byte) catch |err| {
-                if (pos == 0) {
-                    try stdout.print("\n", .{});
-                    return;
-                }
-                return err;
-            };
-            if (n == 0) {
-                if (pos == 0) {
-                    try stdout.print("\n", .{});
-                    return;
-                }
-                break;
-            }
-            if (byte[0] == '\n') break;
-            read_buffer[pos] = byte[0];
-            pos += 1;
-        }
+        // Read a line with arrow key support
+        const line = try readLineWithHistory(
+            allocator,
+            &stdin_file,
+            &stdout,
+            &history,
+            &history_index,
+        );
+        defer allocator.free(line);
 
-        const line = std.mem.trim(u8, read_buffer[0..pos], " \t\r");
+        // Handle EOF
+        if (line.len == 0 and input_buffer.items.len == 0) {
+            try stdout.print("\n", .{});
+            break;
+        }
 
         // Check for special commands
         if (input_buffer.items.len == 0) {
@@ -372,4 +372,173 @@ fn isSimpleIdentifier(text: []const u8) bool {
         }
     }
     return true;
+}
+
+fn readLineWithHistory(
+    allocator: std.mem.Allocator,
+    stdin_file: *std.fs.File,
+    stdout: *const PrintContext,
+    history: *std.ArrayList([]const u8),
+    history_index: *?usize,
+) ![]const u8 {
+    var line_buffer = std.ArrayList(u8){};
+    // DON'T defer deinit - we're returning a slice from it
+    // defer line_buffer.deinit(allocator);
+
+    var cursor_pos: usize = 0;
+    var eof_seen = false;
+
+    while (true) {
+        var byte: [1]u8 = undefined;
+        const n = stdin_file.read(&byte) catch |err| {
+            return err;
+        };
+
+        if (n == 0) {
+            eof_seen = true;
+            break;
+        }
+
+        const ch = byte[0];
+
+        // Handle newline
+        if (ch == '\n') {
+            try stdout.print("\n", .{});
+            break;
+        }
+
+        // Handle escape sequences (arrow keys)
+        if (ch == 0x1b) {
+            // Read next two bytes for escape sequence
+            var seq: [2]u8 = undefined;
+            const seq_n = stdin_file.read(&seq) catch break;
+
+            if (seq_n >= 2 and seq[0] == '[') {
+                // Arrow keys
+                if (seq[1] == 'A') { // Up arrow
+                    if (history.items.len > 0) {
+                        // Clear current line
+                        try clearLine(stdout, line_buffer.items.len);
+
+                        // Get history item
+                        if (history_index.*) |idx| {
+                            if (idx > 0) {
+                                history_index.* = idx - 1;
+                            }
+                        } else {
+                            history_index.* = history.items.len - 1;
+                        }
+
+                        if (history_index.*) |idx| {
+                            const hist_cmd = history.items[idx];
+                            line_buffer.clearRetainingCapacity();
+                            try line_buffer.appendSlice(allocator, hist_cmd);
+                            cursor_pos = line_buffer.items.len;
+                            try stdout.print("{s}", .{hist_cmd});
+                        }
+                    }
+                    continue;
+                } else if (seq[1] == 'B') { // Down arrow
+                    if (history_index.*) |idx| {
+                        // Clear current line
+                        try clearLine(stdout, line_buffer.items.len);
+
+                        if (idx < history.items.len - 1) {
+                            history_index.* = idx + 1;
+                            const hist_cmd = history.items[idx + 1];
+                            line_buffer.clearRetainingCapacity();
+                            try line_buffer.appendSlice(allocator, hist_cmd);
+                            cursor_pos = line_buffer.items.len;
+                            try stdout.print("{s}", .{hist_cmd});
+                        } else {
+                            // At the end of history, clear line
+                            history_index.* = null;
+                            line_buffer.clearRetainingCapacity();
+                            cursor_pos = 0;
+                        }
+                    }
+                    continue;
+                }
+            }
+            continue;
+        }
+
+        // Handle backspace (127 or 8)
+        if (ch == 127 or ch == 8) {
+            if (cursor_pos > 0 and line_buffer.items.len > 0) {
+                _ = line_buffer.pop();
+                cursor_pos -= 1;
+                // Move cursor back, write space, move back again
+                try stdout.print("\x08 \x08", .{});
+            }
+            continue;
+        }
+
+        // Handle Ctrl+C
+        if (ch == 3) {
+            try stdout.print("^C\n", .{});
+            line_buffer.clearRetainingCapacity();
+            return "";
+        }
+
+        // Handle Ctrl+D (EOF)
+        if (ch == 4) {
+            if (line_buffer.items.len == 0) {
+                return "";
+            }
+            continue;
+        }
+
+        // Regular character
+        if (ch >= 32 and ch < 127) {
+            try line_buffer.append(allocator, ch);
+            cursor_pos += 1;
+            try stdout.print("{c}", .{ch});
+        }
+    }
+
+    // If we saw EOF with no input, return empty to signal exit
+    if (eof_seen and line_buffer.items.len == 0) {
+        line_buffer.deinit(allocator);
+        return "";
+    }
+
+    // Trim whitespace
+    const trimmed = std.mem.trim(u8, line_buffer.items, " \t\r");
+
+    // Make a copy since we're going to free line_buffer
+    const result = try allocator.dupe(u8, trimmed);
+    line_buffer.deinit(allocator);
+
+    // Add non-empty, non-command lines to history
+    if (result.len > 0 and result[0] != ':') {
+        // Don't add if it's the same as the last command
+        const should_add = if (history.items.len > 0)
+            !std.mem.eql(u8, history.items[history.items.len - 1], result)
+        else
+            true;
+
+        if (should_add) {
+            const hist_copy = try allocator.dupe(u8, result);
+            try history.append(allocator, hist_copy);
+        }
+    }
+
+    // Reset history index
+    history_index.* = null;
+
+    return result;
+}
+
+fn clearLine(stdout: *const PrintContext, len: usize) !void {
+    // Move cursor to beginning of line
+    try stdout.print("\r", .{});
+    // Print spaces to clear
+    for (0..len + 2) |_| { // +2 for prompt
+        try stdout.print(" ", .{});
+    }
+    // Move cursor back to beginning
+    try stdout.print("\r", .{});
+    // Reprint prompt
+    try colored(.green, "> ", stdout);
 }
