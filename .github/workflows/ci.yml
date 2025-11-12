@@ -16,3 +16,5 @@ jobs:
           version: 0.15.2
       - name: Run tests
         run: make test
+      - name: Build documentation
+        run: make docs
