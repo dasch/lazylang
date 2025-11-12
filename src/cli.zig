@@ -62,6 +62,7 @@ fn runEval(
     var file_path: ?[]const u8 = null;
     var output_format: OutputFormat = .pretty;
     var json_output = false;
+    var manifest_mode = false;
     var index: usize = 0;
 
     while (index < args.len) : (index += 1) {
@@ -88,6 +89,10 @@ fn runEval(
             output_format = .yaml;
             continue;
         }
+        if (std.mem.eql(u8, arg, "--manifest")) {
+            manifest_mode = true;
+            continue;
+        }
 
         // Positional argument - treat as file path
         if (file_path != null) {
@@ -102,6 +107,32 @@ fn runEval(
         if (file_path != null) {
             try stderr.print("error: cannot specify both --expr and a file path\n", .{});
             return .{ .exit_code = 1 };
+        }
+
+        if (manifest_mode) {
+            // Get the raw value for manifest mode
+            var value_result = evaluator.evalInlineWithValue(allocator, inline_expr.?) catch |err| {
+                if (json_output) {
+                    try json_error.reportErrorAsJson(stderr, "<inline>", &error_context.ErrorContext.init(allocator), @errorName(err), @errorName(err), null);
+                } else {
+                    try reportError(allocator, stderr, "<inline>", inline_expr.?, err, null);
+                }
+                return .{ .exit_code = 1 };
+            };
+            defer value_result.deinit();
+
+            if (value_result.err) |_| {
+                try reportErrorWithContext(allocator, stderr, "<inline>", inline_expr.?, &value_result.error_ctx, null);
+                return .{ .exit_code = 1 };
+            }
+
+            writeManifestFiles(allocator, value_result.value, value_result.arena.allocator(), output_format, stdout, stderr) catch |err| {
+                if (err != error.TypeMismatch) {
+                    return err;
+                }
+                return .{ .exit_code = 1 };
+            };
+            return .{ .exit_code = 0 };
         }
 
         const format: evaluator.FormatStyle = switch (output_format) {
@@ -164,6 +195,32 @@ fn runEval(
     defer result.deinit();
 
     if (result.output) |output| {
+        if (manifest_mode) {
+            // Get the raw value for manifest mode
+            var value_result = evaluator.evalFileWithValue(allocator, file_path.?) catch |err| {
+                if (json_output) {
+                    try json_error.reportErrorAsJson(stderr, file_path.?, &error_context.ErrorContext.init(allocator), @errorName(err), @errorName(err), null);
+                } else {
+                    try reportError(allocator, stderr, file_path.?, file_content, err, null);
+                }
+                return .{ .exit_code = 1 };
+            };
+            defer value_result.deinit();
+
+            if (value_result.err) |_| {
+                try reportErrorWithContext(allocator, stderr, file_path.?, file_content, &value_result.error_ctx, null);
+                return .{ .exit_code = 1 };
+            }
+
+            writeManifestFiles(allocator, value_result.value, value_result.arena.allocator(), output_format, stdout, stderr) catch |err| {
+                if (err != error.TypeMismatch) {
+                    return err;
+                }
+                return .{ .exit_code = 1 };
+            };
+            return .{ .exit_code = 0 };
+        }
+
         try stdout.print("{s}\n", .{output.text});
         return .{ .exit_code = 0 };
     } else {
@@ -175,6 +232,63 @@ fn runEval(
             try reportErrorWithContext(allocator, stderr, file_path.?, file_content, &result.error_ctx, null);
         }
         return .{ .exit_code = 1 };
+    }
+}
+
+fn writeManifestFiles(
+    allocator: std.mem.Allocator,
+    value: evaluator.Value,
+    arena: std.mem.Allocator,
+    output_format: OutputFormat,
+    stdout: anytype,
+    stderr: anytype,
+) !void {
+    // Ensure the value is an object
+    const obj = switch (value) {
+        .object => |o| o,
+        else => {
+            try stderr.print("error: --manifest requires output to be an object, got {s}\n", .{@tagName(value)});
+            return error.TypeMismatch;
+        },
+    };
+
+    // For each field in the object, write to a file
+    for (obj.fields) |field| {
+        const filename = field.key;
+        const field_value = try evaluator.force(arena, field.value);
+
+        // Format the value based on output_format
+        const needs_free = output_format != .pretty;
+        const content = switch (output_format) {
+            .pretty => blk: {
+                // In pretty mode, values must be strings
+                const str = switch (field_value) {
+                    .string => |s| s,
+                    else => {
+                        try stderr.print("error: --manifest without --json or --yaml requires all values to be strings, but field '{s}' is {s}\n", .{ filename, @tagName(field_value) });
+                        return error.TypeMismatch;
+                    },
+                };
+                break :blk str;
+            },
+            .json => blk: {
+                // In JSON mode, any value can be encoded
+                break :blk try evaluator.formatValueAsJson(allocator, field_value);
+            },
+            .yaml => blk: {
+                // In YAML mode, any value can be encoded
+                break :blk try evaluator.formatValueAsYaml(allocator, field_value);
+            },
+        };
+        defer if (needs_free) allocator.free(content);
+
+        // Write to file
+        const file = try std.fs.cwd().createFile(filename, .{});
+        defer file.close();
+        try file.writeAll(content);
+
+        // Print confirmation
+        try stdout.print("Wrote {s}\n", .{filename});
     }
 }
 

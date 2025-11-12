@@ -190,3 +190,130 @@ test "run command passes environment variables" {
     try std.testing.expect(std.mem.startsWith(u8, outcome.stdout, "{"));
     try std.testing.expectEqualStrings("", outcome.stderr);
 }
+
+test "eval --manifest writes string values to files" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // Create test expression that returns an object with string values
+    const args = [_][]const u8{ "lazylang", "eval", "--expr", "{ [\"file1.txt\"]: \"content1\", [\"file2.txt\"]: \"content2\" }", "--manifest" };
+
+    // Change to temp directory
+    const old_cwd = try std.fs.cwd().realpathAlloc(allocator, ".");
+    defer allocator.free(old_cwd);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), outcome.result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stdout, "Wrote file1.txt") != null);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stdout, "Wrote file2.txt") != null);
+
+    // Verify files were created with correct content
+    const file1_content = try tmp.dir.readFileAlloc(allocator, "file1.txt", 1024);
+    defer allocator.free(file1_content);
+    try std.testing.expectEqualStrings("content1", file1_content);
+
+    const file2_content = try tmp.dir.readFileAlloc(allocator, "file2.txt", 1024);
+    defer allocator.free(file2_content);
+    try std.testing.expectEqualStrings("content2", file2_content);
+}
+
+test "eval --manifest --json writes JSON-encoded values to files" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // Create test expression that returns an object with non-string values
+    const args = [_][]const u8{ "lazylang", "eval", "--expr", "{ [\"data.json\"]: { x: 1, y: 2 } }", "--manifest", "--json" };
+
+    // Change to temp directory
+    const old_cwd = try std.fs.cwd().realpathAlloc(allocator, ".");
+    defer allocator.free(old_cwd);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), outcome.result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stdout, "Wrote data.json") != null);
+
+    // Verify file was created with JSON content
+    const file_content = try tmp.dir.readFileAlloc(allocator, "data.json", 1024);
+    defer allocator.free(file_content);
+    try std.testing.expect(std.mem.indexOf(u8, file_content, "\"x\":1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, file_content, "\"y\":2") != null);
+}
+
+test "eval --manifest --yaml writes YAML-encoded values to files" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // Create test expression that returns an object with non-string values
+    const args = [_][]const u8{ "lazylang", "eval", "--expr", "{ [\"data.yaml\"]: [1, 2, 3] }", "--manifest", "--yaml" };
+
+    // Change to temp directory
+    const old_cwd = try std.fs.cwd().realpathAlloc(allocator, ".");
+    defer allocator.free(old_cwd);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), outcome.result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stdout, "Wrote data.yaml") != null);
+
+    // Verify file was created with YAML content
+    const file_content = try tmp.dir.readFileAlloc(allocator, "data.yaml", 1024);
+    defer allocator.free(file_content);
+    try std.testing.expect(std.mem.indexOf(u8, file_content, "- 1") != null);
+    try std.testing.expect(std.mem.indexOf(u8, file_content, "- 2") != null);
+    try std.testing.expect(std.mem.indexOf(u8, file_content, "- 3") != null);
+}
+
+test "eval --manifest errors when output is not an object" {
+    const args = [_][]const u8{ "lazylang", "eval", "--expr", "[1, 2, 3]", "--manifest" };
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 1), outcome.result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "error: --manifest requires output to be an object") != null);
+}
+
+test "eval --manifest errors when value is not a string in pretty mode" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const args = [_][]const u8{ "lazylang", "eval", "--expr", "{ [\"file.txt\"]: 42 }", "--manifest" };
+
+    // Change to temp directory
+    const old_cwd = try std.fs.cwd().realpathAlloc(allocator, ".");
+    defer allocator.free(old_cwd);
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+    try std.posix.chdir(tmp_path);
+    defer std.posix.chdir(old_cwd) catch {};
+
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 1), outcome.result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "--manifest without --json or --yaml requires all values to be strings") != null);
+}

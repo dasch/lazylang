@@ -4130,6 +4130,81 @@ pub fn evalFileWithFormat(allocator: std.mem.Allocator, path: []const u8, format
     return try evalSourceWithFormat(allocator, contents, directory, format);
 }
 
+pub const EvalValueResult = struct {
+    value: Value,
+    arena: std.heap.ArenaAllocator,
+    error_ctx: error_context.ErrorContext,
+    err: ?EvalError = null,
+
+    pub fn deinit(self: *EvalValueResult) void {
+        self.arena.deinit();
+        self.error_ctx.deinit();
+    }
+};
+
+pub fn evalInlineWithValue(allocator: std.mem.Allocator, source: []const u8) EvalError!EvalValueResult {
+    return evalSourceWithValue(allocator, source, null);
+}
+
+pub fn evalFileWithValue(allocator: std.mem.Allocator, path: []const u8) EvalError!EvalValueResult {
+    var file = try std.fs.cwd().openFile(path, .{});
+    defer file.close();
+
+    const contents = try file.readToEndAlloc(allocator, std.math.maxInt(usize));
+    defer allocator.free(contents);
+
+    const directory = std.fs.path.dirname(path);
+    return try evalSourceWithValue(allocator, contents, directory);
+}
+
+fn evalSourceWithValue(
+    allocator: std.mem.Allocator,
+    source: []const u8,
+    current_dir: ?[]const u8,
+) EvalError!EvalValueResult {
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    errdefer arena.deinit();
+
+    const lazy_paths = try collectLazyPaths(arena.allocator());
+    var err_ctx = error_context.ErrorContext.init(allocator);
+    err_ctx.setSource(source);
+
+    const context = EvalContext{
+        .allocator = allocator,
+        .lazy_paths = lazy_paths,
+        .error_ctx = &err_ctx,
+    };
+
+    var parser = try Parser.init(arena.allocator(), source);
+    parser.setErrorContext(&err_ctx);
+    const expression = parser.parse() catch |err| {
+        arena.deinit();
+        return EvalValueResult{
+            .value = .null_value,
+            .arena = std.heap.ArenaAllocator.init(allocator),
+            .error_ctx = err_ctx,
+            .err = err,
+        };
+    };
+
+    const builtin_env = try createBuiltinEnvironment(arena.allocator());
+    const value = evaluateExpression(arena.allocator(), expression, builtin_env, current_dir, &context) catch |err| {
+        arena.deinit();
+        return EvalValueResult{
+            .value = .null_value,
+            .arena = std.heap.ArenaAllocator.init(allocator),
+            .error_ctx = err_ctx,
+            .err = err,
+        };
+    };
+
+    return EvalValueResult{
+        .value = value,
+        .arena = arena,
+        .error_ctx = err_ctx,
+    };
+}
+
 pub fn evalFile(allocator: std.mem.Allocator, path: []const u8) EvalError!EvalOutput {
     var file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
