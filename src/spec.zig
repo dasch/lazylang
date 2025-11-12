@@ -22,6 +22,74 @@ pub const SpecResult = struct {
     }
 };
 
+pub const SpecFilter = struct {
+    description: []const u8,
+    is_describe: bool, // true if filtering a describe block, false if filtering a single test
+};
+
+// Find the test or describe block at the given line in the source file
+pub fn findTestAtLine(allocator: std.mem.Allocator, file_path: []const u8, target_line: usize) !?SpecFilter {
+    const file = try std.fs.cwd().openFile(file_path, .{});
+    defer file.close();
+
+    const content = try file.readToEndAlloc(allocator, 1024 * 1024); // Max 1MB
+    defer allocator.free(content);
+
+    // Count total lines and build an array
+    var line_count: usize = 0;
+    var temp_iter = std.mem.splitScalar(u8, content, '\n');
+    while (temp_iter.next()) |_| {
+        line_count += 1;
+    }
+
+    if (target_line == 0 or target_line > line_count) {
+        return null;
+    }
+
+    // Collect lines up to target line
+    var line_buffer = std.ArrayList([]const u8){};
+    defer line_buffer.deinit(allocator);
+
+    var lines = std.mem.splitScalar(u8, content, '\n');
+    var current_line: usize = 0;
+
+    while (lines.next()) |line| {
+        try line_buffer.append(allocator, line);
+        current_line += 1;
+        if (current_line >= target_line) break;
+    }
+
+    // Search backwards from target_line to find a test definition
+    var line_idx = target_line - 1; // Convert to 0-indexed
+    while (line_idx > 0) : (line_idx -= 1) {
+        const line = line_buffer.items[line_idx];
+        const trimmed = std.mem.trim(u8, line, " \t");
+
+        // Look for "it ", "xit ", or "describe " followed by a string
+        const test_types = [_][]const u8{ "it ", "xit ", "describe " };
+        for (test_types) |test_type| {
+            if (std.mem.startsWith(u8, trimmed, test_type)) {
+                const after_keyword = trimmed[test_type.len..];
+                // Extract string literal (assuming format: keyword "description" ...)
+                if (std.mem.indexOfScalar(u8, after_keyword, '"')) |start_quote| {
+                    if (std.mem.indexOfScalar(u8, after_keyword[start_quote + 1 ..], '"')) |end_quote| {
+                        const description = after_keyword[start_quote + 1 .. start_quote + 1 + end_quote];
+                        const owned_desc = try allocator.dupe(u8, description);
+                        return SpecFilter{
+                            .description = owned_desc,
+                            .is_describe = std.mem.eql(u8, test_type, "describe "),
+                        };
+                    }
+                }
+            }
+        }
+
+        if (line_idx == 0) break;
+    }
+
+    return null;
+}
+
 fn RunContext(comptime WriterType: type) type {
     return struct {
         allocator: std.mem.Allocator,
@@ -31,10 +99,36 @@ fn RunContext(comptime WriterType: type) type {
         ignored: usize,
         indent: usize,
         needs_blank_line: bool,
+        filter: ?SpecFilter,
+        current_describe_stack: std.ArrayList([]const u8),
 
         fn writeIndent(self: *@This()) !void {
             for (0..self.indent) |_| {
                 try self.writer.writeAll("  ");
+            }
+        }
+
+        fn matchesFilter(self: *@This(), description: []const u8, is_describe: bool) bool {
+            if (self.filter == null) return true;
+
+            const filter = self.filter.?;
+
+            // If filtering for a describe block
+            if (filter.is_describe) {
+                // Check if we're inside the target describe block
+                for (self.current_describe_stack.items) |desc| {
+                    if (std.mem.eql(u8, desc, filter.description)) {
+                        return true;
+                    }
+                }
+                // Or if this is the target describe block itself
+                if (is_describe and std.mem.eql(u8, description, filter.description)) {
+                    return true;
+                }
+                return false;
+            } else {
+                // Filtering for a single test - exact match on description
+                return !is_describe and std.mem.eql(u8, description, filter.description);
             }
         }
     };
@@ -174,17 +268,39 @@ fn runDescribe(ctx: anytype, desc: eval_module.ObjectValue) anyerror!void {
         return;
     }
 
-    // Add blank line if needed (from de-indenting)
-    if (ctx.needs_blank_line) {
-        try ctx.writer.writeAll("\n");
-        ctx.needs_blank_line = false;
+    // Check if this describe block should be included based on filter
+    const should_display = ctx.matchesFilter(description.?, true);
+
+    // Always push to stack for nested filter checks
+    try ctx.current_describe_stack.append(ctx.allocator, description.?);
+    defer _ = ctx.current_describe_stack.pop();
+
+    // Decide if we should process children:
+    // - If no filter, always process
+    // - If there's a filter, always descend (we might find the target inside)
+    // We'll filter at the leaf level (individual tests or target describe)
+    const should_run_children = children != null and
+        (ctx.filter == null or ctx.filter != null); // Always descend when there's a filter
+
+    if (should_run_children and should_display) {
+        // Add blank line if needed (from de-indenting)
+        if (ctx.needs_blank_line) {
+            try ctx.writer.writeAll("\n");
+            ctx.needs_blank_line = false;
+        }
+
+        try ctx.writeIndent();
+        try ctx.writer.print("{s}{s}{s}\n", .{ Color.cyan, description.?, Color.reset });
     }
 
-    try ctx.writeIndent();
-    try ctx.writer.print("{s}{s}{s}\n", .{ Color.cyan, description.?, Color.reset });
+    if (should_run_children) {
+        const ch = children.?;
+        const should_indent = should_display;
 
-    if (children) |ch| {
-        ctx.indent += 1;
+        if (should_indent) {
+            ctx.indent += 1;
+        }
+
         for (ch.elements, 0..) |child, i| {
             // Clear the needs_blank_line flag for children since they're at a deeper level
             if (i == 0) {
@@ -192,7 +308,7 @@ fn runDescribe(ctx: anytype, desc: eval_module.ObjectValue) anyerror!void {
             }
 
             // Add blank line before sibling describe blocks (but not before the first child)
-            if (i > 0) {
+            if (i > 0 and should_display) {
                 const child_obj = switch (child) {
                     .object => |obj| obj,
                     else => null,
@@ -216,9 +332,15 @@ fn runDescribe(ctx: anytype, desc: eval_module.ObjectValue) anyerror!void {
             }
             try runTestItem(ctx, child);
         }
-        ctx.indent -= 1;
+
+        if (should_indent) {
+            ctx.indent -= 1;
+        }
+
         // Mark that we need a blank line before the next item at this level
-        ctx.needs_blank_line = true;
+        if (should_display) {
+            ctx.needs_blank_line = true;
+        }
     }
 }
 
@@ -243,6 +365,11 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
         try ctx.writer.print("{s}✗ Error: it missing description{s}\n", .{ Color.red, Color.reset });
         ctx.failed += 1;
         return;
+    }
+
+    // Check if this test matches the filter
+    if (!ctx.matchesFilter(description.?, false)) {
+        return; // Skip this test
     }
 
     // If the test is ignored (xit), just display it and return
@@ -328,10 +455,26 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
 pub fn runSpec(
     allocator: std.mem.Allocator,
     file_path: []const u8,
+    line_number: ?usize,
     writer: anytype,
 ) !SpecResult {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
+
+    // If line number is specified, find the test at that line
+    var filter: ?SpecFilter = null;
+    if (line_number) |line| {
+        filter = try findTestAtLine(allocator, file_path, line);
+        if (filter == null) {
+            try writer.print("{s}No test found at line {d} in {s}{s}\n", .{ Color.red, line, file_path, Color.reset });
+            return SpecResult{
+                .passed = 0,
+                .failed = 0,
+                .ignored = 0,
+            };
+        }
+    }
+    defer if (filter) |f| allocator.free(f.description);
 
     // Evaluate the spec file
     const value = eval_module.evalFileValue(arena.allocator(), allocator, file_path) catch |err| {
@@ -366,7 +509,10 @@ pub fn runSpec(
         .ignored = 0,
         .indent = 0,
         .needs_blank_line = false,
+        .filter = filter,
+        .current_describe_stack = std.ArrayList([]const u8){},
     };
+    defer ctx.current_describe_stack.deinit(allocator);
 
     try runTestItem(&ctx, value);
 
@@ -401,7 +547,7 @@ fn runAllSpecsRecursive(
             }
             first_file.* = false;
 
-            const result = try runSpec(allocator, full_path, writer);
+            const result = try runSpec(allocator, full_path, null, writer);
             total_passed.* += result.passed;
             total_failed.* += result.failed;
             total_ignored.* += result.ignored;

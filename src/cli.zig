@@ -269,7 +269,22 @@ fn runSpec(
 
     // If one argument, check if it's a directory or file
     if (args.len == 1) {
-        const path = args[0];
+        const path_arg = args[0];
+
+        // Check if the path contains a line number (format: path:line)
+        var path = path_arg;
+        var line_number: ?usize = null;
+
+        if (std.mem.lastIndexOfScalar(u8, path_arg, ':')) |colon_idx| {
+            // Try to parse the part after the colon as a line number
+            const line_str = path_arg[colon_idx + 1 ..];
+            if (std.fmt.parseInt(usize, line_str, 10)) |line| {
+                path = path_arg[0..colon_idx];
+                line_number = line;
+            } else |_| {
+                // Not a valid line number, treat the whole thing as a path
+            }
+        }
 
         // Check if it's a directory
         const stat = std.fs.cwd().statFile(path) catch |err| switch (err) {
@@ -281,6 +296,10 @@ fn runSpec(
         };
 
         if (stat.kind == .directory) {
+            if (line_number != null) {
+                try stderr.print("error: cannot specify line number for directory\n", .{});
+                return .{ .exit_code = 1 };
+            }
             // Run all specs in the directory recursively
             const result = spec.runAllSpecs(allocator, path, stdout) catch |err| {
                 try stderr.print("error: failed to run specs: {}\n", .{err});
@@ -289,7 +308,7 @@ fn runSpec(
             return .{ .exit_code = result.exitCode() };
         } else {
             // Run the specific spec file
-            const result = spec.runSpec(allocator, path, stdout) catch |err| {
+            const result = spec.runSpec(allocator, path, line_number, stdout) catch |err| {
                 try stderr.print("error: failed to run spec: {}\n", .{err});
                 return .{ .exit_code = 1 };
             };
