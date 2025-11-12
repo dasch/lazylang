@@ -255,7 +255,8 @@ fn runDescribe(ctx: anytype, desc: eval_module.ObjectValue) anyerror!void {
                 if (child_obj) |obj| {
                     for (obj.fields) |field| {
                         if (std.mem.eql(u8, field.key, "type")) {
-                            const type_val = switch (field.value) {
+                            const forced_value = eval_module.force(ctx.allocator, field.value) catch field.value;
+                            const type_val = switch (forced_value) {
                                 .string => |s| s,
                                 else => null,
                             };
