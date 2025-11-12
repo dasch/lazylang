@@ -1,4 +1,4 @@
-.PHONY: all build test test-zig test-spec docs clean
+.PHONY: all build test test-zig test-spec docs clean repl
 
 all: test
 
@@ -19,6 +19,10 @@ test-spec: build
 
 # Run all tests (both Zig tests and stdlib specs)
 test: test-zig test-spec
+
+# Launch the interactive REPL
+repl: build
+	./zig-out/bin/lazylang repl
 
 # Generate stdlib documentation
 docs: build
