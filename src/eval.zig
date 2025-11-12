@@ -1878,6 +1878,71 @@ pub const ObjectValue = struct {
     fields: []ObjectFieldValue,
 };
 
+fn valuesEqual(a: Value, b: Value) bool {
+    return switch (a) {
+        .integer => |av| switch (b) {
+            .integer => |bv| av == bv,
+            else => false,
+        },
+        .boolean => |av| switch (b) {
+            .boolean => |bv| av == bv,
+            else => false,
+        },
+        .null_value => switch (b) {
+            .null_value => true,
+            else => false,
+        },
+        .symbol => |av| switch (b) {
+            .symbol => |bv| std.mem.eql(u8, av, bv),
+            else => false,
+        },
+        .string => |av| switch (b) {
+            .string => |bv| std.mem.eql(u8, av, bv),
+            else => false,
+        },
+        .function => false, // Functions are not comparable
+        .native_fn => false, // Native functions are not comparable
+        .array => |av| switch (b) {
+            .array => |bv| blk: {
+                if (av.elements.len != bv.elements.len) break :blk false;
+                for (av.elements, 0..) |elem, i| {
+                    if (!valuesEqual(elem, bv.elements[i])) break :blk false;
+                }
+                break :blk true;
+            },
+            else => false,
+        },
+        .tuple => |av| switch (b) {
+            .tuple => |bv| blk: {
+                if (av.elements.len != bv.elements.len) break :blk false;
+                for (av.elements, 0..) |elem, i| {
+                    if (!valuesEqual(elem, bv.elements[i])) break :blk false;
+                }
+                break :blk true;
+            },
+            else => false,
+        },
+        .object => |av| switch (b) {
+            .object => |bv| blk: {
+                if (av.fields.len != bv.fields.len) break :blk false;
+                for (av.fields) |afield| {
+                    var found = false;
+                    for (bv.fields) |bfield| {
+                        if (std.mem.eql(u8, afield.key, bfield.key)) {
+                            if (!valuesEqual(afield.value, bfield.value)) break :blk false;
+                            found = true;
+                            break;
+                        }
+                    }
+                    if (!found) break :blk false;
+                }
+                break :blk true;
+            },
+            else => false,
+        },
+    };
+}
+
 pub const EvalError = ParseError || std.mem.Allocator.Error || std.process.GetEnvVarOwnedError || std.fs.File.OpenError || std.fs.File.ReadError || error{
     UnknownIdentifier,
     TypeMismatch,
@@ -2296,7 +2361,15 @@ pub fn evaluateExpression(
                     };
                     break :blk2 Value{ .boolean = left_bool or right_bool };
                 },
-                .equal, .not_equal, .less_than, .greater_than, .less_or_equal, .greater_or_equal => blk2: {
+                .equal, .not_equal => blk2: {
+                    const bool_result = switch (binary.op) {
+                        .equal => valuesEqual(left_value, right_value),
+                        .not_equal => !valuesEqual(left_value, right_value),
+                        else => unreachable,
+                    };
+                    break :blk2 Value{ .boolean = bool_result };
+                },
+                .less_than, .greater_than, .less_or_equal, .greater_or_equal => blk2: {
                     const left_int = switch (left_value) {
                         .integer => |v| v,
                         else => return error.TypeMismatch,
@@ -2307,8 +2380,6 @@ pub fn evaluateExpression(
                     };
 
                     const bool_result = switch (binary.op) {
-                        .equal => left_int == right_int,
-                        .not_equal => left_int != right_int,
                         .less_than => left_int < right_int,
                         .greater_than => left_int > right_int,
                         .less_or_equal => left_int <= right_int,
