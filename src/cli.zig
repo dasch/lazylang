@@ -46,6 +46,11 @@ pub fn run(
     return .{ .exit_code = 1 };
 }
 
+const OutputFormat = enum {
+    pretty,
+    json,
+};
+
 fn runEval(
     allocator: std.mem.Allocator,
     args: []const []const u8,
@@ -54,6 +59,7 @@ fn runEval(
 ) !CommandResult {
     var inline_expr: ?[]const u8 = null;
     var file_path: ?[]const u8 = null;
+    var output_format: OutputFormat = .pretty;
     var json_output = false;
     var index: usize = 0;
 
@@ -74,6 +80,7 @@ fn runEval(
         }
         if (std.mem.eql(u8, arg, "--json")) {
             json_output = true;
+            output_format = .json;
             continue;
         }
 
@@ -92,7 +99,12 @@ fn runEval(
             return .{ .exit_code = 1 };
         }
 
-        var result = evaluator.evalInlineWithContext(allocator, inline_expr.?) catch |err| {
+        const format: evaluator.FormatStyle = switch (output_format) {
+            .pretty => .pretty,
+            .json => .json,
+        };
+
+        var result = evaluator.evalInlineWithFormat(allocator, inline_expr.?, format) catch |err| {
             if (json_output) {
                 try json_error.reportErrorAsJson(stderr, "<inline>", &error_context.ErrorContext.init(allocator), @errorName(err), @errorName(err), null);
             } else {
@@ -128,7 +140,12 @@ fn runEval(
     };
     defer allocator.free(file_content);
 
-    var result = evaluator.evalFileWithContext(allocator, file_path.?) catch |err| {
+    const format: evaluator.FormatStyle = switch (output_format) {
+        .pretty => .pretty,
+        .json => .json,
+    };
+
+    var result = evaluator.evalFileWithFormat(allocator, file_path.?, format) catch |err| {
         // For file I/O errors, we don't have source context
         if (json_output) {
             try json_error.reportErrorAsJson(stderr, file_path.?, &error_context.ErrorContext.init(allocator), @errorName(err), @errorName(err), null);

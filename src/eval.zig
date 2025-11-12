@@ -3425,6 +3425,108 @@ pub fn formatValuePretty(allocator: std.mem.Allocator, value: Value) ![]u8 {
     return formatValuePrettyImpl(allocator, allocator, value, 0);
 }
 
+pub fn formatValueAsJson(allocator: std.mem.Allocator, value: Value) ![]u8 {
+    return formatValueAsJsonImpl(allocator, allocator, value);
+}
+
+fn formatValueAsJsonImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator, value: Value) error{OutOfMemory}![]u8 {
+    return switch (value) {
+        .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
+        .float => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
+        .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
+        .null_value => try std.fmt.allocPrint(allocator, "null", .{}),
+        .symbol => |s| try std.fmt.allocPrint(allocator, "\"{s}\"", .{s}),
+        .function => try std.fmt.allocPrint(allocator, "null", .{}), // Functions can't be represented in JSON
+        .native_fn => try std.fmt.allocPrint(allocator, "null", .{}), // Native functions can't be represented in JSON
+        .thunk => blk: {
+            const forced = force(arena, value) catch break :blk try std.fmt.allocPrint(allocator, "null", .{});
+            break :blk try formatValueAsJsonImpl(allocator, arena, forced);
+        },
+        .array => |arr| blk: {
+            var builder = std.ArrayList(u8){};
+            errdefer builder.deinit(allocator);
+
+            try builder.append(allocator, '[');
+            for (arr.elements, 0..) |element, i| {
+                if (i != 0) try builder.appendSlice(allocator, ",");
+                const formatted = try formatValueAsJsonImpl(allocator, arena, element);
+                defer allocator.free(formatted);
+                try builder.appendSlice(allocator, formatted);
+            }
+            try builder.append(allocator, ']');
+
+            break :blk try builder.toOwnedSlice(allocator);
+        },
+        .tuple => |tup| blk: {
+            // Tuples are represented as arrays in JSON
+            var builder = std.ArrayList(u8){};
+            errdefer builder.deinit(allocator);
+
+            try builder.append(allocator, '[');
+            for (tup.elements, 0..) |element, i| {
+                if (i != 0) try builder.appendSlice(allocator, ",");
+                const formatted = try formatValueAsJsonImpl(allocator, arena, element);
+                defer allocator.free(formatted);
+                try builder.appendSlice(allocator, formatted);
+            }
+            try builder.append(allocator, ']');
+
+            break :blk try builder.toOwnedSlice(allocator);
+        },
+        .object => |obj| blk: {
+            var builder = std.ArrayList(u8){};
+            errdefer builder.deinit(allocator);
+
+            try builder.append(allocator, '{');
+            for (obj.fields, 0..) |field, i| {
+                if (i != 0) try builder.appendSlice(allocator, ",");
+                // Escape key for JSON
+                try builder.append(allocator, '"');
+                try jsonEscapeString(&builder, allocator, field.key);
+                try builder.appendSlice(allocator, "\":");
+                const formatted = try formatValueAsJsonImpl(allocator, arena, field.value);
+                defer allocator.free(formatted);
+                try builder.appendSlice(allocator, formatted);
+            }
+            try builder.append(allocator, '}');
+
+            break :blk try builder.toOwnedSlice(allocator);
+        },
+        .string => |str| blk: {
+            var builder = std.ArrayList(u8){};
+            errdefer builder.deinit(allocator);
+
+            try builder.append(allocator, '"');
+            try jsonEscapeString(&builder, allocator, str);
+            try builder.append(allocator, '"');
+
+            break :blk try builder.toOwnedSlice(allocator);
+        },
+    };
+}
+
+fn jsonEscapeString(builder: *std.ArrayList(u8), allocator: std.mem.Allocator, str: []const u8) !void {
+    for (str) |c| {
+        switch (c) {
+            '"' => try builder.appendSlice(allocator, "\\\""),
+            '\\' => try builder.appendSlice(allocator, "\\\\"),
+            '\n' => try builder.appendSlice(allocator, "\\n"),
+            '\r' => try builder.appendSlice(allocator, "\\r"),
+            '\t' => try builder.appendSlice(allocator, "\\t"),
+            0x08 => try builder.appendSlice(allocator, "\\b"),
+            0x0C => try builder.appendSlice(allocator, "\\f"),
+            else => {
+                if (c < 0x20) {
+                    // Control characters: use \uXXXX format
+                    try builder.appendSlice(allocator, try std.fmt.allocPrint(allocator, "\\u{x:0>4}", .{c}));
+                } else {
+                    try builder.append(allocator, c);
+                }
+            },
+        }
+    }
+}
+
 fn formatValuePrettyImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator, value: Value, indent: usize) error{OutOfMemory}![]u8 {
     return switch (value) {
         .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
@@ -3702,10 +3804,24 @@ pub const EvalResult = struct {
     }
 };
 
+pub const FormatStyle = enum {
+    pretty,
+    json,
+};
+
 fn evalSourceWithContext(
     allocator: std.mem.Allocator,
     source: []const u8,
     current_dir: ?[]const u8,
+) EvalError!EvalResult {
+    return evalSourceWithFormat(allocator, source, current_dir, .pretty);
+}
+
+fn evalSourceWithFormat(
+    allocator: std.mem.Allocator,
+    source: []const u8,
+    current_dir: ?[]const u8,
+    format: FormatStyle,
 ) EvalError!EvalResult {
     var arena = std.heap.ArenaAllocator.init(allocator);
     errdefer arena.deinit();
@@ -3740,7 +3856,10 @@ fn evalSourceWithContext(
             .err = err,
         };
     };
-    const formatted = try formatValuePrettyImpl(allocator, arena.allocator(), value, 0);
+    const formatted = switch (format) {
+        .pretty => try formatValuePrettyImpl(allocator, arena.allocator(), value, 0),
+        .json => try formatValueAsJsonImpl(allocator, arena.allocator(), value),
+    };
 
     arena.deinit();
     return EvalResult{
@@ -3776,6 +3895,10 @@ pub fn evalInlineWithContext(allocator: std.mem.Allocator, source: []const u8) E
     return try evalSourceWithContext(allocator, source, null);
 }
 
+pub fn evalInlineWithFormat(allocator: std.mem.Allocator, source: []const u8, format: FormatStyle) EvalError!EvalResult {
+    return try evalSourceWithFormat(allocator, source, null, format);
+}
+
 pub fn evalFileWithContext(allocator: std.mem.Allocator, path: []const u8) EvalError!EvalResult {
     var file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
@@ -3785,6 +3908,17 @@ pub fn evalFileWithContext(allocator: std.mem.Allocator, path: []const u8) EvalE
 
     const directory = std.fs.path.dirname(path);
     return try evalSourceWithContext(allocator, contents, directory);
+}
+
+pub fn evalFileWithFormat(allocator: std.mem.Allocator, path: []const u8, format: FormatStyle) EvalError!EvalResult {
+    var file = try std.fs.cwd().openFile(path, .{});
+    defer file.close();
+
+    const contents = try file.readToEndAlloc(allocator, std.math.maxInt(usize));
+    defer allocator.free(contents);
+
+    const directory = std.fs.path.dirname(path);
+    return try evalSourceWithFormat(allocator, contents, directory, format);
 }
 
 pub fn evalFile(allocator: std.mem.Allocator, path: []const u8) EvalError!EvalOutput {
