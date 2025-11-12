@@ -1,0 +1,23 @@
+// Example: Recursive functions in lazylang
+//
+// Recursive definitions are automatically supported when binding
+// a function to an identifier. The function can reference itself
+// in its body.
+
+// Fibonacci sequence
+fib = n -> if n <= 1 then n else fib (n - 1) + fib (n - 2)
+
+// Factorial
+factorial = n -> if n <= 1 then 1 else n * factorial (n - 1)
+
+// Count down from n to 0
+countdown = n ->
+  if n <= 0
+    then []
+    else [n, ...countdown (n - 1)]
+
+{
+  fib_10: fib 10,
+  factorial_5: factorial 5,
+  countdown_5: countdown 5
+}

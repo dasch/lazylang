@@ -2206,9 +2206,37 @@ pub fn evaluateExpression(
             break :blk Value{ .function = function };
         },
         .let => |let_expr| blk: {
-            const value = try evaluateExpression(arena, let_expr.value, env, current_dir, ctx);
-            const new_env = try matchPattern(arena, let_expr.pattern, value, env);
-            break :blk try evaluateExpression(arena, let_expr.body, new_env, current_dir, ctx);
+            // For recursive definitions, if the pattern is a simple identifier,
+            // we create the environment binding before evaluating the value
+            const is_recursive = switch (let_expr.pattern.*) {
+                .identifier => true,
+                else => false,
+            };
+
+            if (is_recursive) {
+                const identifier = let_expr.pattern.identifier;
+                // Create environment entry with placeholder value
+                const recursive_env = try arena.create(Environment);
+                recursive_env.* = .{
+                    .parent = env,
+                    .name = identifier,
+                    .value = .null_value, // Placeholder
+                };
+
+                // Evaluate value with recursive environment
+                const value = try evaluateExpression(arena, let_expr.value, recursive_env, current_dir, ctx);
+
+                // Update the environment entry with the actual value
+                recursive_env.value = value;
+
+                // Evaluate body with the recursive environment
+                break :blk try evaluateExpression(arena, let_expr.body, recursive_env, current_dir, ctx);
+            } else {
+                // Non-recursive case: evaluate value first, then pattern match
+                const value = try evaluateExpression(arena, let_expr.value, env, current_dir, ctx);
+                const new_env = try matchPattern(arena, let_expr.pattern, value, env);
+                break :blk try evaluateExpression(arena, let_expr.body, new_env, current_dir, ctx);
+            }
         },
         .unary => |unary| blk: {
             const operand_value = try evaluateExpression(arena, unary.operand, env, current_dir, ctx);

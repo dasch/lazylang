@@ -88,7 +88,14 @@
   /// Array.fold (acc -> x -> acc + x) 0 [1, 2, 3]  // Returns 6
   /// Array.fold (acc -> x -> acc * x) 1 [2, 3, 4]  // Returns 24
   /// ```
-  fold: fn -> init -> arr -> __array_fold (fn, init, arr)
+  fold: fn -> init -> arr ->
+    foldHelper = f -> acc -> xs -> idx ->
+      if idx >= __array_length xs
+        then acc
+        else when __array_get (xs, idx) matches
+          (#ok, x) then foldHelper f (f acc x) xs (idx + 1)
+          otherwise acc
+    foldHelper fn init arr 0
 
   /// Reverses an array.
   ///
