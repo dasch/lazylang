@@ -27,6 +27,7 @@ pub const TokenKind = enum {
     greater,
     less_equals,
     greater_equals,
+    dot,
     l_paren,
     r_paren,
     l_bracket,
@@ -96,6 +97,9 @@ pub const Expression = union(enum) {
     import_expr: ImportExpr,
     array_comprehension: ArrayComprehension,
     object_comprehension: ObjectComprehension,
+    field_access: FieldAccess,
+    field_accessor: FieldAccessor,
+    field_projection: FieldProjection,
 };
 
 const Lambda = struct {
@@ -196,6 +200,20 @@ const ObjectComprehension = struct {
     value: *Expression,
     clauses: []ForClause,
     filter: ?*Expression,
+};
+
+const FieldAccess = struct {
+    object: *Expression,
+    field: []const u8,
+};
+
+const FieldAccessor = struct {
+    fields: [][]const u8, // Chain of field names, e.g. ["user", "address"]
+};
+
+const FieldProjection = struct {
+    object: *Expression,
+    fields: [][]const u8, // List of fields to extract
 };
 
 pub const Pattern = union(enum) {
@@ -354,6 +372,10 @@ pub const Tokenizer = struct {
             '}' => {
                 self.advance();
                 return self.makeToken(.r_brace, start, start_line, start_column);
+            },
+            '.' => {
+                self.advance();
+                return self.makeToken(.dot, start, start_line, start_column);
             },
             'a'...'z', 'A'...'Z', '_' => {
                 return self.consumeIdentifier();
@@ -960,6 +982,50 @@ pub const Parser = struct {
                     node.* = .{ .application = .{ .function = expr, .argument = argument } };
                     expr = node;
                 },
+                .dot => {
+                    try self.advance();
+
+                    // Check for field projection: .{ field1, field2 }
+                    if (self.current.kind == .l_brace) {
+                        try self.advance();
+                        var field_list = std.ArrayList([]const u8){};
+                        defer field_list.deinit(self.arena);
+
+                        while (self.current.kind != .r_brace) {
+                            if (self.current.kind != .identifier) {
+                                return error.UnexpectedToken;
+                            }
+                            try field_list.append(self.arena, self.current.lexeme);
+                            try self.advance();
+
+                            if (self.current.kind == .comma) {
+                                try self.advance();
+                            }
+                        }
+
+                        try self.expect(.r_brace);
+
+                        const node = try self.allocateExpression();
+                        node.* = .{ .field_projection = .{
+                            .object = expr,
+                            .fields = try field_list.toOwnedSlice(self.arena),
+                        } };
+                        expr = node;
+                    } else if (self.current.kind == .identifier) {
+                        // Regular field access: expr.field
+                        const field_name = self.current.lexeme;
+                        try self.advance();
+
+                        const node = try self.allocateExpression();
+                        node.* = .{ .field_access = .{
+                            .object = expr,
+                            .field = field_name,
+                        } };
+                        expr = node;
+                    } else {
+                        return error.UnexpectedToken;
+                    }
+                },
                 .l_brace => {
                     // Object extension: expr { fields }
                     const object_expr = try self.parseObject();
@@ -1136,6 +1202,36 @@ pub const Parser = struct {
             .l_paren => return self.parseTupleOrParenthesized(),
             .l_bracket => return self.parseArray(),
             .l_brace => return self.parseObject(),
+            .dot => {
+                // Field accessor function: .field or .field1.field2
+                try self.advance();
+
+                var field_list = std.ArrayList([]const u8){};
+                defer field_list.deinit(self.arena);
+
+                // First field is required
+                if (self.current.kind != .identifier) {
+                    return error.UnexpectedToken;
+                }
+                try field_list.append(self.arena, self.current.lexeme);
+                try self.advance();
+
+                // Parse chained fields
+                while (self.current.kind == .dot and !self.current.preceded_by_newline) {
+                    try self.advance();
+                    if (self.current.kind != .identifier) {
+                        return error.UnexpectedToken;
+                    }
+                    try field_list.append(self.arena, self.current.lexeme);
+                    try self.advance();
+                }
+
+                const node = try self.allocateExpression();
+                node.* = .{ .field_accessor = .{
+                    .fields = try field_list.toOwnedSlice(self.arena),
+                } };
+                return node;
+            },
             else => {
                 self.recordError();
                 return error.ExpectedExpression;
@@ -1739,6 +1835,7 @@ pub const EvalError = ParseError || std.mem.Allocator.Error || std.process.GetEn
     FileTooBig,
     WrongNumberOfArguments,
     InvalidArgument,
+    UnknownField,
 };
 
 pub const EvalContext = struct {
@@ -2299,7 +2396,76 @@ pub fn evaluateExpression(
             break :blk Value{ .object = .{ .fields = try result_fields.toOwnedSlice(arena) } };
         },
         .import_expr => |import_expr| try importModule(arena, import_expr.path, current_dir, ctx),
+        .field_access => |field_access| blk: {
+            const object_value = try evaluateExpression(arena, field_access.object, env, current_dir, ctx);
+            break :blk try accessField(object_value, field_access.field);
+        },
+        .field_accessor => |field_accessor| blk: {
+            // Create a function that accesses the specified fields
+            const param = try arena.create(Pattern);
+            param.* = .{ .identifier = "__obj" };
+
+            // Build the body expression: __obj.field1.field2...
+            var body_expr = try arena.create(Expression);
+            body_expr.* = .{ .identifier = "__obj" };
+
+            for (field_accessor.fields) |field_name| {
+                const field_access_expr = try arena.create(Expression);
+                field_access_expr.* = .{ .field_access = .{
+                    .object = body_expr,
+                    .field = field_name,
+                } };
+                body_expr = field_access_expr;
+            }
+
+            const func_value = try arena.create(FunctionValue);
+            func_value.* = .{
+                .param = param,
+                .body = body_expr,
+                .env = env,
+            };
+
+            break :blk Value{ .function = func_value };
+        },
+        .field_projection => |field_projection| blk: {
+            const object_value = try evaluateExpression(arena, field_projection.object, env, current_dir, ctx);
+
+            // Verify it's an object
+            _ = switch (object_value) {
+                .object => |obj| obj,
+                else => return error.TypeMismatch,
+            };
+
+            // Create new object with only the specified fields
+            const new_fields = try arena.alloc(ObjectFieldValue, field_projection.fields.len);
+            for (field_projection.fields, 0..) |field_name, i| {
+                const field_value = try accessField(object_value, field_name);
+                new_fields[i] = .{
+                    .key = try arena.dupe(u8, field_name),
+                    .value = field_value,
+                };
+            }
+
+            break :blk Value{ .object = .{ .fields = new_fields } };
+        },
     };
+}
+
+fn accessField(object_value: Value, field_name: []const u8) EvalError!Value {
+    const object = switch (object_value) {
+        .object => |obj| obj,
+        else => return error.TypeMismatch,
+    };
+
+    // Look for the field
+    for (object.fields) |field| {
+        if (std.mem.eql(u8, field.key, field_name)) {
+            return field.value;
+        }
+    }
+
+    // Field not found - provide "did you mean" suggestions (TODO: implement)
+    return error.UnknownField;
 }
 
 fn evaluateArrayComprehension(
