@@ -1,0 +1,40 @@
+{ describe, it, xit, mustEq, mustNotEq, must, pass, fail } = import 'Spec'
+
+describe "Assertion Functions" [
+  describe "mustEq" [
+    it "passes when values are equal" do
+      mustEq 5 5
+
+    it "passes when strings are equal" do
+      mustEq "hello" "hello"
+  ]
+
+  describe "mustNotEq" [
+    it "passes when values are not equal" do
+      mustNotEq 5 10
+
+    it "passes when strings are different" do
+      mustNotEq "hello" "world"
+  ]
+
+  describe "must" [
+    it "passes when condition is true" do
+      must true
+
+    it "passes when condition is truthy (non-zero)" do
+      must 42
+
+    it "passes when condition is a comparison" do
+      must (5 > 3)
+  ]
+
+  describe "pass" [
+    it "explicitly passes" do
+      pass
+  ]
+
+  describe "fail" [
+    xit "explicitly fails with message" do
+      fail "This test intentionally fails"
+  ]
+]

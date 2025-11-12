@@ -68,7 +68,76 @@
   /// ```
   mustEq: expected -> actual -> {
     type: "assertion",
+    kind: "eq",
     expected: expected,
     actual: actual
+  },
+
+  /// Creates an inequality assertion that checks if the actual value does NOT match the expected value.
+  /// The test passes if both values are different, otherwise it fails.
+  ///
+  /// **Parameters:**
+  /// - `expected`: The value that should NOT be matched
+  /// - `actual`: The actual value to compare
+  ///
+  /// **Example:**
+  /// ```
+  /// mustNotEq 0 actualValue
+  /// mustNotEq null result
+  /// ```
+  mustNotEq: expected -> actual -> {
+    type: "assertion",
+    kind: "notEq",
+    expected: expected,
+    actual: actual
+  },
+
+  /// Creates a truthiness assertion that checks if the condition is truthy.
+  /// The test passes if the condition evaluates to true, otherwise it fails.
+  ///
+  /// **Parameters:**
+  /// - `condition`: The value or expression to check for truthiness
+  ///
+  /// **Example:**
+  /// ```
+  /// must (x > 0)
+  /// must (Array.length arr == 3)
+  /// ```
+  must: condition -> {
+    type: "assertion",
+    kind: "truthy",
+    condition: condition
+  },
+
+  /// Explicitly marks a test as passing.
+  /// Useful for tests that verify side effects or when you want to document expected behavior.
+  ///
+  /// **Example:**
+  /// ```
+  /// it "doesn't throw an error" do
+  ///   functionThatShouldWork()
+  ///   pass
+  /// ```
+  pass: {
+    type: "pass"
+  },
+
+  /// Explicitly marks a test as failing with a custom message.
+  /// Useful for tests that should fail under certain conditions or for documenting known issues.
+  ///
+  /// **Parameters:**
+  /// - `message`: A string describing why the test failed
+  ///
+  /// **Example:**
+  /// ```
+  /// it "validates input" do
+  ///   if (isInvalid input) then
+  ///     fail "Input validation failed"
+  ///   else
+  ///     pass
+  /// ```
+  fail: message -> {
+    type: "fail",
+    message: message
   }
 }

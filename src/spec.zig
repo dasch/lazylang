@@ -398,54 +398,154 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
         },
     };
 
-    // Check if it's an assertion object
-    var is_assertion = false;
+    // Parse the test object type and fields
+    var test_type: ?[]const u8 = null;
+    var assertion_kind: ?[]const u8 = null;
     var expected: ?eval_module.Value = null;
     var actual: ?eval_module.Value = null;
+    var condition: ?eval_module.Value = null;
+    var fail_message: ?[]const u8 = null;
 
     for (test_obj.fields) |field| {
         if (std.mem.eql(u8, field.key, "type")) {
-            const type_val = switch (field.value) {
+            test_type = switch (field.value) {
                 .string => |s| s,
-                else => continue,
+                else => null,
             };
-            if (std.mem.eql(u8, type_val, "assertion")) {
-                is_assertion = true;
-            }
+        } else if (std.mem.eql(u8, field.key, "kind")) {
+            assertion_kind = switch (field.value) {
+                .string => |s| s,
+                else => null,
+            };
         } else if (std.mem.eql(u8, field.key, "expected")) {
             expected = field.value;
         } else if (std.mem.eql(u8, field.key, "actual")) {
             actual = field.value;
+        } else if (std.mem.eql(u8, field.key, "condition")) {
+            condition = field.value;
+        } else if (std.mem.eql(u8, field.key, "message")) {
+            fail_message = switch (field.value) {
+                .string => |s| s,
+                else => null,
+            };
         }
     }
 
-    if (is_assertion) {
-        if (expected == null or actual == null) {
+    // Handle explicit pass
+    if (test_type != null and std.mem.eql(u8, test_type.?, "pass")) {
+        try ctx.writeIndent();
+        try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, description.? });
+        ctx.passed += 1;
+        return;
+    }
+
+    // Handle explicit fail
+    if (test_type != null and std.mem.eql(u8, test_type.?, "fail")) {
+        try ctx.writeIndent();
+        try ctx.writer.print("{s}✗ {s}{s}\n", .{ Color.red, description.?, Color.reset });
+        if (fail_message) |msg| {
             try ctx.writeIndent();
-            try ctx.writer.print("{s}✗ {s}: assertion missing expected or actual{s}\n", .{ Color.red, description.?, Color.reset });
-            ctx.failed += 1;
-            return;
+            try ctx.writer.print("{s}  {s}{s}\n", .{ Color.dim, msg, Color.reset });
+        }
+        ctx.failed += 1;
+        return;
+    }
+
+    // Handle assertions
+    if (test_type != null and std.mem.eql(u8, test_type.?, "assertion")) {
+        if (assertion_kind == null) {
+            // Legacy assertion (no kind specified, assume "eq")
+            assertion_kind = "eq";
         }
 
-        if (valuesEqual(expected.?, actual.?)) {
-            try ctx.writeIndent();
-            try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, description.? });
-            ctx.passed += 1;
+        if (std.mem.eql(u8, assertion_kind.?, "eq")) {
+            // mustEq assertion
+            if (expected == null or actual == null) {
+                try ctx.writeIndent();
+                try ctx.writer.print("{s}✗ {s}: assertion missing expected or actual{s}\n", .{ Color.red, description.?, Color.reset });
+                ctx.failed += 1;
+                return;
+            }
+
+            if (valuesEqual(expected.?, actual.?)) {
+                try ctx.writeIndent();
+                try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, description.? });
+                ctx.passed += 1;
+            } else {
+                try ctx.writeIndent();
+                const expected_str = try eval_module.formatValue(ctx.allocator, expected.?);
+                defer ctx.allocator.free(expected_str);
+                const actual_str = try eval_module.formatValue(ctx.allocator, actual.?);
+                defer ctx.allocator.free(actual_str);
+                try ctx.writer.print("{s}✗ {s}{s}\n", .{ Color.red, description.?, Color.reset });
+                try ctx.writeIndent();
+                try ctx.writer.print("{s}  Expected: {s}{s}\n", .{ Color.dim, expected_str, Color.reset });
+                try ctx.writeIndent();
+                try ctx.writer.print("{s}  Actual:   {s}{s}\n", .{ Color.dim, actual_str, Color.reset });
+                ctx.failed += 1;
+            }
+        } else if (std.mem.eql(u8, assertion_kind.?, "notEq")) {
+            // mustNotEq assertion
+            if (expected == null or actual == null) {
+                try ctx.writeIndent();
+                try ctx.writer.print("{s}✗ {s}: assertion missing expected or actual{s}\n", .{ Color.red, description.?, Color.reset });
+                ctx.failed += 1;
+                return;
+            }
+
+            if (!valuesEqual(expected.?, actual.?)) {
+                try ctx.writeIndent();
+                try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, description.? });
+                ctx.passed += 1;
+            } else {
+                try ctx.writeIndent();
+                const value_str = try eval_module.formatValue(ctx.allocator, actual.?);
+                defer ctx.allocator.free(value_str);
+                try ctx.writer.print("{s}✗ {s}{s}\n", .{ Color.red, description.?, Color.reset });
+                try ctx.writeIndent();
+                try ctx.writer.print("{s}  Expected not to equal: {s}{s}\n", .{ Color.dim, value_str, Color.reset });
+                try ctx.writeIndent();
+                try ctx.writer.print("{s}  But got:               {s}{s}\n", .{ Color.dim, value_str, Color.reset });
+                ctx.failed += 1;
+            }
+        } else if (std.mem.eql(u8, assertion_kind.?, "truthy")) {
+            // must assertion (truthiness check)
+            if (condition == null) {
+                try ctx.writeIndent();
+                try ctx.writer.print("{s}✗ {s}: assertion missing condition{s}\n", .{ Color.red, description.?, Color.reset });
+                ctx.failed += 1;
+                return;
+            }
+
+            // Check if condition is truthy
+            const is_truthy = switch (condition.?) {
+                .boolean => |b| b,
+                .null_value => false,
+                else => true, // All other values are considered truthy
+            };
+
+            if (is_truthy) {
+                try ctx.writeIndent();
+                try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, description.? });
+                ctx.passed += 1;
+            } else {
+                try ctx.writeIndent();
+                const condition_str = try eval_module.formatValue(ctx.allocator, condition.?);
+                defer ctx.allocator.free(condition_str);
+                try ctx.writer.print("{s}✗ {s}{s}\n", .{ Color.red, description.?, Color.reset });
+                try ctx.writeIndent();
+                try ctx.writer.print("{s}  Expected condition to be truthy{s}\n", .{ Color.dim, Color.reset });
+                try ctx.writeIndent();
+                try ctx.writer.print("{s}  But got: {s}{s}\n", .{ Color.dim, condition_str, Color.reset });
+                ctx.failed += 1;
+            }
         } else {
             try ctx.writeIndent();
-            const expected_str = try eval_module.formatValue(ctx.allocator, expected.?);
-            defer ctx.allocator.free(expected_str);
-            const actual_str = try eval_module.formatValue(ctx.allocator, actual.?);
-            defer ctx.allocator.free(actual_str);
-            try ctx.writer.print("{s}✗ {s}{s}\n", .{ Color.red, description.?, Color.reset });
-            try ctx.writeIndent();
-            try ctx.writer.print("{s}  Expected: {s}{s}\n", .{ Color.dim, expected_str, Color.reset });
-            try ctx.writeIndent();
-            try ctx.writer.print("{s}  Actual:   {s}{s}\n", .{ Color.dim, actual_str, Color.reset });
+            try ctx.writer.print("{s}✗ {s}: unknown assertion kind '{s}'{s}\n", .{ Color.red, description.?, assertion_kind.?, Color.reset });
             ctx.failed += 1;
         }
     } else {
-        // Not an assertion, just check if it's truthy
+        // Not a recognized test type, just check if it's truthy
         try ctx.writeIndent();
         try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, description.? });
         ctx.passed += 1;
