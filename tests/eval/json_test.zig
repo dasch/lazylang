@@ -79,7 +79,8 @@ test "JSON: parse nested array" {
     defer result.deinit();
 
     try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
-    try testing.expect(std.mem.indexOf(u8, result.text, "[[1, 2], [3, 4]]") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "[1, 2]") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "[3, 4]") != null);
 }
 
 test "JSON: parse object" {

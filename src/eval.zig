@@ -3421,6 +3421,194 @@ pub fn formatValue(allocator: std.mem.Allocator, value: Value) ![]u8 {
     return formatValueWithArena(allocator, allocator, value);
 }
 
+pub fn formatValuePretty(allocator: std.mem.Allocator, value: Value) ![]u8 {
+    return formatValuePrettyImpl(allocator, allocator, value, 0);
+}
+
+fn formatValuePrettyImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator, value: Value, indent: usize) error{OutOfMemory}![]u8 {
+    return switch (value) {
+        .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
+        .float => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
+        .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
+        .null_value => try std.fmt.allocPrint(allocator, "null", .{}),
+        .symbol => |s| try std.fmt.allocPrint(allocator, "{s}", .{s}),
+        .function => try std.fmt.allocPrint(allocator, "<function>", .{}),
+        .native_fn => try std.fmt.allocPrint(allocator, "<native function>", .{}),
+        .thunk => blk: {
+            // Force the thunk and format the result
+            const forced = force(arena, value) catch break :blk try std.fmt.allocPrint(allocator, "<thunk error>", .{});
+            break :blk try formatValuePrettyImpl(allocator, arena, forced, indent);
+        },
+        .array => |arr| blk: {
+            if (arr.elements.len == 0) {
+                break :blk try std.fmt.allocPrint(allocator, "[]", .{});
+            }
+
+            var builder = std.ArrayList(u8){};
+            errdefer builder.deinit(allocator);
+
+            try builder.append(allocator, '[');
+
+            // Check if all elements are simple (primitives, not nested structures)
+            var all_simple = true;
+            for (arr.elements) |element| {
+                if (element == .array or element == .object or element == .tuple) {
+                    all_simple = false;
+                    break;
+                }
+                if (element == .thunk) {
+                    const forced = force(arena, element) catch {
+                        all_simple = false;
+                        break;
+                    };
+                    if (forced == .array or forced == .object or forced == .tuple) {
+                        all_simple = false;
+                        break;
+                    }
+                }
+            }
+
+            if (all_simple) {
+                // Single-line format for simple arrays
+                for (arr.elements, 0..) |element, i| {
+                    if (i != 0) try builder.appendSlice(allocator, ", ");
+                    const formatted = try formatValuePrettyImpl(allocator, arena, element, indent);
+                    defer allocator.free(formatted);
+                    try builder.appendSlice(allocator, formatted);
+                }
+                try builder.append(allocator, ']');
+            } else {
+                // Multi-line format for complex arrays
+                try builder.append(allocator, '\n');
+                for (arr.elements, 0..) |element, i| {
+                    // Indentation
+                    for (0..indent + 1) |_| {
+                        try builder.appendSlice(allocator, "  ");
+                    }
+                    const formatted = try formatValuePrettyImpl(allocator, arena, element, indent + 1);
+                    defer allocator.free(formatted);
+                    try builder.appendSlice(allocator, formatted);
+                    if (i < arr.elements.len - 1) {
+                        try builder.append(allocator, ',');
+                    }
+                    try builder.append(allocator, '\n');
+                }
+                // Closing bracket with proper indentation
+                for (0..indent) |_| {
+                    try builder.appendSlice(allocator, "  ");
+                }
+                try builder.append(allocator, ']');
+            }
+
+            break :blk try builder.toOwnedSlice(allocator);
+        },
+        .tuple => |tup| blk: {
+            var builder = std.ArrayList(u8){};
+            errdefer builder.deinit(allocator);
+
+            try builder.append(allocator, '(');
+            for (tup.elements, 0..) |element, i| {
+                if (i != 0) try builder.appendSlice(allocator, ", ");
+                const formatted = try formatValuePrettyImpl(allocator, arena, element, indent);
+                defer allocator.free(formatted);
+                try builder.appendSlice(allocator, formatted);
+            }
+            try builder.append(allocator, ')');
+
+            break :blk try builder.toOwnedSlice(allocator);
+        },
+        .object => |obj| blk: {
+            var builder = std.ArrayList(u8){};
+            errdefer builder.deinit(allocator);
+
+            if (obj.fields.len == 0) {
+                try builder.appendSlice(allocator, "{}");
+            } else if (obj.fields.len > 3) {
+                // Multi-line format for larger objects
+                try builder.appendSlice(allocator, "{\n");
+                for (obj.fields, 0..) |field, i| {
+                    // Indentation
+                    for (0..indent + 1) |_| {
+                        try builder.appendSlice(allocator, "  ");
+                    }
+                    try builder.appendSlice(allocator, field.key);
+                    try builder.appendSlice(allocator, ": ");
+                    const formatted = try formatValuePrettyImpl(allocator, arena, field.value, indent + 1);
+                    defer allocator.free(formatted);
+                    try builder.appendSlice(allocator, formatted);
+                    if (i < obj.fields.len - 1) {
+                        try builder.append(allocator, ',');
+                    }
+                    try builder.append(allocator, '\n');
+                }
+                // Closing brace with proper indentation
+                for (0..indent) |_| {
+                    try builder.appendSlice(allocator, "  ");
+                }
+                try builder.append(allocator, '}');
+            } else {
+                // Check if all fields are simple (primitives, functions, or strings only)
+                var all_simple = true;
+                for (obj.fields) |field| {
+                    const val = if (field.value == .thunk)
+                        force(arena, field.value) catch {
+                            all_simple = false;
+                            break;
+                        }
+                    else
+                        field.value;
+
+                    // Consider nested structures (arrays, objects, tuples) as complex
+                    if (val == .array or val == .object or val == .tuple) {
+                        all_simple = false;
+                        break;
+                    }
+                }
+
+                if (all_simple) {
+                    // Single-line format for simple, small objects
+                    try builder.appendSlice(allocator, "{ ");
+                    for (obj.fields, 0..) |field, i| {
+                        if (i != 0) try builder.appendSlice(allocator, ", ");
+                        try builder.appendSlice(allocator, field.key);
+                        try builder.appendSlice(allocator, ": ");
+                        const formatted = try formatValuePrettyImpl(allocator, arena, field.value, indent);
+                        defer allocator.free(formatted);
+                        try builder.appendSlice(allocator, formatted);
+                    }
+                    try builder.appendSlice(allocator, " }");
+                } else {
+                    // Multi-line format for objects with complex values
+                    try builder.appendSlice(allocator, "{\n");
+                    for (obj.fields, 0..) |field, i| {
+                        // Indentation
+                        for (0..indent + 1) |_| {
+                            try builder.appendSlice(allocator, "  ");
+                        }
+                        try builder.appendSlice(allocator, field.key);
+                        try builder.appendSlice(allocator, ": ");
+                        const formatted = try formatValuePrettyImpl(allocator, arena, field.value, indent + 1);
+                        defer allocator.free(formatted);
+                        try builder.appendSlice(allocator, formatted);
+                        if (i < obj.fields.len - 1) {
+                            try builder.append(allocator, ',');
+                        }
+                        try builder.append(allocator, '\n');
+                    }
+                    // Closing brace with proper indentation
+                    for (0..indent) |_| {
+                        try builder.appendSlice(allocator, "  ");
+                    }
+                    try builder.append(allocator, '}');
+                }
+            }
+
+            break :blk try builder.toOwnedSlice(allocator);
+        },
+        .string => |str| try std.fmt.allocPrint(allocator, "\"{s}\"", .{str}),
+    };
+}
+
 fn formatValueWithArena(allocator: std.mem.Allocator, arena: std.mem.Allocator, value: Value) error{OutOfMemory}![]u8 {
     return switch (value) {
         .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
@@ -3552,7 +3740,7 @@ fn evalSourceWithContext(
             .err = err,
         };
     };
-    const formatted = try formatValueWithArena(allocator, arena.allocator(), value);
+    const formatted = try formatValuePrettyImpl(allocator, arena.allocator(), value, 0);
 
     arena.deinit();
     return EvalResult{

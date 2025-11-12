@@ -34,14 +34,24 @@ test "evaluates array comprehension with multiple for clauses" {
 test "evaluates array comprehension with multiple for clauses and filter" {
     try expectEvaluates(
         "[(x, y, z) for x in [1, 2] for y in [10, 20] for z in [true, false] when z]",
-        "[(1, 10, true), (1, 20, true), (2, 10, true), (2, 20, true)]",
+        \\[
+        \\  (1, 10, true),
+        \\  (1, 20, true),
+        \\  (2, 10, true),
+        \\  (2, 20, true)
+        \\]
+    ,
     );
 }
 
 test "evaluates nested array comprehension" {
     try expectEvaluates(
         "[[x + y for y in [1, 2]] for x in [10, 20]]",
-        "[[11, 12], [21, 22]]",
+        \\[
+        \\  [11, 12],
+        \\  [21, 22]
+        \\]
+    ,
     );
 }
 
@@ -91,7 +101,13 @@ test "evaluates object comprehension with multiple for clauses" {
     try expectEvaluates(
         \\{ [x + y]: x for x in [1, 2] for y in [10, 20] }
     ,
-        "{ 11: 1, 21: 1, 12: 2, 22: 2 }",
+        \\{
+        \\  11: 1,
+        \\  21: 1,
+        \\  12: 2,
+        \\  22: 2
+        \\}
+    ,
     );
 }
 

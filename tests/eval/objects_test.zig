@@ -97,7 +97,10 @@ test "object patch syntax merges nested objects" {
         \\obj2 = obj1 { rest { four: 4 } }
         \\obj2
     ,
-        "{ rest: { three: 3, four: 4 } }",
+        \\{
+        \\  rest: { three: 3, four: 4 }
+        \\}
+    ,
     );
 }
 
@@ -112,7 +115,12 @@ test "object patch syntax in literal" {
         \\}
         \\obj
     ,
-        "{ one: 1, two: 2, rest: { three: 3 } }",
+        \\{
+        \\  one: 1,
+        \\  two: 2,
+        \\  rest: { three: 3 }
+        \\}
+    ,
     );
 }
 
