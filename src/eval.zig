@@ -28,6 +28,7 @@ pub const TokenKind = enum {
     less_equals,
     greater_equals,
     dot,
+    dot_dot_dot,
     l_paren,
     r_paren,
     l_bracket,
@@ -234,6 +235,7 @@ const TuplePattern = struct {
 
 const ArrayPattern = struct {
     elements: []*Pattern,
+    rest: ?[]const u8, // Optional rest identifier (e.g., "tail" in [head, ...tail])
 };
 
 const ObjectPattern = struct {
@@ -374,6 +376,17 @@ pub const Tokenizer = struct {
                 return self.makeToken(.r_brace, start, start_line, start_column);
             },
             '.' => {
+                // Check for ... (spread operator)
+                if (self.index + 2 < self.source.len and
+                    self.source[self.index + 1] == '.' and
+                    self.source[self.index + 2] == '.')
+                {
+                    self.advance();
+                    self.advance();
+                    self.advance();
+                    return self.makeToken(.dot_dot_dot, start, start_line, start_column);
+                }
+                // Single dot for field access
                 self.advance();
                 return self.makeToken(.dot, start, start_line, start_column);
             },
@@ -1601,8 +1614,22 @@ pub const Parser = struct {
         try self.expect(.l_bracket);
 
         var elements = std.ArrayListUnmanaged(*Pattern){};
+        var rest: ?[]const u8 = null;
 
         while (self.current.kind != .r_bracket) {
+            // Check for spread operator
+            if (self.current.kind == .dot_dot_dot) {
+                try self.advance();
+                // Expect an identifier after ...
+                if (self.current.kind != .identifier) {
+                    return error.UnexpectedToken;
+                }
+                rest = self.current.lexeme;
+                try self.advance();
+                // After spread, we should only see the closing bracket
+                break;
+            }
+
             const element = try self.parsePattern();
             try elements.append(self.arena, element);
 
@@ -1620,7 +1647,7 @@ pub const Parser = struct {
 
         const slice = try elements.toOwnedSlice(self.arena);
         const pattern = try self.arena.create(Pattern);
-        pattern.* = .{ .array = .{ .elements = slice } };
+        pattern.* = .{ .array = .{ .elements = slice, .rest = rest } };
         return pattern;
     }
 
@@ -2001,14 +2028,42 @@ pub fn matchPattern(
                 else => return error.TypeMismatch,
             };
 
-            if (array_pattern.elements.len != array_value.elements.len) {
-                return error.TypeMismatch;
+            // If there's no rest pattern, lengths must match exactly
+            if (array_pattern.rest == null) {
+                if (array_pattern.elements.len != array_value.elements.len) {
+                    return error.TypeMismatch;
+                }
+            } else {
+                // With rest pattern, array must have at least as many elements as fixed patterns
+                if (array_value.elements.len < array_pattern.elements.len) {
+                    return error.TypeMismatch;
+                }
             }
 
             var current_env = base_env;
+
+            // Match fixed elements
             for (array_pattern.elements, 0..) |elem_pattern, i| {
                 current_env = try matchPattern(arena, elem_pattern, array_value.elements[i], current_env);
             }
+
+            // If there's a rest pattern, bind remaining elements to it
+            if (array_pattern.rest) |rest_name| {
+                const remaining_count = array_value.elements.len - array_pattern.elements.len;
+                const remaining_elements = try arena.alloc(Value, remaining_count);
+                for (0..remaining_count) |i| {
+                    remaining_elements[i] = array_value.elements[array_pattern.elements.len + i];
+                }
+                const rest_array = Value{ .array = .{ .elements = remaining_elements } };
+                const new_env = try arena.create(Environment);
+                new_env.* = .{
+                    .parent = current_env,
+                    .name = rest_name,
+                    .value = rest_array,
+                };
+                current_env = new_env;
+            }
+
             break :blk current_env;
         },
         .object => |object_pattern| blk: {
