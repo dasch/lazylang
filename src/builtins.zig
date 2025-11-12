@@ -436,7 +436,7 @@ pub fn objectValues(arena: std.mem.Allocator, args: []const eval.Value) eval.Eva
 
     const values = try arena.alloc(eval.Value, obj.fields.len);
     for (obj.fields, 0..) |field, i| {
-        values[i] = field.value;
+        values[i] = try eval.force(arena, field.value);
     }
     return eval.Value{ .array = .{ .elements = values } };
 }
@@ -463,10 +463,12 @@ pub fn objectGet(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalEr
 
     for (obj.fields) |field| {
         if (std.mem.eql(u8, field.key, key)) {
+            // Force thunk if needed before returning
+            const forced_value = try eval.force(arena, field.value);
             // Return (#ok, value)
             const result_elements = try arena.alloc(eval.Value, 2);
             result_elements[0] = eval.Value{ .symbol = "#ok" };
-            result_elements[1] = field.value;
+            result_elements[1] = forced_value;
             return eval.Value{ .tuple = .{ .elements = result_elements } };
         }
     }
@@ -662,4 +664,57 @@ pub fn yamlEncode(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalE
         };
     };
     return eval.Value{ .string = yaml_str };
+}
+
+// JSON builtins
+
+const json = @import("json.zig");
+
+/// Parse a JSON string into a Lazylang value
+/// Returns (#ok, value) on success or (#error, message) on failure
+pub fn jsonParse(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const json_str = switch (args[0]) {
+        .string => |s| s,
+        else => return error.TypeMismatch,
+    };
+
+    const result = json.parse(arena, json_str) catch |err| {
+        const error_msg = switch (err) {
+            error.InvalidJson => "Invalid JSON syntax",
+            error.NumberOutOfRange => "Number out of range",
+            error.UnsupportedType => "Unsupported type in JSON",
+            error.OutOfMemory => "Out of memory while parsing JSON",
+            else => "Failed to parse JSON",
+        };
+
+        const msg = try arena.dupe(u8, error_msg);
+        const result_elements = try arena.alloc(eval.Value, 2);
+        result_elements[0] = eval.Value{ .symbol = "#error" };
+        result_elements[1] = eval.Value{ .string = msg };
+        return eval.Value{ .tuple = .{ .elements = result_elements } };
+    };
+
+    // Return (#ok, value)
+    const result_elements = try arena.alloc(eval.Value, 2);
+    result_elements[0] = eval.Value{ .symbol = "#ok" };
+    result_elements[1] = result;
+    return eval.Value{ .tuple = .{ .elements = result_elements } };
+}
+
+/// Encode a Lazylang value into a JSON string
+/// Returns the JSON string directly. Throws error if value cannot be encoded (e.g., functions).
+pub fn jsonEncode(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const value = args[0];
+    const json_str = json.encode(arena, value) catch |err| {
+        return switch (err) {
+            error.UnsupportedType => error.TypeMismatch,
+            error.OutOfMemory => error.OutOfMemory,
+            else => error.TypeMismatch,
+        };
+    };
+    return eval.Value{ .string = json_str };
 }

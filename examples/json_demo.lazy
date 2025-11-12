@@ -1,0 +1,19 @@
+JSON = import 'JSON'
+
+// Parse and encode examples
+parse_int = JSON.parse "42"
+parse_array = JSON.parse "[1, 2, 3]"
+
+encode_int = JSON.encode 100
+encode_array = JSON.encode [4, 5, 6]
+
+{
+  parsed: {
+    int: parse_int,
+    array: parse_array
+  },
+  encoded: {
+    int: encode_int,
+    array: encode_array
+  }
+}

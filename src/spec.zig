@@ -149,7 +149,9 @@ fn runTestItem(ctx: anytype, item: eval_module.Value) anyerror!void {
     var item_type: ?[]const u8 = null;
     for (object.fields) |field| {
         if (std.mem.eql(u8, field.key, "type")) {
-            item_type = switch (field.value) {
+            // Force thunk if needed
+            const forced_value = eval_module.force(ctx.allocator, field.value) catch field.value;
+            item_type = switch (forced_value) {
                 .string => |s| s,
                 else => null,
             };
@@ -184,12 +186,14 @@ fn runDescribe(ctx: anytype, desc: eval_module.ObjectValue) anyerror!void {
 
     for (desc.fields) |field| {
         if (std.mem.eql(u8, field.key, "description")) {
-            description = switch (field.value) {
+            const forced_value = eval_module.force(ctx.allocator, field.value) catch field.value;
+            description = switch (forced_value) {
                 .string => |s| s,
                 else => null,
             };
         } else if (std.mem.eql(u8, field.key, "children")) {
-            children = switch (field.value) {
+            const forced_value = eval_module.force(ctx.allocator, field.value) catch field.value;
+            children = switch (forced_value) {
                 .array => |a| a,
                 else => null,
             };
@@ -286,12 +290,13 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
 
     for (test_case.fields) |field| {
         if (std.mem.eql(u8, field.key, "description")) {
-            description = switch (field.value) {
+            const forced_value = eval_module.force(ctx.allocator, field.value) catch field.value;
+            description = switch (forced_value) {
                 .string => |s| s,
                 else => null,
             };
         } else if (std.mem.eql(u8, field.key, "test")) {
-            test_value = field.value;
+            test_value = eval_module.force(ctx.allocator, field.value) catch field.value;
         }
     }
 
@@ -339,12 +344,13 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
 
     for (test_obj.fields) |field| {
         if (std.mem.eql(u8, field.key, "type")) {
-            test_type = switch (field.value) {
+            const forced_value = eval_module.force(ctx.allocator, field.value) catch field.value;
+            test_type = switch (forced_value) {
                 .string => |s| s,
                 else => null,
             };
         } else if (std.mem.eql(u8, field.key, "details")) {
-            fail_details = field.value;
+            fail_details = eval_module.force(ctx.allocator, field.value) catch field.value;
         }
     }
 
@@ -378,16 +384,17 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
 
                     for (obj.fields) |field| {
                         if (std.mem.eql(u8, field.key, "kind")) {
-                            fail_kind = switch (field.value) {
+                            const forced_value = eval_module.force(ctx.allocator, field.value) catch field.value;
+                            fail_kind = switch (forced_value) {
                                 .string => |s| s,
                                 else => null,
                             };
                         } else if (std.mem.eql(u8, field.key, "expected")) {
-                            fail_expected = field.value;
+                            fail_expected = eval_module.force(ctx.allocator, field.value) catch field.value;
                         } else if (std.mem.eql(u8, field.key, "actual")) {
-                            fail_actual = field.value;
+                            fail_actual = eval_module.force(ctx.allocator, field.value) catch field.value;
                         } else if (std.mem.eql(u8, field.key, "condition")) {
-                            fail_condition = field.value;
+                            fail_condition = eval_module.force(ctx.allocator, field.value) catch field.value;
                         }
                     }
 

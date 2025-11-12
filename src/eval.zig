@@ -1912,58 +1912,63 @@ pub const ObjectValue = struct {
     module_doc: ?[]const u8, // Module-level documentation
 };
 
-fn valuesEqual(a: Value, b: Value) bool {
-    return switch (a) {
-        .integer => |av| switch (b) {
+fn valuesEqual(arena: std.mem.Allocator, a: Value, b: Value) EvalError!bool {
+    // Force thunks before comparison
+    const a_forced = try force(arena, a);
+    const b_forced = try force(arena, b);
+
+    return switch (a_forced) {
+        .integer => |av| switch (b_forced) {
             .integer => |bv| av == bv,
             else => false,
         },
-        .boolean => |av| switch (b) {
+        .boolean => |av| switch (b_forced) {
             .boolean => |bv| av == bv,
             else => false,
         },
-        .null_value => switch (b) {
+        .null_value => switch (b_forced) {
             .null_value => true,
             else => false,
         },
-        .symbol => |av| switch (b) {
+        .symbol => |av| switch (b_forced) {
             .symbol => |bv| std.mem.eql(u8, av, bv),
             else => false,
         },
-        .string => |av| switch (b) {
+        .string => |av| switch (b_forced) {
             .string => |bv| std.mem.eql(u8, av, bv),
             else => false,
         },
         .function => false, // Functions are not comparable
         .native_fn => false, // Native functions are not comparable
-        .array => |av| switch (b) {
+        .thunk => false, // Should not happen after forcing
+        .array => |av| switch (b_forced) {
             .array => |bv| blk: {
                 if (av.elements.len != bv.elements.len) break :blk false;
                 for (av.elements, 0..) |elem, i| {
-                    if (!valuesEqual(elem, bv.elements[i])) break :blk false;
+                    if (!try valuesEqual(arena, elem, bv.elements[i])) break :blk false;
                 }
                 break :blk true;
             },
             else => false,
         },
-        .tuple => |av| switch (b) {
+        .tuple => |av| switch (b_forced) {
             .tuple => |bv| blk: {
                 if (av.elements.len != bv.elements.len) break :blk false;
                 for (av.elements, 0..) |elem, i| {
-                    if (!valuesEqual(elem, bv.elements[i])) break :blk false;
+                    if (!try valuesEqual(arena, elem, bv.elements[i])) break :blk false;
                 }
                 break :blk true;
             },
             else => false,
         },
-        .object => |av| switch (b) {
+        .object => |av| switch (b_forced) {
             .object => |bv| blk: {
                 if (av.fields.len != bv.fields.len) break :blk false;
                 for (av.fields) |afield| {
                     var found = false;
                     for (bv.fields) |bfield| {
                         if (std.mem.eql(u8, afield.key, bfield.key)) {
-                            if (!valuesEqual(afield.value, bfield.value)) break :blk false;
+                            if (!try valuesEqual(arena, afield.value, bfield.value)) break :blk false;
                             found = true;
                             break;
                         }
@@ -1974,7 +1979,6 @@ fn valuesEqual(a: Value, b: Value) bool {
             },
             else => false,
         },
-        .thunk => false, // Thunks are not directly comparable
     };
 }
 
@@ -2508,8 +2512,8 @@ pub fn evaluateExpression(
                 },
                 .equal, .not_equal => blk2: {
                     const bool_result = switch (binary.op) {
-                        .equal => valuesEqual(left_value, right_value),
-                        .not_equal => !valuesEqual(left_value, right_value),
+                        .equal => try valuesEqual(arena, left_value, right_value),
+                        .not_equal => !try valuesEqual(arena, left_value, right_value),
                         else => unreachable,
                     };
                     break :blk2 Value{ .boolean = bool_result };
@@ -3038,6 +3042,10 @@ pub fn createBuiltinEnvironment(arena: std.mem.Allocator) !?*Environment {
     // YAML builtins
     env = try addBuiltin(arena, env, "__yaml_parse", builtins.yamlParse);
     env = try addBuiltin(arena, env, "__yaml_encode", builtins.yamlEncode);
+
+    // JSON builtins
+    env = try addBuiltin(arena, env, "__json_parse", builtins.jsonParse);
+    env = try addBuiltin(arena, env, "__json_encode", builtins.jsonEncode);
 
     return env;
 }

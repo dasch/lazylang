@@ -1,0 +1,85 @@
+/// JSON parsing and encoding for Lazylang.
+///
+/// Provides `parse` (JSON string → Lazylang value) and `encode` (Lazylang value → JSON string).
+///
+/// **Note:** Since Lazylang is a JSON superset, you can import JSON files directly with `import`.
+/// Use this module when you need to parse JSON data at runtime or handle potentially invalid JSON.
+///
+/// **Supported:** All JSON types (null, boolean, number, string, array, object)
+/// **Encoding:** Symbols as strings, tuples as arrays, proper escaping
+/// **Not supported:** Floats (converted to integers), NaN/Infinity
+///
+/// Uses Zig's standard library JSON parser for robust JSON 1.0 compliance.
+{
+  /// Parses a JSON string into a Lazylang value.
+  ///
+  /// Returns a result tuple indicating success or failure. Since JSON input
+  /// can be invalid, this function returns `(#ok, value)` on success or
+  /// `(#error, message)` on failure.
+  ///
+  /// **Parameter:**
+  /// - `json_str`: The JSON string to parse
+  ///
+  /// **Returns:**
+  /// - `(#ok, value)`: When parsing succeeds, where `value` is the parsed Lazylang value
+  /// - `(#error, message)`: When parsing fails, where `message` describes the error
+  ///
+  /// **Examples:**
+  /// ```
+  /// JSON.parse "42"                    // Returns (#ok, 42)
+  /// JSON.parse "{\"name\": \"Alice\"}" // Returns (#ok, { name: "Alice" })
+  /// JSON.parse "[1, 2, 3]"             // Returns (#ok, [1, 2, 3])
+  /// JSON.parse "true"                  // Returns (#ok, true)
+  /// JSON.parse "null"                  // Returns (#ok, null)
+  /// JSON.parse "invalid"               // Returns (#error, "Invalid JSON syntax")
+  /// ```
+  ///
+  /// **Usage with pattern matching:**
+  /// ```
+  /// result = JSON.parse user_input
+  /// config = when result matches
+  ///   (#ok, data) then data
+  ///   (#error, msg) then { error: msg }
+  /// ```
+  ///
+  /// **Note:** For static JSON files, prefer using `import "file.json"` which
+  /// provides compile-time validation and better error messages.
+  parse: json_str -> __json_parse json_str,
+
+  /// Encodes a Lazylang value into a JSON string.
+  ///
+  /// Converts any Lazylang value (except functions) into JSON format.
+  /// If encoding fails (e.g., trying to encode a function), this function
+  /// throws a `TypeMismatch` error rather than returning an error tuple,
+  /// since encoding failures indicate programming errors, not invalid user input.
+  ///
+  /// **Parameter:**
+  /// - `value`: The Lazylang value to encode
+  ///
+  /// **Returns:**
+  /// A string containing the JSON representation of the value
+  ///
+  /// **Throws:**
+  /// - `TypeMismatch`: When attempting to encode a function or native function
+  ///
+  /// **Examples:**
+  /// ```
+  /// JSON.encode 42                     // Returns "42"
+  /// JSON.encode "hello"                // Returns "\"hello\""
+  /// JSON.encode [1, 2, 3]              // Returns "[1, 2, 3]"
+  /// JSON.encode { name: "Alice" }      // Returns "{\"name\": \"Alice\"}"
+  /// JSON.encode true                   // Returns "true"
+  /// JSON.encode null                   // Returns "null"
+  /// JSON.encode #success               // Returns "\"success\"" (symbol → string)
+  /// JSON.encode (1, 2)                 // Returns "[1, 2]" (tuple → array)
+  /// ```
+  ///
+  /// **Encoding details:**
+  /// - Objects encoded with keys in insertion order
+  /// - Strings properly escaped (quotes, backslashes, control characters)
+  /// - Symbols encoded as strings without the `#` prefix
+  /// - Tuples encoded as arrays
+  /// - Control characters use `\uXXXX` escape sequences
+  /// - Compact format (no extra whitespace)
+  encode: value -> __json_encode value
+}
