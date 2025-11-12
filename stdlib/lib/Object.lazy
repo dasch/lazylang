@@ -38,4 +38,44 @@
   /// Object.get "email" { name: "John", age: 30 }  // Returns #noSuchKey
   /// ```
   get: key -> obj -> __object_get (obj, key)
+
+  /// Merges two objects together. Same as the `&` operator.
+  /// Fields from the second object override fields from the first.
+  ///
+  /// **Parameters:**
+  /// - `obj1`: The first object
+  /// - `obj2`: The second object (overrides obj1)
+  ///
+  /// **Example:**
+  /// ```
+  /// Object.merge { a: 1, b: 2 } { b: 3, c: 4 }  // Returns { a: 1, b: 3, c: 4 }
+  /// ```
+  merge: obj1 -> obj2 -> obj1 & obj2
+
+  /// Applies a function to each value in an object, returning a new object with the same keys.
+  ///
+  /// **Parameters:**
+  /// - `fn`: Function to apply to each value
+  /// - `obj`: The object to map over
+  ///
+  /// **Example:**
+  /// ```
+  /// Object.mapValues (x -> x * 2) { a: 1, b: 2 }  // Returns { a: 2, b: 4 }
+  /// ```
+  mapValues: fn -> obj ->
+    { [k]: fn v for (k, v) in obj }
+
+  /// Returns a new object with only the specified keys from the input object.
+  ///
+  /// **Parameters:**
+  /// - `keys`: Array of key names to include
+  /// - `obj`: The object to slice
+  ///
+  /// **Example:**
+  /// ```
+  /// Object.slice ["name", "age"] { name: "John", age: 30, city: "NYC" }
+  /// // Returns { name: "John", age: 30 }
+  /// ```
+  slice: keys -> obj ->
+    { [k]: v for (k, v) in obj when [key for key in keys when key == k] != [] }
 }
