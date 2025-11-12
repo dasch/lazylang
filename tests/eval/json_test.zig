@@ -293,3 +293,55 @@ test "JSON: parse string with unicode escapes" {
     try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "hello world") != null);
 }
+
+test "JSON: encode crashes on function" {
+    var result = evaluator.evalInline(testing.allocator,
+        \\__json_encode (x -> x + 1)
+    ) catch |err| {
+        try testing.expectEqual(error.UserCrash, err);
+        return;
+    };
+    defer result.deinit();
+
+    // Should not reach here
+    try testing.expect(false);
+}
+
+test "YAML: encode crashes on function" {
+    var result = evaluator.evalInline(testing.allocator,
+        \\__yaml_encode (x -> x + 1)
+    ) catch |err| {
+        try testing.expectEqual(error.UserCrash, err);
+        return;
+    };
+    defer result.deinit();
+
+    // Should not reach here
+    try testing.expect(false);
+}
+
+test "JSON: encode crashes on function in array" {
+    var result = evaluator.evalInline(testing.allocator,
+        \\__json_encode [1, (x -> x + 1), 3]
+    ) catch |err| {
+        try testing.expectEqual(error.UserCrash, err);
+        return;
+    };
+    defer result.deinit();
+
+    // Should not reach here
+    try testing.expect(false);
+}
+
+test "YAML: encode crashes on function in object" {
+    var result = evaluator.evalInline(testing.allocator,
+        \\__yaml_encode { foo: (x -> x + 1) }
+    ) catch |err| {
+        try testing.expectEqual(error.UserCrash, err);
+        return;
+    };
+    defer result.deinit();
+
+    // Should not reach here
+    try testing.expect(false);
+}

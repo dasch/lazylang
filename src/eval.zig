@@ -3429,15 +3429,25 @@ pub fn formatValueAsJson(allocator: std.mem.Allocator, value: Value) ![]u8 {
     return formatValueAsJsonImpl(allocator, allocator, value);
 }
 
-fn formatValueAsJsonImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator, value: Value) error{OutOfMemory}![]u8 {
+fn formatValueAsJsonImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator, value: Value) EvalError![]u8 {
     return switch (value) {
         .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
         .float => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
         .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
         .null_value => try std.fmt.allocPrint(allocator, "null", .{}),
         .symbol => |s| try std.fmt.allocPrint(allocator, "\"{s}\"", .{s}),
-        .function => try std.fmt.allocPrint(allocator, "null", .{}), // Functions can't be represented in JSON
-        .native_fn => try std.fmt.allocPrint(allocator, "null", .{}), // Native functions can't be represented in JSON
+        .function => {
+            const message = "Cannot represent function in JSON output. Functions are not serializable.";
+            const message_copy = try std.heap.page_allocator.dupe(u8, message);
+            setUserCrashMessage(message_copy);
+            return error.UserCrash;
+        },
+        .native_fn => {
+            const message = "Cannot represent native function in JSON output. Functions are not serializable.";
+            const message_copy = try std.heap.page_allocator.dupe(u8, message);
+            setUserCrashMessage(message_copy);
+            return error.UserCrash;
+        },
         .thunk => blk: {
             const forced = force(arena, value) catch break :blk try std.fmt.allocPrint(allocator, "null", .{});
             break :blk try formatValueAsJsonImpl(allocator, arena, forced);
@@ -3531,7 +3541,7 @@ pub fn formatValueAsYaml(allocator: std.mem.Allocator, value: Value) ![]u8 {
     return formatValueAsYamlImpl(allocator, allocator, value, 0);
 }
 
-fn formatValueAsYamlImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator, value: Value, indent: usize) error{OutOfMemory}![]u8 {
+fn formatValueAsYamlImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator, value: Value, indent: usize) EvalError![]u8 {
     return switch (value) {
         .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
         .float => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
@@ -3550,8 +3560,18 @@ fn formatValueAsYamlImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator,
                 break :blk try allocator.dupe(u8, s);
             }
         },
-        .function => try std.fmt.allocPrint(allocator, "null", .{}),
-        .native_fn => try std.fmt.allocPrint(allocator, "null", .{}),
+        .function => {
+            const message = "Cannot represent function in YAML output. Functions are not serializable.";
+            const message_copy = try std.heap.page_allocator.dupe(u8, message);
+            setUserCrashMessage(message_copy);
+            return error.UserCrash;
+        },
+        .native_fn => {
+            const message = "Cannot represent native function in YAML output. Functions are not serializable.";
+            const message_copy = try std.heap.page_allocator.dupe(u8, message);
+            setUserCrashMessage(message_copy);
+            return error.UserCrash;
+        },
         .thunk => blk: {
             const forced = force(arena, value) catch break :blk try std.fmt.allocPrint(allocator, "null", .{});
             break :blk try formatValueAsYamlImpl(allocator, arena, forced, indent);

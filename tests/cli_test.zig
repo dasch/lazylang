@@ -317,3 +317,39 @@ test "eval --manifest errors when value is not a string in pretty mode" {
     try std.testing.expectEqual(@as(u8, 1), outcome.result.exit_code);
     try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "--manifest without --json or --yaml requires all values to be strings") != null);
 }
+
+test "eval --json errors on function" {
+    const args = [_][]const u8{ "lazylang", "eval", "--expr", "x -> x + 1", "--json" };
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 1), outcome.result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "Cannot represent function in JSON output") != null);
+}
+
+test "eval --yaml errors on function" {
+    const args = [_][]const u8{ "lazylang", "eval", "--expr", "x -> x + 1", "--yaml" };
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 1), outcome.result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "Cannot represent function in YAML output") != null);
+}
+
+test "eval --json errors on function in object" {
+    const args = [_][]const u8{ "lazylang", "eval", "--expr", "{ foo: (x -> x + 1) }", "--json" };
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 1), outcome.result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "Cannot represent function in JSON output") != null);
+}
+
+test "eval --yaml errors on function in array" {
+    const args = [_][]const u8{ "lazylang", "eval", "--expr", "[1, (x -> x + 1), 3]", "--yaml" };
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 1), outcome.result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "Cannot represent function in YAML output") != null);
+}

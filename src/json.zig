@@ -214,7 +214,10 @@ fn encodeValue(value: eval.Value, buf: *std.ArrayList(u8), indent: usize, arena:
             try encodeValue(forced, buf, indent, arena);
         },
         .function, .native_fn => {
-            return error.UnsupportedType;
+            const message = "Cannot represent function in JSON output. Functions are not serializable.";
+            const message_copy = try std.heap.page_allocator.dupe(u8, message);
+            eval.setUserCrashMessage(message_copy);
+            return error.UserCrash;
         },
     }
 }

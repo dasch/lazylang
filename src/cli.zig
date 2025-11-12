@@ -143,7 +143,9 @@ fn runEval(
 
         var result = evaluator.evalInlineWithFormat(allocator, inline_expr.?, format) catch |err| {
             if (json_output) {
-                try json_error.reportErrorAsJson(stderr, "<inline>", &error_context.ErrorContext.init(allocator), @errorName(err), @errorName(err), null);
+                const message = if (err == error.UserCrash) evaluator.getUserCrashMessage() orelse @errorName(err) else @errorName(err);
+                try json_error.reportErrorAsJson(stderr, "<inline>", &error_context.ErrorContext.init(allocator), @errorName(err), message, null);
+                if (err == error.UserCrash) evaluator.clearUserCrashMessage();
             } else {
                 try reportError(allocator, stderr, "<inline>", inline_expr.?, err, null);
             }
@@ -186,7 +188,9 @@ fn runEval(
     var result = evaluator.evalFileWithFormat(allocator, file_path.?, format) catch |err| {
         // For file I/O errors, we don't have source context
         if (json_output) {
-            try json_error.reportErrorAsJson(stderr, file_path.?, &error_context.ErrorContext.init(allocator), @errorName(err), @errorName(err), null);
+            const message = if (err == error.UserCrash) evaluator.getUserCrashMessage() orelse @errorName(err) else @errorName(err);
+            try json_error.reportErrorAsJson(stderr, file_path.?, &error_context.ErrorContext.init(allocator), @errorName(err), message, null);
+            if (err == error.UserCrash) evaluator.clearUserCrashMessage();
         } else {
             try reportError(allocator, stderr, file_path.?, file_content, err, null);
         }

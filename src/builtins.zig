@@ -1024,6 +1024,7 @@ pub fn yamlEncode(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalE
         return switch (err) {
             error.TypeMismatch => error.TypeMismatch,
             error.OutOfMemory => error.OutOfMemory,
+            error.UserCrash => error.UserCrash,
             else => error.TypeMismatch, // Treat other YAML errors as type mismatches
         };
     };
@@ -1077,6 +1078,7 @@ pub fn jsonEncode(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalE
         return switch (err) {
             error.UnsupportedType => error.TypeMismatch,
             error.OutOfMemory => error.OutOfMemory,
+            error.UserCrash => error.UserCrash,
             else => error.TypeMismatch,
         };
     };
