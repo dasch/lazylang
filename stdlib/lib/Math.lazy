@@ -36,4 +36,86 @@
   /// Math.abs 10   // Returns 10
   /// ```
   abs: n -> __math_abs n
+
+  /// Returns the result of raising a base to an exponent.
+  ///
+  /// **Parameters:**
+  /// - `base`: The base number
+  /// - `exponent`: The exponent
+  ///
+  /// **Example:**
+  /// ```
+  /// Math.pow 2 3   // Returns 8
+  /// Math.pow 5 2   // Returns 25
+  /// ```
+  pow: base -> exponent -> __math_pow (base, exponent)
+
+  /// Returns the square root of a number.
+  ///
+  /// **Parameter:**
+  /// - `n`: The number to get the square root of
+  ///
+  /// **Example:**
+  /// ```
+  /// Math.sqrt 9    // Returns 3
+  /// Math.sqrt 16   // Returns 4
+  /// ```
+  sqrt: n -> __math_sqrt n
+
+  /// Returns the floor of a number (rounds down to nearest integer).
+  ///
+  /// **Parameter:**
+  /// - `n`: The number to floor
+  ///
+  /// **Example:**
+  /// ```
+  /// Math.floor 3   // Returns 3
+  /// ```
+  floor: n -> __math_floor n
+
+  /// Returns the ceiling of a number (rounds up to nearest integer).
+  ///
+  /// **Parameter:**
+  /// - `n`: The number to ceil
+  ///
+  /// **Example:**
+  /// ```
+  /// Math.ceil 3   // Returns 3
+  /// ```
+  ceil: n -> __math_ceil n
+
+  /// Returns the rounded value of a number.
+  ///
+  /// **Parameter:**
+  /// - `n`: The number to round
+  ///
+  /// **Example:**
+  /// ```
+  /// Math.round 3   // Returns 3
+  /// ```
+  round: n -> __math_round n
+
+  /// Returns the natural logarithm (base e) of a number.
+  ///
+  /// **Parameter:**
+  /// - `n`: The number to get the logarithm of
+  ///
+  /// **Example:**
+  /// ```
+  /// Math.log 1    // Returns 0
+  /// Math.log 2    // Returns 0 (truncated from ~0.693)
+  /// ```
+  log: n -> __math_log n
+
+  /// Returns e raised to the power of n.
+  ///
+  /// **Parameter:**
+  /// - `n`: The exponent
+  ///
+  /// **Example:**
+  /// ```
+  /// Math.exp 0   // Returns 1
+  /// Math.exp 1   // Returns 2 (truncated from ~2.718)
+  /// ```
+  exp: n -> __math_exp n
 }
