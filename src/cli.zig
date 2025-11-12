@@ -1,6 +1,7 @@
 const std = @import("std");
 const evaluator = @import("eval.zig");
 const spec = @import("spec.zig");
+const syntax_highlight = @import("syntax_highlight.zig");
 const error_reporter = @import("error_reporter.zig");
 const error_context = @import("error_context.zig");
 const json_error = @import("json_error.zig");
@@ -487,6 +488,7 @@ fn runRun(
     const env_object = evaluator.Value{
         .object = .{
             .fields = try env_fields.toOwnedSlice(arena),
+            .module_doc = null,
         },
     };
 
@@ -502,7 +504,7 @@ fn runRun(
     };
 
     const system_value = evaluator.Value{
-        .object = .{ .fields = system_fields },
+        .object = .{ .fields = system_fields, .module_doc = null },
     };
 
     // Call the function with the system value
@@ -570,6 +572,9 @@ fn runDocs(
     defer {
         for (modules_list.items) |module| {
             allocator.free(module.name);
+            if (module.module_doc) |doc| {
+                allocator.free(doc);
+            }
             for (module.items) |item| {
                 allocator.free(item.name);
                 allocator.free(item.signature);
@@ -658,13 +663,14 @@ fn extractModuleInfo(
     // Extract documentation from the expression
     var doc_items = std.ArrayListUnmanaged(DocItem){};
 
-    try extractDocs(expression, &doc_items, allocator);
+    const module_doc = try extractDocs(expression, &doc_items, allocator);
 
     const module_name = try allocator.dupe(u8, std.fs.path.stem(input_path));
 
     return ModuleInfo{
         .name = module_name,
         .items = try doc_items.toOwnedSlice(allocator),
+        .module_doc = module_doc,
     };
 }
 
@@ -680,7 +686,7 @@ fn generateModuleHtml(
     var html_file = try std.fs.cwd().createFile(html_filename, .{});
     defer html_file.close();
 
-    try writeHtmlDocs(html_file, module.name, module.items, all_modules);
+    try writeHtmlDocs(html_file, module.name, module.items, module.module_doc, all_modules);
 }
 
 fn generateIndexHtml(
@@ -707,6 +713,7 @@ const DocItem = struct {
 const ModuleInfo = struct {
     name: []const u8,
     items: []const DocItem,
+    module_doc: ?[]const u8,
 };
 
 const DocKind = enum {
@@ -755,7 +762,7 @@ fn buildSignature(allocator: std.mem.Allocator, field_name: []const u8, value: *
     return signature.toOwnedSlice(allocator);
 }
 
-fn extractDocs(expr: *const evaluator.Expression, items: *std.ArrayListUnmanaged(DocItem), allocator: std.mem.Allocator) !void {
+fn extractDocs(expr: *const evaluator.Expression, items: *std.ArrayListUnmanaged(DocItem), allocator: std.mem.Allocator) !?[]const u8 {
     switch (expr.*) {
         .let => |let_expr| {
             if (let_expr.doc) |doc| {
@@ -772,9 +779,16 @@ fn extractDocs(expr: *const evaluator.Expression, items: *std.ArrayListUnmanaged
                     .kind = .variable,
                 });
             }
-            try extractDocs(let_expr.body, items, allocator);
+            return try extractDocs(let_expr.body, items, allocator);
         },
         .object => |obj| {
+            // Extract module-level documentation
+            const module_doc = if (obj.module_doc) |doc|
+                try allocator.dupe(u8, doc)
+            else
+                null;
+
+            // Extract field-level documentation
             for (obj.fields) |field| {
                 if (field.doc) |doc| {
                     const signature = try buildSignature(allocator, field.key, field.value);
@@ -786,11 +800,12 @@ fn extractDocs(expr: *const evaluator.Expression, items: *std.ArrayListUnmanaged
                     });
                 } else {
                     // Also check if the field value is documented (for nested objects)
-                    try extractDocs(field.value, items, allocator);
+                    _ = try extractDocs(field.value, items, allocator);
                 }
             }
+            return module_doc;
         },
-        else => {},
+        else => return null,
     }
 }
 
@@ -799,20 +814,51 @@ fn renderMarkdownToHtml(allocator: std.mem.Allocator, markdown: []const u8) ![]c
     errdefer result.deinit(allocator);
 
     var i: usize = 0;
-    var in_code_block = false;
+    var in_list = false;
     var line_start: usize = 0;
 
     while (i < markdown.len) {
         // Check for code blocks (```)
         if (i + 2 < markdown.len and markdown[i] == '`' and markdown[i + 1] == '`' and markdown[i + 2] == '`') {
-            if (in_code_block) {
-                try result.appendSlice(allocator, "</code></pre>\n");
-                in_code_block = false;
-            } else {
-                try result.appendSlice(allocator, "<pre><code>");
-                in_code_block = true;
+            // Close list if open
+            if (in_list) {
+                try result.appendSlice(allocator, "</ul>\n");
+                in_list = false;
             }
+
+            // Skip opening ```
             i += 3;
+            // Skip to end of line (language specifier if any)
+            while (i < markdown.len and markdown[i] != '\n') : (i += 1) {}
+            if (i < markdown.len) i += 1; // skip newline
+
+            // Collect code block content until closing ```
+            const code_start = i;
+            var code_end = i;
+            while (code_end + 2 < markdown.len) {
+                if (markdown[code_end] == '`' and markdown[code_end + 1] == '`' and markdown[code_end + 2] == '`') {
+                    break;
+                }
+                code_end += 1;
+            }
+
+            // Extract code content (trim trailing newline if present)
+            var code_content = markdown[code_start..code_end];
+            if (code_content.len > 0 and code_content[code_content.len - 1] == '\n') {
+                code_content = code_content[0 .. code_content.len - 1];
+            }
+
+            // Apply syntax highlighting
+            try result.appendSlice(allocator, "<pre><code>");
+            const highlighted = try syntax_highlight.highlightCode(allocator, code_content);
+            defer allocator.free(highlighted);
+            const html = try syntax_highlight.toHtml(allocator, highlighted);
+            defer allocator.free(html);
+            try result.appendSlice(allocator, html);
+            try result.appendSlice(allocator, "</code></pre>\n");
+
+            // Skip closing ```
+            i = code_end + 3;
             // Skip to end of line
             while (i < markdown.len and markdown[i] != '\n') : (i += 1) {}
             if (i < markdown.len) i += 1; // skip newline
@@ -820,34 +866,51 @@ fn renderMarkdownToHtml(allocator: std.mem.Allocator, markdown: []const u8) ![]c
             continue;
         }
 
-        if (in_code_block) {
-            if (markdown[i] == '<') {
-                try result.appendSlice(allocator, "&lt;");
-            } else if (markdown[i] == '>') {
-                try result.appendSlice(allocator, "&gt;");
-            } else if (markdown[i] == '&') {
-                try result.appendSlice(allocator, "&amp;");
-            } else {
-                try result.append(allocator, markdown[i]);
-            }
-            i += 1;
-            continue;
-        }
-
         // Check for line breaks
         if (markdown[i] == '\n') {
             const line = markdown[line_start..i];
+            const trimmed = std.mem.trimLeft(u8, line, " \t");
 
-            // Check if it's a list item
-            if (std.mem.startsWith(u8, std.mem.trimLeft(u8, line, " \t"), "- ")) {
-                const trimmed = std.mem.trimLeft(u8, line, " \t");
+            // Check for headers (##)
+            if (std.mem.startsWith(u8, trimmed, "## ")) {
+                if (in_list) {
+                    try result.appendSlice(allocator, "</ul>\n");
+                    in_list = false;
+                }
+                try result.appendSlice(allocator, "<h2>");
+                try renderInlineMarkdown(allocator, &result, trimmed[3..]);
+                try result.appendSlice(allocator, "</h2>\n");
+            } else if (std.mem.startsWith(u8, trimmed, "# ")) {
+                if (in_list) {
+                    try result.appendSlice(allocator, "</ul>\n");
+                    in_list = false;
+                }
+                try result.appendSlice(allocator, "<h1>");
+                try renderInlineMarkdown(allocator, &result, trimmed[2..]);
+                try result.appendSlice(allocator, "</h1>\n");
+            } else if (std.mem.startsWith(u8, trimmed, "- ")) {
+                // Start list if not already in one
+                if (!in_list) {
+                    try result.appendSlice(allocator, "<ul>\n");
+                    in_list = true;
+                }
                 try result.appendSlice(allocator, "<li>");
                 try renderInlineMarkdown(allocator, &result, trimmed[2..]);
                 try result.appendSlice(allocator, "</li>\n");
             } else if (line.len > 0) {
+                // Close list if we were in one
+                if (in_list) {
+                    try result.appendSlice(allocator, "</ul>\n");
+                    in_list = false;
+                }
                 try renderInlineMarkdown(allocator, &result, line);
                 try result.appendSlice(allocator, "<br>\n");
             } else {
+                // Empty line closes list
+                if (in_list) {
+                    try result.appendSlice(allocator, "</ul>\n");
+                    in_list = false;
+                }
                 try result.appendSlice(allocator, "\n");
             }
 
@@ -862,14 +925,44 @@ fn renderMarkdownToHtml(allocator: std.mem.Allocator, markdown: []const u8) ![]c
     // Handle remaining text
     if (line_start < markdown.len) {
         const line = markdown[line_start..];
-        if (std.mem.startsWith(u8, std.mem.trimLeft(u8, line, " \t"), "- ")) {
-            const trimmed = std.mem.trimLeft(u8, line, " \t");
+        const trimmed = std.mem.trimLeft(u8, line, " \t");
+
+        if (std.mem.startsWith(u8, trimmed, "## ")) {
+            if (in_list) {
+                try result.appendSlice(allocator, "</ul>\n");
+                in_list = false;
+            }
+            try result.appendSlice(allocator, "<h2>");
+            try renderInlineMarkdown(allocator, &result, trimmed[3..]);
+            try result.appendSlice(allocator, "</h2>");
+        } else if (std.mem.startsWith(u8, trimmed, "# ")) {
+            if (in_list) {
+                try result.appendSlice(allocator, "</ul>\n");
+                in_list = false;
+            }
+            try result.appendSlice(allocator, "<h1>");
+            try renderInlineMarkdown(allocator, &result, trimmed[2..]);
+            try result.appendSlice(allocator, "</h1>");
+        } else if (std.mem.startsWith(u8, trimmed, "- ")) {
+            if (!in_list) {
+                try result.appendSlice(allocator, "<ul>\n");
+                in_list = true;
+            }
             try result.appendSlice(allocator, "<li>");
             try renderInlineMarkdown(allocator, &result, trimmed[2..]);
             try result.appendSlice(allocator, "</li>");
         } else if (line.len > 0) {
+            if (in_list) {
+                try result.appendSlice(allocator, "</ul>\n");
+                in_list = false;
+            }
             try renderInlineMarkdown(allocator, &result, line);
         }
+    }
+
+    // Close list if still open
+    if (in_list) {
+        try result.appendSlice(allocator, "</ul>\n");
     }
 
     return result.toOwnedSlice(allocator);
@@ -878,6 +971,30 @@ fn renderMarkdownToHtml(allocator: std.mem.Allocator, markdown: []const u8) ![]c
 fn renderInlineMarkdown(allocator: std.mem.Allocator, result: *std.ArrayListUnmanaged(u8), text: []const u8) !void {
     var i: usize = 0;
     while (i < text.len) {
+        // Check for function links [functionName]
+        if (text[i] == '[') {
+            const start = i + 1;
+            i += 1;
+            while (i < text.len and text[i] != ']') : (i += 1) {}
+            if (i < text.len) {
+                const func_name = text[start..i];
+                // Only convert if it looks like an identifier (no spaces)
+                if (std.mem.indexOf(u8, func_name, " ") == null) {
+                    try result.appendSlice(allocator, "<a href=\"#");
+                    try result.appendSlice(allocator, func_name);
+                    try result.appendSlice(allocator, "\">");
+                    try result.appendSlice(allocator, func_name);
+                    try result.appendSlice(allocator, "</a>");
+                    i += 1;
+                    continue;
+                }
+            }
+            // If not a valid link, just output the bracket
+            try result.append(allocator, '[');
+            i = start;
+            continue;
+        }
+
         // Check for inline code (`)
         if (text[i] == '`') {
             const start = i + 1;
@@ -1029,7 +1146,7 @@ fn runRepl(
     return .{ .exit_code = 0 };
 }
 
-fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocItem, modules: []const ModuleInfo) !void {
+fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocItem, module_doc: ?[]const u8, modules: []const ModuleInfo) !void {
     try file.writeAll("<!DOCTYPE html>\n");
     try file.writeAll("<html lang=\"en\">\n");
     try file.writeAll("<head>\n");
@@ -1069,8 +1186,38 @@ fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocItem,
         \\    .doc-item .doc-content code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 0.9em; }
         \\    .doc-item .doc-content pre { background: #f4f4f4; padding: 12px; border-radius: 4px; overflow-x: auto; margin: 10px 0; }
         \\    .doc-item .doc-content pre code { background: none; padding: 0; }
+        \\    /* Syntax highlighting */
+        \\    .keyword { color: #0000ff; font-weight: 500; }
+        \\    .number { color: #098658; }
+        \\    .string { color: #a31515; }
+        \\    .symbol { color: #795e26; }
+        \\    .operator { color: #000000; }
+        \\    .comment { color: #008000; font-style: italic; }
+        \\    .punctuation { color: #000000; }
+        \\    .identifier { color: #001080; }
         \\    .doc-item .doc-content strong { font-weight: 600; color: #2c3e50; }
         \\    .doc-item .doc-content li { margin-left: 20px; margin-bottom: 5px; }
+        \\    .module-doc { background: white; padding: 25px; margin-bottom: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-left: 4px solid #3498db; }
+        \\    .module-doc .doc-content { color: #555; line-height: 1.8; font-size: 1.05em; }
+        \\    .module-doc .doc-content h2 { color: #2c3e50; margin-top: 20px; margin-bottom: 10px; font-size: 1.4em; }
+        \\    .module-doc .doc-content code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 0.9em; }
+        \\    .module-doc .doc-content pre { background: #f4f4f4; padding: 12px; border-radius: 4px; overflow-x: auto; margin: 10px 0; }
+        \\    .module-doc .doc-content pre code { background: none; padding: 0; }
+        \\    /* Apply syntax highlighting to module docs as well */
+        \\    .module-doc .keyword { color: #0000ff; font-weight: 500; }
+        \\    .module-doc .number { color: #098658; }
+        \\    .module-doc .string { color: #a31515; }
+        \\    .module-doc .symbol { color: #795e26; }
+        \\    .module-doc .operator { color: #000000; }
+        \\    .module-doc .comment { color: #008000; font-style: italic; }
+        \\    .module-doc .punctuation { color: #000000; }
+        \\    .module-doc .identifier { color: #001080; }
+        \\    .module-doc .doc-content strong { font-weight: 600; color: #2c3e50; }
+        \\    .module-doc .doc-content li { margin-left: 20px; margin-bottom: 5px; }
+        \\    .module-doc .doc-content a { color: #3498db; text-decoration: none; font-weight: 500; }
+        \\    .module-doc .doc-content a:hover { text-decoration: underline; }
+        \\    .doc-item .doc-content a { color: #3498db; text-decoration: none; font-weight: 500; }
+        \\    .doc-item .doc-content a:hover { text-decoration: underline; }
         \\    .no-results { text-align: center; padding: 40px; color: #999; }
         \\    .search-result-label { font-size: 0.85em; color: #7f8c8d; margin-left: 5px; }
         \\    @media (max-width: 768px) { .sidebar { display: none; } .main { margin-left: 0; } .container { padding: 10px; } .doc-item { padding: 15px; } }
@@ -1147,6 +1294,27 @@ fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocItem,
     var buffer: [32768]u8 = undefined;
     var fba = std.heap.FixedBufferAllocator.init(&buffer);
     const temp_allocator = fba.allocator();
+
+    // Render module-level documentation if present
+    if (module_doc) |doc| {
+        try file.writeAll("      <div class=\"module-doc\">\n");
+        try file.writeAll("        <div class=\"doc-content\">\n");
+        try file.writeAll("          ");
+
+        // Render markdown to HTML
+        fba.reset();
+        if (renderMarkdownToHtml(temp_allocator, doc)) |html| {
+            try file.writeAll(html);
+        } else |_| {
+            // Fallback to plain text if markdown rendering fails
+            try file.writeAll(doc);
+        }
+        fba.reset();
+
+        try file.writeAll("\n");
+        try file.writeAll("        </div>\n");
+        try file.writeAll("      </div>\n");
+    }
 
     for (items) |item| {
         try file.writeAll("      <div class=\"doc-item\" id=\"");

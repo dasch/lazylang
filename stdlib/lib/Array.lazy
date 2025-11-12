@@ -1,3 +1,26 @@
+/// Provides utilities for working with arrays in Lazylang.
+///
+/// This module includes functions for common array operations such as:
+/// - **Querying**: [length], [get]
+/// - **Transforming**: [map], [flatMap], [filter], [skip], [reverse]
+/// - **Reducing**: [fold]
+/// - **Combining**: [concatAll]
+///
+/// ## Examples
+///
+/// ```
+/// Array = import 'Array'
+///
+/// // Transform elements
+/// Array.map (x -> x * 2) [1, 2, 3]  // Returns [2, 4, 6]
+///
+/// // Filter elements
+/// Array.filter (x -> x > 2) [1, 2, 3, 4]  // Returns [3, 4]
+///
+/// // Reduce to a single value
+/// Array.fold (acc -> x -> acc + x) 0 [1, 2, 3]  // Returns 6
+/// ```
+/// ---
 {
   /// Returns the number of elements in an array.
   ///

@@ -1,3 +1,25 @@
+/// Provides utilities for working with strings in Lazylang.
+///
+/// This module includes functions for common string operations such as:
+/// - **Querying**: [length], [isEmpty], [startsWith], [endsWith], [contains]
+/// - **Transforming**: [toUpperCase], [toLowerCase], [trim], [chars]
+/// - **Combining**: [concat], [split]
+///
+/// ## Examples
+///
+/// ```
+/// String = import 'String'
+///
+/// // Transform strings
+/// String.toUpperCase "hello"  // Returns "HELLO"
+///
+/// // Split into parts
+/// String.split "," "a,b,c"  // Returns ["a", "b", "c"]
+///
+/// // Check contents
+/// String.startsWith "hello" "hello world"  // Returns true
+/// ```
+/// ---
 {
   /// Returns the number of characters in a string.
   ///

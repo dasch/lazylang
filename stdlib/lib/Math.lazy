@@ -1,3 +1,26 @@
+/// Provides mathematical functions and operations for Lazylang.
+///
+/// This module includes:
+/// - **Comparison**: [max], [min]
+/// - **Basic operations**: [abs], [pow], [sqrt]
+/// - **Rounding**: [floor], [ceil], [round]
+/// - **Advanced**: [log], [exp]
+///
+/// ## Examples
+///
+/// ```
+/// Math = import 'Math'
+///
+/// // Find maximum
+/// Math.max 5 10  // Returns 10
+///
+/// // Calculate power
+/// Math.pow 2 3  // Returns 8
+///
+/// // Round numbers
+/// Math.round 3  // Returns 3
+/// ```
+/// ---
 {
   /// Returns the maximum of two numbers.
   ///

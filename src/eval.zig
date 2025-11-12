@@ -62,6 +62,7 @@ pub const Token = struct {
     line: usize, // 1-indexed line number
     column: usize, // 1-indexed column number
     offset: usize, // byte offset in source
+    doc_comments: ?[]const u8, // Documentation comments preceding this token
 };
 
 const TokenizerError = error{
@@ -188,6 +189,7 @@ const ObjectField = struct {
 
 const ObjectLiteral = struct {
     fields: []ObjectField,
+    module_doc: ?[]const u8, // Module-level documentation
 };
 
 const ObjectExtend = struct {
@@ -305,6 +307,7 @@ pub const Tokenizer = struct {
                 .line = self.line,
                 .column = self.column,
                 .offset = self.index,
+                .doc_comments = null,
             };
         }
 
@@ -521,6 +524,7 @@ pub const Tokenizer = struct {
                     .line = start_line,
                     .column = start_column,
                     .offset = start_content - 1, // include the opening quote
+                    .doc_comments = null,
                 };
                 self.advance(); // skip closing quote
                 return token;
@@ -570,8 +574,8 @@ pub const Tokenizer = struct {
                             // Documentation comment
                             self.index += 3; // skip '///'
 
-                            // Skip leading whitespace in the comment
-                            while (self.index < self.source.len and (self.source[self.index] == ' ' or self.source[self.index] == '\t')) {
+                            // Skip exactly one space if present (common prefix)
+                            if (self.index < self.source.len and self.source[self.index] == ' ') {
                                 self.index += 1;
                             }
 
@@ -613,6 +617,7 @@ pub const Tokenizer = struct {
             .line = start_line,
             .column = start_column,
             .offset = start,
+            .doc_comments = null,
         };
     }
 
@@ -663,6 +668,58 @@ pub const Tokenizer = struct {
     fn clearDocComments(self: *Tokenizer) void {
         self.pending_doc_comments.clearRetainingCapacity();
     }
+
+    fn consumeModuleLevelDocComments(self: *Tokenizer) ?[]const u8 {
+        if (self.pending_doc_comments.items.len == 0) {
+            return null;
+        }
+
+        // Find the separator marker (---)
+        var split_at: ?usize = null;
+        for (self.pending_doc_comments.items, 0..) |comment, i| {
+            if (std.mem.eql(u8, comment, "---")) {
+                split_at = i;
+                break;
+            }
+        }
+
+        // If no separator found, consume all comments as module docs
+        const end_index = split_at orelse self.pending_doc_comments.items.len;
+        if (end_index == 0) {
+            return null;
+        }
+
+        // Join comments up to the split point
+        var total_len: usize = 0;
+        for (self.pending_doc_comments.items[0..end_index]) |comment| {
+            const separator_len: usize = if (total_len > 0) 1 else 0;
+            total_len = total_len + comment.len + separator_len;
+        }
+
+        if (total_len == 0) {
+            return null;
+        }
+
+        var result = self.arena.alloc(u8, total_len) catch return null;
+        var offset: usize = 0;
+        for (self.pending_doc_comments.items[0..end_index], 0..) |comment, i| {
+            if (i > 0) {
+                result[offset] = '\n';
+                offset += 1;
+            }
+            @memcpy(result[offset .. offset + comment.len], comment);
+            offset += comment.len;
+        }
+
+        // Remove consumed comments from the list (including the --- separator if present)
+        const remove_count = if (split_at) |idx| idx + 1 else end_index;
+        for (0..self.pending_doc_comments.items.len - remove_count) |i| {
+            self.pending_doc_comments.items[i] = self.pending_doc_comments.items[i + remove_count];
+        }
+        self.pending_doc_comments.items.len -= remove_count;
+
+        return result;
+    }
 };
 
 pub const Parser = struct {
@@ -708,11 +765,13 @@ pub const Parser = struct {
             self.recordError();
             return error.ExpectedExpression;
         }
+
         const expr = try self.parseLambda();
         if (self.current.kind != .eof) {
             self.recordError();
             return error.UnexpectedToken;
         }
+
         return expr;
     }
 
@@ -1384,13 +1443,18 @@ pub const Parser = struct {
     }
 
     fn parseObject(self: *Parser) ParseError!*Expression {
+        // Consume module-level doc comments (up to --- separator)
+        // Due to parser lookahead, the tokenizer has accumulated both module docs
+        // and first field docs. We split at the --- separator.
+        const module_doc = self.tokenizer.consumeModuleLevelDocComments();
+
         try self.expect(.l_brace);
 
         // Empty object
         if (self.current.kind == .r_brace) {
             try self.advance();
             const node = try self.allocateExpression();
-            node.* = .{ .object = .{ .fields = &[_]ObjectField{} } };
+            node.* = .{ .object = .{ .fields = &[_]ObjectField{}, .module_doc = module_doc } };
             return node;
         }
 
@@ -1415,12 +1479,7 @@ pub const Parser = struct {
             return error.UnexpectedToken;
         }
 
-        // Consume doc comments that were accumulated during lookahead tokenization
-        // These will be for the first field (if there is one)
-        const first_field_doc = self.tokenizer.consumeDocComments();
-
         var fields = std.ArrayListUnmanaged(ObjectField){};
-        var is_first_field = true;
 
         while (self.current.kind != .r_brace) {
             if (self.current.kind != .identifier) {
@@ -1429,12 +1488,8 @@ pub const Parser = struct {
                 return error.UnexpectedToken;
             }
 
-            // Use the doc comments we saved for the first field,
-            // or consume fresh ones for subsequent fields
-            const doc = if (is_first_field) blk: {
-                is_first_field = false;
-                break :blk first_field_doc;
-            } else self.tokenizer.consumeDocComments();
+            // Consume doc comments for this field
+            const doc = self.tokenizer.consumeDocComments();
 
             const key = self.current.lexeme;
             try self.advance();
@@ -1479,7 +1534,7 @@ pub const Parser = struct {
 
         const slice = try fields.toOwnedSlice(self.arena);
         const node = try self.allocateExpression();
-        node.* = .{ .object = .{ .fields = slice } };
+        node.* = .{ .object = .{ .fields = slice, .module_doc = module_doc } };
         return node;
     }
 
@@ -1909,6 +1964,7 @@ pub const ObjectFieldValue = struct {
 
 pub const ObjectValue = struct {
     fields: []ObjectFieldValue,
+    module_doc: ?[]const u8, // Module-level documentation
 };
 
 fn valuesEqual(a: Value, b: Value) bool {
@@ -2266,7 +2322,9 @@ fn mergeObjects(arena: std.mem.Allocator, base: ObjectValue, extension: ObjectVa
         }
     }
 
-    return Value{ .object = .{ .fields = try result_fields.toOwnedSlice(arena) } };
+    // Prefer extension's module_doc if it exists, otherwise use base's
+    const module_doc = extension.module_doc orelse base.module_doc;
+    return Value{ .object = .{ .fields = try result_fields.toOwnedSlice(arena), .module_doc = module_doc } };
 }
 
 /// Force evaluation of a thunk if needed
@@ -2580,7 +2638,7 @@ pub fn evaluateExpression(
                 };
                 fields[i] = .{ .key = key_copy, .value = .{ .thunk = thunk } };
             }
-            break :blk Value{ .object = .{ .fields = fields } };
+            break :blk Value{ .object = .{ .fields = fields, .module_doc = object.module_doc } };
         },
         .object_extend => |extend| blk: {
             // Evaluate the base expression
@@ -2595,7 +2653,7 @@ pub fn evaluateExpression(
                         const key_copy = try arena.dupe(u8, field.key);
                         fields[i] = .{ .key = key_copy, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx) };
                     }
-                    const obj_arg = Value{ .object = .{ .fields = fields } };
+                    const obj_arg = Value{ .object = .{ .fields = fields, .module_doc = null } };
                     const bound_env = try matchPattern(arena, function_ptr.param, obj_arg, function_ptr.env);
                     break :blk try evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx);
                 },
@@ -2606,7 +2664,7 @@ pub fn evaluateExpression(
                         const key_copy = try arena.dupe(u8, field.key);
                         fields[i] = .{ .key = key_copy, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx) };
                     }
-                    const obj_arg = Value{ .object = .{ .fields = fields } };
+                    const obj_arg = Value{ .object = .{ .fields = fields, .module_doc = null } };
                     const args = [_]Value{obj_arg};
                     break :blk try native_fn(arena, &args);
                 },
@@ -2644,7 +2702,7 @@ pub fn evaluateExpression(
                     }
 
                     // Merge base with extension
-                    const extension_obj = ObjectValue{ .fields = try extension_fields.toOwnedSlice(arena) };
+                    const extension_obj = ObjectValue{ .fields = try extension_fields.toOwnedSlice(arena), .module_doc = null };
                     break :blk try mergeObjects(arena, base_obj, extension_obj);
                 },
                 else => return error.TypeMismatch,
@@ -2658,7 +2716,7 @@ pub fn evaluateExpression(
         .object_comprehension => |comp| blk: {
             var result_fields = std.ArrayListUnmanaged(ObjectFieldValue){};
             try evaluateObjectComprehension(arena, &result_fields, comp, 0, env, current_dir, ctx);
-            break :blk Value{ .object = .{ .fields = try result_fields.toOwnedSlice(arena) } };
+            break :blk Value{ .object = .{ .fields = try result_fields.toOwnedSlice(arena), .module_doc = null } };
         },
         .import_expr => |import_expr| try importModule(arena, import_expr.path, current_dir, ctx),
         .field_access => |field_access| blk: {
@@ -2711,7 +2769,7 @@ pub fn evaluateExpression(
                 };
             }
 
-            break :blk Value{ .object = .{ .fields = new_fields } };
+            break :blk Value{ .object = .{ .fields = new_fields, .module_doc = null } };
         },
     };
 }

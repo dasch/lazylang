@@ -1,3 +1,25 @@
+/// Provides utilities for working with objects in Lazylang.
+///
+/// This module includes functions for:
+/// - **Inspection**: [keys], [values], [get]
+/// - **Transformation**: [mapValues], [slice]
+/// - **Combining**: [merge]
+///
+/// ## Examples
+///
+/// ```
+/// Object = import 'Object'
+///
+/// // Get all keys
+/// Object.keys { name: "John", age: 30 }  // Returns ["name", "age"]
+///
+/// // Transform values
+/// Object.mapValues (x -> x * 2) { a: 1, b: 2 }  // Returns { a: 2, b: 4 }
+///
+/// // Merge objects
+/// Object.merge { a: 1 } { b: 2 }  // Returns { a: 1, b: 2 }
+/// ```
+/// ---
 {
   /// Returns an array of all keys in an object.
   ///

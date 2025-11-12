@@ -1,3 +1,40 @@
+/// A testing framework for writing and organizing tests in Lazylang.
+///
+/// This module provides a BDD-style testing DSL with:
+/// - **Test organization**: [describe], [it], [xit]
+/// - **Assertions**: [mustEq], [mustNotEq], [must]
+/// - **Test control**: [pass], [fail]
+///
+/// ## Examples
+///
+/// ```
+/// { describe, it, mustEq } = import 'Spec'
+///
+/// describe "Math operations" [
+///   it "adds numbers correctly" (
+///     mustEq 5 (2 + 3)
+///   )
+///
+///   it "multiplies numbers correctly" (
+///     mustEq 10 (2 * 5)
+///   )
+/// ]
+/// ```
+///
+/// ## Test Structure
+///
+/// Tests are organized into suites using [describe] blocks, which contain
+/// individual test cases defined with [it]. Use [xit] to temporarily skip tests.
+///
+/// ## Assertions
+///
+/// - [mustEq]: Checks equality between expected and actual values
+/// - [mustNotEq]: Checks inequality between values
+/// - [must]: Checks that a condition is truthy
+///
+/// Tests pass automatically if they don't throw errors. Use [pass] and [fail]
+/// for explicit control.
+/// ---
 {
   /// Explicitly marks a test as passing.
   /// Useful for tests that verify side effects or when you want to document expected behavior.
