@@ -286,11 +286,14 @@ lazylang/
 #### builtins.zig (~600 lines)
 
 **Structure**:
-- Export individual functions: `arrayLength`, `arrayFold`, `stringConcat`, etc.
+- Export individual functions: `arrayLength`, `arrayFold`, `stringConcat`, `crash`, etc.
 - Each follows signature: `fn(arena: Allocator, args: []const Value) EvalError!Value`
-- Categories: Array (5), String (9), Math (10), Object (3)
+- Categories: Array (5), String (9), Math (10), Object (3), Error handling (1)
 
-**Integration**: Registered in `createBuiltinEnvironment` (eval.zig:2696) with `__` prefix
+**Integration**: Registered in `createBuiltinEnvironment` (eval.zig:2696). Most have `__` prefix, except for `crash` which is directly exposed.
+
+**Notable builtins**:
+- `crash`: Takes a string message and causes a runtime error with that message. Uses thread-local storage to preserve the message across arena deallocation.
 
 #### spec.zig (~600 lines)
 
@@ -803,32 +806,55 @@ If you see an error without location info:
 
 ### Lazy Evaluation Implementation
 
-**Thunks**: Values that are computed on demand. Currently NOT fully implemented in codebase (design doc mentions it, but current impl is eager).
+**Thunks**: Values that are computed on demand. **Fully implemented** - object fields are lazily evaluated using thunks.
 
-**If adding thunks**:
-1. Add `thunk` to Value union:
+**Implementation details**:
+
+1. **Thunk type** (eval.zig:1869-1881):
    ```zig
-   pub const Value = union(enum) {
-       // ... existing
-       thunk: *Thunk,
+   pub const ThunkState = union(enum) {
+       unevaluated,
+       evaluating,      // Cycle detection
+       evaluated: Value,
    };
 
    pub const Thunk = struct {
        expr: *Expression,
-       env: ?*const Environment,
-       state: union(enum) {
-           unevaluated,
-           evaluating,      // Cycle detection
-           evaluated: Value,
-       },
+       env: ?*Environment,
+       current_dir: ?[]const u8,
+       ctx: *const EvalContext,
+       state: ThunkState,
+   };
+
+   pub const Value = union(enum) {
+       // ... existing types
+       thunk: *Thunk,
    };
    ```
 
-2. Wrap object field values in thunks during object construction
-
-3. Add `force` function that evaluates thunk if unevaluated:
+2. **Object construction** (eval.zig:2495-2511): When creating objects, field values are wrapped in thunks instead of being eagerly evaluated:
    ```zig
-   fn force(value: Value, ...) !Value {
+   .object => |object| blk: {
+       const fields = try arena.alloc(ObjectFieldValue, object.fields.len);
+       for (object.fields, 0..) |field, i| {
+           const key_copy = try arena.dupe(u8, field.key);
+           const thunk = try arena.create(Thunk);
+           thunk.* = .{
+               .expr = field.value,
+               .env = env,
+               .current_dir = current_dir,
+               .ctx = ctx,
+               .state = .unevaluated,
+           };
+           fields[i] = .{ .key = key_copy, .value = .{ .thunk = thunk } };
+       }
+       break :blk Value{ .object = .{ .fields = fields } };
+   }
+   ```
+
+3. **Force function** (eval.zig:2205-2221): Evaluates thunks on demand with cycle detection:
+   ```zig
+   pub fn force(arena: std.mem.Allocator, value: Value) EvalError!Value {
        return switch (value) {
            .thunk => |thunk| {
                switch (thunk.state) {
@@ -836,7 +862,7 @@ If you see an error without location info:
                    .evaluating => return error.CyclicReference,
                    .unevaluated => {
                        thunk.state = .evaluating;
-                       const result = try evaluateExpression(thunk.expr, thunk.env, ...);
+                       const result = try evaluateExpression(arena, thunk.expr, ...);
                        thunk.state = .{ .evaluated = result };
                        return result;
                    },
@@ -847,7 +873,18 @@ If you see an error without location info:
    }
    ```
 
-4. Call `force` before using values in operations
+4. **Forcing locations**: Thunks are forced at:
+   - Field access (eval.zig:2644-2660)
+   - Pattern matching for object destructuring (eval.zig:2142)
+   - Object comprehensions when iterating over objects (eval.zig:2759)
+   - Object patching when merging nested objects (eval.zig:2553)
+   - Value formatting/printing (eval.zig:2879-2883)
+
+**Benefits**:
+- Allows recursive object definitions
+- Prevents errors in unused fields from crashing the program
+- Improves performance by only computing values that are accessed
+- Enables conditional configuration patterns
 
 ### Module Caching
 

@@ -185,18 +185,22 @@ const Environment = struct {
 
 ## Lazy Evaluation Strategy
 
+**Status**: ✅ **IMPLEMENTED** - Object fields are lazily evaluated using thunks.
+
 **Key insight**: Not everything needs to be lazy. Only make lazy what needs to be lazy.
 
 ### What's lazy (wrapped in thunks):
-- Object field values (for recursive definitions)
-- Array elements (for infinite lists, though we might not support those)
-- Function bodies (already lazy by nature)
-- Comprehension elements
+- ✅ **Object field values** (for recursive definitions and conditional fields) - IMPLEMENTED
+- ❌ Array elements (not implemented - arrays are evaluated eagerly)
+- ✅ **Function bodies** (already lazy by nature) - IMPLEMENTED
+- ❌ Comprehension elements (not implemented - comprehensions are evaluated eagerly)
 
 ### What's strict (evaluated immediately):
 - Function arguments (we're call-by-value for simplicity)
 - Operators (arithmetic, comparison)
 - Control flow conditions (if, when)
+- Array elements
+- Comprehension bodies
 
 ### Thunk forcing:
 ```zig
@@ -437,6 +441,19 @@ fn reportError(err: LazyError, token: Token, message: []const u8) void {
     // TODO: Show source line with caret pointer
 }
 ```
+
+### Runtime error builtin:
+✅ **IMPLEMENTED** - `crash` builtin function
+
+The `crash` function takes a string message and causes a runtime error:
+```
+crash "Something went wrong!"
+```
+
+**Implementation notes**:
+- Uses thread-local storage to preserve error message across arena deallocation
+- Message is freed when `clearUserCrashMessage()` is called after reporting
+- Works seamlessly with lazy evaluation - errors only trigger when accessed
 
 ## Implementation Order
 

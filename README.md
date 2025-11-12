@@ -374,6 +374,40 @@ when Object.find "team" resource matches
   #noSuchKey then defaultTeam
 ```
 
+### Runtime errors with `crash`
+
+For situations where you want to explicitly cause a runtime error with a custom message, use the `crash` function:
+
+```
+crash "Something went wrong!"
+```
+
+This is useful for:
+- Testing error handling
+- Marking code paths that should never execute
+- Providing clear error messages for invalid states
+
+## Lazy evaluation
+
+Lazylang uses lazy evaluation for object fields, similar to Jsonnet. Field values are only computed when accessed, not when the object is created.
+
+This means you can safely define fields that might error without causing the entire object to fail:
+
+```
+config = {
+  validValue: 42
+  errorValue: crash "This will only error if accessed"
+}
+
+config.validValue  // Returns 42 without error
+config.errorValue  // Now it crashes
+```
+
+This is particularly useful for:
+- Conditional configuration where not all fields are always needed
+- Defining recursive structures
+- Optimizing performance by only computing values that are actually used
+
 ## Modules and imports
 
 Modules are `.lazy` files that can be imported using the `import` keyword:
