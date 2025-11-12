@@ -472,7 +472,7 @@ fn encodeValue(value: eval.Value, buf: *std.ArrayList(u8), indent: usize, arena:
             const is_simple = blk: {
                 for (arr.elements) |elem| {
                     switch (elem) {
-                        .array, .object => break :blk false,
+                        .array, .object, .thunk => break :blk false,
                         else => {},
                     }
                 }
@@ -510,12 +510,18 @@ fn encodeValue(value: eval.Value, buf: *std.ArrayList(u8), indent: usize, arena:
                 try buf.appendSlice(arena, field.key);
                 try buf.appendSlice(arena, ": ");
 
-                switch (field.value) {
+                // Force thunks first to determine formatting
+                const field_value = switch (field.value) {
+                    .thunk => try eval.force(arena, field.value),
+                    else => field.value,
+                };
+
+                switch (field_value) {
                     .object, .array => {
-                        try encodeValue(field.value, buf, indent + 2, arena);
+                        try encodeValue(field_value, buf, indent + 2, arena);
                     },
                     else => {
-                        try encodeValue(field.value, buf, 0, arena);
+                        try encodeValue(field_value, buf, 0, arena);
                         try buf.append(arena, '\n');
                     },
                 }
@@ -538,6 +544,11 @@ fn encodeValue(value: eval.Value, buf: *std.ArrayList(u8), indent: usize, arena:
                 try encodeValue(elem, buf, 0, arena);
             }
             try buf.append(arena, ']');
+        },
+        .thunk => {
+            // Force the thunk and encode the result
+            const forced = try eval.force(arena, value);
+            try encodeValue(forced, buf, indent, arena);
         },
         .function, .native_fn => {
             return error.TypeMismatch; // Can't encode functions
