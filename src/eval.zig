@@ -2905,6 +2905,10 @@ pub fn createBuiltinEnvironment(arena: std.mem.Allocator) !?*Environment {
     // Error handling builtins
     env = try addBuiltin(arena, env, "crash", builtins.crash);
 
+    // YAML builtins
+    env = try addBuiltin(arena, env, "__yaml_parse", builtins.yamlParse);
+    env = try addBuiltin(arena, env, "__yaml_encode", builtins.yamlEncode);
+
     return env;
 }
 

@@ -1,0 +1,74 @@
+/// YAML parsing and encoding for Lazylang.
+///
+/// Provides `parse` (YAML string → Lazylang value) and `encode` (Lazylang value → YAML string).
+///
+/// **Supported:** Scalars (int, string, bool, null), flow arrays `[1, 2, 3]`, simple objects `key: value`
+/// **Limited:** Complex nested YAML, flow objects, block arrays
+/// **Not supported:** Anchors/aliases, multiline strings, advanced YAML 1.2 features
+///
+/// Best for simple config files and basic data serialization. Uses a custom parser optimized
+/// for common use cases. See `examples/yaml_demo.lazy` for usage examples.
+{
+  /// Parses a YAML string into a Lazylang value.
+  ///
+  /// Returns a result tuple indicating success or failure. Since YAML input
+  /// can be invalid, this function returns `(#ok, value)` on success or
+  /// `(#error, message)` on failure.
+  ///
+  /// **Parameter:**
+  /// - `yaml_str`: The YAML string to parse
+  ///
+  /// **Returns:**
+  /// - `(#ok, value)`: When parsing succeeds, where `value` is the parsed Lazylang value
+  /// - `(#error, message)`: When parsing fails, where `message` describes the error
+  ///
+  /// **Examples:**
+  /// ```
+  /// YAML.parse "42"              // Returns (#ok, 42)
+  /// YAML.parse "name: Alice"     // Returns (#ok, { name: "Alice" })
+  /// YAML.parse "[1, 2, 3]"       // Returns (#ok, [1, 2, 3])
+  /// YAML.parse "true"            // Returns (#ok, true)
+  /// ```
+  ///
+  /// **Usage with pattern matching:**
+  /// ```
+  /// result = YAML.parse "port: 8080"
+  /// port = when result matches
+  ///   (#ok, config) then config.port
+  ///   (#error, _) then 3000
+  /// ```
+  parse: yaml_str -> __yaml_parse yaml_str,
+
+  /// Encodes a Lazylang value into a YAML string.
+  ///
+  /// Converts any Lazylang value (except functions) into YAML format.
+  /// If encoding fails (e.g., trying to encode a function), this function
+  /// throws a `TypeMismatch` error rather than returning an error tuple,
+  /// since encoding failures indicate programming errors, not invalid user input.
+  ///
+  /// **Parameter:**
+  /// - `value`: The Lazylang value to encode
+  ///
+  /// **Returns:**
+  /// A string containing the YAML representation of the value
+  ///
+  /// **Throws:**
+  /// - `TypeMismatch`: When attempting to encode a function or native function
+  ///
+  /// **Examples:**
+  /// ```
+  /// YAML.encode 42                   // Returns "42\n"
+  /// YAML.encode "hello"              // Returns "hello\n"
+  /// YAML.encode [1, 2, 3]            // Returns "[1, 2, 3]"
+  /// YAML.encode { name: "Alice" }    // Returns "name: Alice\n"
+  /// YAML.encode true                 // Returns "true\n"
+  /// YAML.encode null                 // Returns "null\n"
+  /// ```
+  ///
+  /// **Encoding details:**
+  /// - Objects are encoded as block-style YAML with indentation
+  /// - Simple arrays (≤5 elements, no nested collections) use flow style: `[1, 2, 3]`
+  /// - Complex arrays use block style with `-` prefix
+  /// - Strings containing special characters (`:`, `#`, etc.) are quoted
+  encode: value -> __yaml_encode value
+}

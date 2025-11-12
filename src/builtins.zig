@@ -1,5 +1,6 @@
 const std = @import("std");
 const eval = @import("eval.zig");
+const yaml = @import("yaml.zig");
 
 // Array builtins
 
@@ -611,4 +612,54 @@ pub fn curry2(comptime impl: fn (std.mem.Allocator, eval.Value, eval.Value) eval
         }
     };
     return Wrapper.call;
+}
+
+// YAML builtins
+
+/// Parse a YAML string into a Lazylang value
+/// Returns (#ok, value) on success or (#error, message) on failure
+pub fn yamlParse(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const yaml_str = switch (args[0]) {
+        .string => |s| s,
+        else => return error.TypeMismatch,
+    };
+
+    const result = yaml.parse(arena, yaml_str) catch |err| {
+        const error_msg = switch (err) {
+            error.InvalidYaml => "Invalid YAML syntax",
+            error.UnexpectedToken => "Unexpected token in YAML",
+            error.OutOfMemory => "Out of memory while parsing YAML",
+            else => "Failed to parse YAML",
+        };
+
+        const msg = try arena.dupe(u8, error_msg);
+        const result_elements = try arena.alloc(eval.Value, 2);
+        result_elements[0] = eval.Value{ .symbol = "#error" };
+        result_elements[1] = eval.Value{ .string = msg };
+        return eval.Value{ .tuple = .{ .elements = result_elements } };
+    };
+
+    // Return (#ok, value)
+    const result_elements = try arena.alloc(eval.Value, 2);
+    result_elements[0] = eval.Value{ .symbol = "#ok" };
+    result_elements[1] = result;
+    return eval.Value{ .tuple = .{ .elements = result_elements } };
+}
+
+/// Encode a Lazylang value into a YAML string
+/// Returns the YAML string directly. Throws error if value cannot be encoded (e.g., functions).
+pub fn yamlEncode(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const value = args[0];
+    const yaml_str = yaml.encode(arena, value) catch |err| {
+        return switch (err) {
+            error.TypeMismatch => error.TypeMismatch,
+            error.OutOfMemory => error.OutOfMemory,
+            else => error.TypeMismatch, // Treat other YAML errors as type mismatches
+        };
+    };
+    return eval.Value{ .string = yaml_str };
 }

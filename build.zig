@@ -103,6 +103,7 @@ pub fn build(b: *std.Build) void {
         "tests/eval/symbols_test.zig",
         "tests/eval/comprehensions_test.zig",
         "tests/eval/accessors_test.zig",
+        "tests/eval/yaml_test.zig",
     };
 
     // Examples test module
