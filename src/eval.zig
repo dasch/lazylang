@@ -148,8 +148,13 @@ const MatchBranch = struct {
     expression: *Expression,
 };
 
+const ArrayElement = union(enum) {
+    normal: *Expression,
+    spread: *Expression,
+};
+
 const ArrayLiteral = struct {
-    elements: []*Expression,
+    elements: []ArrayElement,
 };
 
 const TupleLiteral = struct {
@@ -1259,23 +1264,33 @@ pub const Parser = struct {
         if (self.current.kind == .r_bracket) {
             try self.advance();
             const node = try self.allocateExpression();
-            node.* = .{ .array = .{ .elements = &[_]*Expression{} } };
+            node.* = .{ .array = .{ .elements = &[_]ArrayElement{} } };
             return node;
+        }
+
+        // Check if first element is a spread
+        const is_first_spread = self.current.kind == .dot_dot_dot;
+        if (is_first_spread) {
+            try self.advance(); // consume ...
         }
 
         // Parse first element
         const first_element = try self.parseLambda();
 
-        // Check if this is a comprehension by looking for 'for' keyword
-        const is_comprehension = self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "for");
+        // Check if this is a comprehension by looking for 'for' keyword (only if not a spread)
+        const is_comprehension = !is_first_spread and self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "for");
 
         if (is_comprehension) {
             return self.parseArrayComprehension(first_element);
         }
 
         // Regular array: continue parsing elements
-        var elements = std.ArrayListUnmanaged(*Expression){};
-        try elements.append(self.arena, first_element);
+        var elements = std.ArrayListUnmanaged(ArrayElement){};
+        if (is_first_spread) {
+            try elements.append(self.arena, .{ .spread = first_element });
+        } else {
+            try elements.append(self.arena, .{ .normal = first_element });
+        }
 
         while (self.current.kind != .r_bracket) {
             if (self.current.kind == .comma) {
@@ -1287,8 +1302,18 @@ pub const Parser = struct {
                 return error.UnexpectedToken;
             }
 
+            // Check for spread operator
+            const is_spread = self.current.kind == .dot_dot_dot;
+            if (is_spread) {
+                try self.advance(); // consume ...
+            }
+
             const element = try self.parseLambda();
-            try elements.append(self.arena, element);
+            if (is_spread) {
+                try elements.append(self.arena, .{ .spread = element });
+            } else {
+                try elements.append(self.arena, .{ .normal = element });
+            }
         }
 
         try self.expect(.r_bracket);
@@ -2353,11 +2378,30 @@ pub fn evaluateExpression(
             }
         },
         .array => |array| blk: {
-            const values = try arena.alloc(Value, array.elements.len);
-            for (array.elements, 0..) |element, i| {
-                values[i] = try evaluateExpression(arena, element, env, current_dir, ctx);
+            // First pass: evaluate all elements and count total size
+            var temp_values = std.ArrayList(Value){};
+            defer temp_values.deinit(arena);
+
+            for (array.elements) |element| {
+                switch (element) {
+                    .normal => |elem_expr| {
+                        const value = try evaluateExpression(arena, elem_expr, env, current_dir, ctx);
+                        try temp_values.append(arena, value);
+                    },
+                    .spread => |spread_expr| {
+                        const value = try evaluateExpression(arena, spread_expr, env, current_dir, ctx);
+                        const spread_array = switch (value) {
+                            .array => |a| a,
+                            else => return error.TypeMismatch,
+                        };
+                        for (spread_array.elements) |spread_elem| {
+                            try temp_values.append(arena, spread_elem);
+                        }
+                    },
+                }
             }
-            break :blk Value{ .array = .{ .elements = values } };
+
+            break :blk Value{ .array = .{ .elements = try temp_values.toOwnedSlice(arena) } };
         },
         .tuple => |tuple| blk: {
             const values = try arena.alloc(Value, tuple.elements.len);

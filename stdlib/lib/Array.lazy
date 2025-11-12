@@ -27,4 +27,97 @@
   /// Array.get 5 [10, 20, 30]  // Returns #outOfBounds
   /// ```
   get: idx -> arr -> __array_get (arr, idx)
+
+  /// Applies a function to each element of an array, returning a new array.
+  ///
+  /// **Parameters:**
+  /// - `fn`: Function to apply to each element
+  /// - `arr`: The array to map over
+  ///
+  /// **Example:**
+  /// ```
+  /// Array.map (x -> x * 2) [1, 2, 3]  // Returns [2, 4, 6]
+  /// ```
+  map: fn -> arr -> [fn x for x in arr]
+
+  /// Applies a function to each element and flattens the results into a single array.
+  ///
+  /// **Parameters:**
+  /// - `fn`: Function that returns an array for each element
+  /// - `arr`: The array to flatMap over
+  ///
+  /// **Example:**
+  /// ```
+  /// Array.flatMap (x -> [x, x]) [1, 2]  // Returns [1, 1, 2, 2]
+  /// ```
+  flatMap: fn -> arr -> [y for x in arr, y in (fn x)]
+
+  /// Filters an array, keeping only elements that satisfy the predicate.
+  ///
+  /// **Parameters:**
+  /// - `pred`: Predicate function that returns true for elements to keep
+  /// - `arr`: The array to filter
+  ///
+  /// **Example:**
+  /// ```
+  /// Array.filter (x -> x > 2) [1, 2, 3, 4]  // Returns [3, 4]
+  /// ```
+  filter: pred -> arr -> [x for x in arr when pred x]
+
+  /// Filters an array, removing elements that satisfy the predicate (opposite of filter).
+  ///
+  /// **Parameters:**
+  /// - `pred`: Predicate function that returns true for elements to remove
+  /// - `arr`: The array to filter
+  ///
+  /// **Example:**
+  /// ```
+  /// Array.skip (x -> x > 2) [1, 2, 3, 4]  // Returns [1, 2]
+  /// ```
+  skip: pred -> arr -> [x for x in arr when !(pred x)]
+
+  /// Folds an array from the left using an accumulator function.
+  ///
+  /// **Parameters:**
+  /// - `fn`: Binary function (acc -> elem -> new_acc)
+  /// - `init`: Initial accumulator value
+  /// - `arr`: The array to fold
+  ///
+  /// **Example:**
+  /// ```
+  /// Array.fold (acc -> x -> acc + x) 0 [1, 2, 3]  // Returns 6
+  /// ```
+  fold: fn -> init -> arr -> when arr matches
+    [] then init
+    [head, ...tail] then fold fn (fn init head) tail
+
+  /// Reverses an array.
+  ///
+  /// **Parameter:**
+  /// - `arr`: The array to reverse
+  ///
+  /// **Example:**
+  /// ```
+  /// Array.reverse [1, 2, 3]  // Returns [3, 2, 1]
+  /// ```
+  reverse: arr ->
+    reverseHelper = acc -> xs -> when xs matches
+      [] then acc
+      [head, ...tail] then reverseHelper [head, ...acc] tail
+    reverseHelper [] arr
+
+  /// Concatenates an array of strings into a single string.
+  /// Returns an empty string if the array is empty.
+  ///
+  /// **Parameter:**
+  /// - `strs`: Array of strings to concatenate
+  ///
+  /// **Example:**
+  /// ```
+  /// Array.concatAll ["hello", " ", "world"]  // Returns "hello world"
+  /// Array.concatAll []  // Returns ""
+  /// ```
+  concatAll: strs -> when strs matches
+    [] then ""
+    [head, ...tail] then __string_concat (head, concatAll tail)
 }
