@@ -27,6 +27,7 @@ fn RunContext(comptime WriterType: type) type {
         passed: usize,
         failed: usize,
         indent: usize,
+        needs_blank_line: bool,
 
         fn writeIndent(self: *@This()) !void {
             for (0..self.indent) |_| {
@@ -168,15 +169,51 @@ fn runDescribe(ctx: anytype, desc: eval_module.ObjectValue) anyerror!void {
         return;
     }
 
+    // Add blank line if needed (from de-indenting)
+    if (ctx.needs_blank_line) {
+        try ctx.writer.writeAll("\n");
+        ctx.needs_blank_line = false;
+    }
+
     try ctx.writeIndent();
     try ctx.writer.print("{s}{s}{s}\n", .{ Color.cyan, description.?, Color.reset });
 
     if (children) |ch| {
         ctx.indent += 1;
-        for (ch.elements) |child| {
+        for (ch.elements, 0..) |child, i| {
+            // Clear the needs_blank_line flag for children since they're at a deeper level
+            if (i == 0) {
+                ctx.needs_blank_line = false;
+            }
+
+            // Add blank line before sibling describe blocks (but not before the first child)
+            if (i > 0) {
+                const child_obj = switch (child) {
+                    .object => |obj| obj,
+                    else => null,
+                };
+                if (child_obj) |obj| {
+                    for (obj.fields) |field| {
+                        if (std.mem.eql(u8, field.key, "type")) {
+                            const type_val = switch (field.value) {
+                                .string => |s| s,
+                                else => null,
+                            };
+                            if (type_val != null and std.mem.eql(u8, type_val.?, "describe")) {
+                                try ctx.writer.writeAll("\n");
+                                // Clear the flag since we just added the blank line
+                                ctx.needs_blank_line = false;
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
             try runTestItem(ctx, child);
         }
         ctx.indent -= 1;
+        // Mark that we need a blank line before the next item at this level
+        ctx.needs_blank_line = true;
     }
 }
 
@@ -299,27 +336,10 @@ pub fn runSpec(
         .passed = 0,
         .failed = 0,
         .indent = 0,
+        .needs_blank_line = false,
     };
 
     try runTestItem(&ctx, value);
-
-    // Print summary
-    try writer.writeAll("\n");
-    const total = ctx.passed + ctx.failed;
-    if (ctx.failed == 0) {
-        try writer.print("{s}{s}✓ {d} test{s} passed{s}\n", .{ Color.bold, Color.green, total, if (total == 1) "" else "s", Color.reset });
-    } else {
-        try writer.print("{s}{s}{d}{s} test{s} passed, {s}{d} failed{s}\n", .{
-            Color.bold,
-            Color.green,
-            ctx.passed,
-            Color.reset,
-            if (ctx.passed == 1) "" else "s",
-            Color.red,
-            ctx.failed,
-            Color.reset,
-        });
-    }
 
     return SpecResult{
         .passed = ctx.passed,
@@ -333,6 +353,7 @@ fn runAllSpecsRecursive(
     writer: anytype,
     total_passed: *usize,
     total_failed: *usize,
+    first_file: *bool,
 ) !void {
     var dir = try std.fs.cwd().openDir(spec_dir, .{ .iterate = true });
     defer dir.close();
@@ -343,12 +364,18 @@ fn runAllSpecsRecursive(
         defer allocator.free(full_path);
 
         if (entry.kind == .file and std.mem.endsWith(u8, entry.name, "Spec.lazy")) {
+            // Add blank line between test files
+            if (!first_file.*) {
+                try writer.writeAll("\n");
+            }
+            first_file.* = false;
+
             const result = try runSpec(allocator, full_path, writer);
             total_passed.* += result.passed;
             total_failed.* += result.failed;
         } else if (entry.kind == .directory) {
             // Recursively search subdirectories
-            try runAllSpecsRecursive(allocator, full_path, writer, total_passed, total_failed);
+            try runAllSpecsRecursive(allocator, full_path, writer, total_passed, total_failed, first_file);
         }
     }
 }
@@ -360,8 +387,27 @@ pub fn runAllSpecs(
 ) !SpecResult {
     var total_passed: usize = 0;
     var total_failed: usize = 0;
+    var first_file = true;
 
-    try runAllSpecsRecursive(allocator, spec_dir, writer, &total_passed, &total_failed);
+    try runAllSpecsRecursive(allocator, spec_dir, writer, &total_passed, &total_failed, &first_file);
+
+    // Print summary
+    try writer.writeAll("\n");
+    const total = total_passed + total_failed;
+    if (total_failed == 0) {
+        try writer.print("{s}{s}✓ {d} test{s} passed{s}\n", .{ Color.bold, Color.green, total, if (total == 1) "" else "s", Color.reset });
+    } else {
+        try writer.print("{s}{s}{d}{s} test{s} passed, {s}{d} failed{s}\n", .{
+            Color.bold,
+            Color.green,
+            total_passed,
+            Color.reset,
+            if (total_passed == 1) "" else "s",
+            Color.red,
+            total_failed,
+            Color.reset,
+        });
+    }
 
     return SpecResult{
         .passed = total_passed,
