@@ -115,6 +115,62 @@ Doing this allows the object to be *merged* into other objects, using the extens
 obj1 & obj2
 ```
 
+### Object field accessors
+
+Fields can be accessed using the dot operator:
+
+```
+user = { name: "Alice", age: 30 }
+user.name  // "Alice"
+user.age   // 30
+```
+
+If a field doesn't exist, the program will crash with an error that includes suggestions for similar field names:
+
+```
+user.nmae  // Error: field 'nmae' not found. Did you mean 'name'?
+```
+
+#### Field accessor functions
+
+A dot followed by a field name creates a function that accesses that field:
+
+```
+getName = .name
+getName user  // "Alice"
+
+users = [
+  { name: "Alice", age: 30 }
+  { name: "Bob", age: 25 }
+]
+
+Array.map .name users  // ["Alice", "Bob"]
+```
+
+Field accessors can be chained:
+
+```
+getAddress = .user.address
+record = { user: { address: "123 Main St" } }
+getAddress record  // "123 Main St"
+```
+
+#### Field projection
+
+You can extract multiple fields at once using field projection syntax:
+
+```
+user = { name: "Alice", age: 30, email: "alice@example.com" }
+user.{ name, age }  // { name: "Alice", age: 30 }
+```
+
+This works with nested accessors:
+
+```
+record = { user: { name: "Alice", age: 30 } }
+record.user.{ name }  // { name: "Alice" }
+```
+
 ### Dynamically computed fields
 
 ```

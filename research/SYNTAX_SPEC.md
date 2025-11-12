@@ -33,6 +33,9 @@
 - The binary merge operator `&` merges two objects, respecting the colon omission semantics for nested merges. 【F:README.md†L81-L85】
 - Dynamic field definitions wrap an expression in `[...]` as the key. `null` keys are skipped, arrays of keys emit multiple fields, and array comprehensions can generate batches of keys. 【F:README.md†L87-L103】
 - Object comprehensions mirror array comprehensions, allowing computed `[key]: value` entries derived from arrays or objects via `for` clauses. 【F:README.md†L105-L119】
+- **Object field accessors**: The dot operator `.` accesses object fields. `obj.field` retrieves the field value, raising an error with "did you mean" suggestions if the field doesn't exist. 【F:README.md†L118-L132】
+- **Field accessor functions**: A leading dot creates a field accessor function: `.field` is equivalent to `obj -> obj.field`. These can be chained: `.user.address` becomes `obj -> obj.user.address`. 【F:README.md†L134-L156】
+- **Field projection**: Syntax `obj.{ field1, field2 }` extracts multiple fields into a new object containing only those fields. This works with chaining: `obj.nested.{ field1, field2 }`. 【F:README.md†L158-L172】
 
 ## 7. Functions and Application
 - Functions are defined with `->`. Multiple parameters are modeled via currying, chaining successive single-argument arrows. 【F:README.md†L166-L177】
