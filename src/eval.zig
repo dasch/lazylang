@@ -2619,6 +2619,13 @@ pub fn createBuiltinEnvironment(arena: std.mem.Allocator) !?*Environment {
     env = try addBuiltin(arena, env, "__math_max", builtins.mathMax);
     env = try addBuiltin(arena, env, "__math_min", builtins.mathMin);
     env = try addBuiltin(arena, env, "__math_abs", builtins.mathAbs);
+    env = try addBuiltin(arena, env, "__math_pow", builtins.mathPow);
+    env = try addBuiltin(arena, env, "__math_sqrt", builtins.mathSqrt);
+    env = try addBuiltin(arena, env, "__math_floor", builtins.mathFloor);
+    env = try addBuiltin(arena, env, "__math_ceil", builtins.mathCeil);
+    env = try addBuiltin(arena, env, "__math_round", builtins.mathRound);
+    env = try addBuiltin(arena, env, "__math_log", builtins.mathLog);
+    env = try addBuiltin(arena, env, "__math_exp", builtins.mathExp);
 
     // Object builtins
     env = try addBuiltin(arena, env, "__object_keys", builtins.objectKeys);
