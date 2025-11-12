@@ -134,71 +134,6 @@ fn RunContext(comptime WriterType: type) type {
     };
 }
 
-fn valuesEqual(a: eval_module.Value, b: eval_module.Value) bool {
-    return switch (a) {
-        .integer => |av| switch (b) {
-            .integer => |bv| av == bv,
-            else => false,
-        },
-        .boolean => |av| switch (b) {
-            .boolean => |bv| av == bv,
-            else => false,
-        },
-        .null_value => switch (b) {
-            .null_value => true,
-            else => false,
-        },
-        .symbol => |av| switch (b) {
-            .symbol => |bv| std.mem.eql(u8, av, bv),
-            else => false,
-        },
-        .string => |av| switch (b) {
-            .string => |bv| std.mem.eql(u8, av, bv),
-            else => false,
-        },
-        .function => false, // Functions are not comparable
-        .native_fn => false, // Native functions are not comparable
-        .array => |av| switch (b) {
-            .array => |bv| blk: {
-                if (av.elements.len != bv.elements.len) break :blk false;
-                for (av.elements, 0..) |elem, i| {
-                    if (!valuesEqual(elem, bv.elements[i])) break :blk false;
-                }
-                break :blk true;
-            },
-            else => false,
-        },
-        .tuple => |av| switch (b) {
-            .tuple => |bv| blk: {
-                if (av.elements.len != bv.elements.len) break :blk false;
-                for (av.elements, 0..) |elem, i| {
-                    if (!valuesEqual(elem, bv.elements[i])) break :blk false;
-                }
-                break :blk true;
-            },
-            else => false,
-        },
-        .object => |av| switch (b) {
-            .object => |bv| blk: {
-                if (av.fields.len != bv.fields.len) break :blk false;
-                for (av.fields) |afield| {
-                    var found = false;
-                    for (bv.fields) |bfield| {
-                        if (std.mem.eql(u8, afield.key, bfield.key)) {
-                            if (!valuesEqual(afield.value, bfield.value)) break :blk false;
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found) break :blk false;
-                }
-                break :blk true;
-            },
-            else => false,
-        },
-    };
-}
-
 fn runTestItem(ctx: anytype, item: eval_module.Value) anyerror!void {
     const object = switch (item) {
         .object => |obj| obj,
@@ -400,11 +335,7 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
 
     // Parse the test object type and fields
     var test_type: ?[]const u8 = null;
-    var assertion_kind: ?[]const u8 = null;
-    var expected: ?eval_module.Value = null;
-    var actual: ?eval_module.Value = null;
-    var condition: ?eval_module.Value = null;
-    var fail_message: ?[]const u8 = null;
+    var fail_details: ?eval_module.Value = null;
 
     for (test_obj.fields) |field| {
         if (std.mem.eql(u8, field.key, "type")) {
@@ -412,22 +343,8 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
                 .string => |s| s,
                 else => null,
             };
-        } else if (std.mem.eql(u8, field.key, "kind")) {
-            assertion_kind = switch (field.value) {
-                .string => |s| s,
-                else => null,
-            };
-        } else if (std.mem.eql(u8, field.key, "expected")) {
-            expected = field.value;
-        } else if (std.mem.eql(u8, field.key, "actual")) {
-            actual = field.value;
-        } else if (std.mem.eql(u8, field.key, "condition")) {
-            condition = field.value;
-        } else if (std.mem.eql(u8, field.key, "message")) {
-            fail_message = switch (field.value) {
-                .string => |s| s,
-                else => null,
-            };
+        } else if (std.mem.eql(u8, field.key, "details")) {
+            fail_details = field.value;
         }
     }
 
@@ -443,113 +360,84 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
     if (test_type != null and std.mem.eql(u8, test_type.?, "fail")) {
         try ctx.writeIndent();
         try ctx.writer.print("{s}✗ {s}{s}\n", .{ Color.red, description.?, Color.reset });
-        if (fail_message) |msg| {
-            try ctx.writeIndent();
-            try ctx.writer.print("{s}  {s}{s}\n", .{ Color.dim, msg, Color.reset });
+
+        // Handle fail details (can be a string or an object with structured info)
+        if (fail_details) |details| {
+            switch (details) {
+                .string => |msg| {
+                    // Simple string message
+                    try ctx.writeIndent();
+                    try ctx.writer.print("{s}  {s}{s}\n", .{ Color.dim, msg, Color.reset });
+                },
+                .object => |obj| {
+                    // Structured failure details with kind, expected, actual, condition
+                    var fail_kind: ?[]const u8 = null;
+                    var fail_expected: ?eval_module.Value = null;
+                    var fail_actual: ?eval_module.Value = null;
+                    var fail_condition: ?eval_module.Value = null;
+
+                    for (obj.fields) |field| {
+                        if (std.mem.eql(u8, field.key, "kind")) {
+                            fail_kind = switch (field.value) {
+                                .string => |s| s,
+                                else => null,
+                            };
+                        } else if (std.mem.eql(u8, field.key, "expected")) {
+                            fail_expected = field.value;
+                        } else if (std.mem.eql(u8, field.key, "actual")) {
+                            fail_actual = field.value;
+                        } else if (std.mem.eql(u8, field.key, "condition")) {
+                            fail_condition = field.value;
+                        }
+                    }
+
+                    if (fail_kind) |k| {
+                        if (std.mem.eql(u8, k, "eq")) {
+                            // mustEq failure
+                            if (fail_expected != null and fail_actual != null) {
+                                const expected_str = try eval_module.formatValue(ctx.allocator, fail_expected.?);
+                                defer ctx.allocator.free(expected_str);
+                                const actual_str = try eval_module.formatValue(ctx.allocator, fail_actual.?);
+                                defer ctx.allocator.free(actual_str);
+                                try ctx.writeIndent();
+                                try ctx.writer.print("{s}  Expected: {s}{s}\n", .{ Color.dim, expected_str, Color.reset });
+                                try ctx.writeIndent();
+                                try ctx.writer.print("{s}  Actual:   {s}{s}\n", .{ Color.dim, actual_str, Color.reset });
+                            }
+                        } else if (std.mem.eql(u8, k, "notEq")) {
+                            // mustNotEq failure
+                            if (fail_actual != null) {
+                                const value_str = try eval_module.formatValue(ctx.allocator, fail_actual.?);
+                                defer ctx.allocator.free(value_str);
+                                try ctx.writeIndent();
+                                try ctx.writer.print("{s}  Expected not to equal: {s}{s}\n", .{ Color.dim, value_str, Color.reset });
+                                try ctx.writeIndent();
+                                try ctx.writer.print("{s}  But got:               {s}{s}\n", .{ Color.dim, value_str, Color.reset });
+                            }
+                        } else if (std.mem.eql(u8, k, "truthy")) {
+                            // must failure
+                            if (fail_condition != null) {
+                                const condition_str = try eval_module.formatValue(ctx.allocator, fail_condition.?);
+                                defer ctx.allocator.free(condition_str);
+                                try ctx.writeIndent();
+                                try ctx.writer.print("{s}  Expected condition to be truthy{s}\n", .{ Color.dim, Color.reset });
+                                try ctx.writeIndent();
+                                try ctx.writer.print("{s}  But got: {s}{s}\n", .{ Color.dim, condition_str, Color.reset });
+                            }
+                        }
+                    }
+                },
+                else => {},
+            }
         }
         ctx.failed += 1;
         return;
     }
 
-    // Handle assertions
-    if (test_type != null and std.mem.eql(u8, test_type.?, "assertion")) {
-        if (assertion_kind == null) {
-            // Legacy assertion (no kind specified, assume "eq")
-            assertion_kind = "eq";
-        }
-
-        if (std.mem.eql(u8, assertion_kind.?, "eq")) {
-            // mustEq assertion
-            if (expected == null or actual == null) {
-                try ctx.writeIndent();
-                try ctx.writer.print("{s}✗ {s}: assertion missing expected or actual{s}\n", .{ Color.red, description.?, Color.reset });
-                ctx.failed += 1;
-                return;
-            }
-
-            if (valuesEqual(expected.?, actual.?)) {
-                try ctx.writeIndent();
-                try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, description.? });
-                ctx.passed += 1;
-            } else {
-                try ctx.writeIndent();
-                const expected_str = try eval_module.formatValue(ctx.allocator, expected.?);
-                defer ctx.allocator.free(expected_str);
-                const actual_str = try eval_module.formatValue(ctx.allocator, actual.?);
-                defer ctx.allocator.free(actual_str);
-                try ctx.writer.print("{s}✗ {s}{s}\n", .{ Color.red, description.?, Color.reset });
-                try ctx.writeIndent();
-                try ctx.writer.print("{s}  Expected: {s}{s}\n", .{ Color.dim, expected_str, Color.reset });
-                try ctx.writeIndent();
-                try ctx.writer.print("{s}  Actual:   {s}{s}\n", .{ Color.dim, actual_str, Color.reset });
-                ctx.failed += 1;
-            }
-        } else if (std.mem.eql(u8, assertion_kind.?, "notEq")) {
-            // mustNotEq assertion
-            if (expected == null or actual == null) {
-                try ctx.writeIndent();
-                try ctx.writer.print("{s}✗ {s}: assertion missing expected or actual{s}\n", .{ Color.red, description.?, Color.reset });
-                ctx.failed += 1;
-                return;
-            }
-
-            if (!valuesEqual(expected.?, actual.?)) {
-                try ctx.writeIndent();
-                try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, description.? });
-                ctx.passed += 1;
-            } else {
-                try ctx.writeIndent();
-                const value_str = try eval_module.formatValue(ctx.allocator, actual.?);
-                defer ctx.allocator.free(value_str);
-                try ctx.writer.print("{s}✗ {s}{s}\n", .{ Color.red, description.?, Color.reset });
-                try ctx.writeIndent();
-                try ctx.writer.print("{s}  Expected not to equal: {s}{s}\n", .{ Color.dim, value_str, Color.reset });
-                try ctx.writeIndent();
-                try ctx.writer.print("{s}  But got:               {s}{s}\n", .{ Color.dim, value_str, Color.reset });
-                ctx.failed += 1;
-            }
-        } else if (std.mem.eql(u8, assertion_kind.?, "truthy")) {
-            // must assertion (truthiness check)
-            if (condition == null) {
-                try ctx.writeIndent();
-                try ctx.writer.print("{s}✗ {s}: assertion missing condition{s}\n", .{ Color.red, description.?, Color.reset });
-                ctx.failed += 1;
-                return;
-            }
-
-            // Check if condition is truthy
-            const is_truthy = switch (condition.?) {
-                .boolean => |b| b,
-                .null_value => false,
-                else => true, // All other values are considered truthy
-            };
-
-            if (is_truthy) {
-                try ctx.writeIndent();
-                try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, description.? });
-                ctx.passed += 1;
-            } else {
-                try ctx.writeIndent();
-                const condition_str = try eval_module.formatValue(ctx.allocator, condition.?);
-                defer ctx.allocator.free(condition_str);
-                try ctx.writer.print("{s}✗ {s}{s}\n", .{ Color.red, description.?, Color.reset });
-                try ctx.writeIndent();
-                try ctx.writer.print("{s}  Expected condition to be truthy{s}\n", .{ Color.dim, Color.reset });
-                try ctx.writeIndent();
-                try ctx.writer.print("{s}  But got: {s}{s}\n", .{ Color.dim, condition_str, Color.reset });
-                ctx.failed += 1;
-            }
-        } else {
-            try ctx.writeIndent();
-            try ctx.writer.print("{s}✗ {s}: unknown assertion kind '{s}'{s}\n", .{ Color.red, description.?, assertion_kind.?, Color.reset });
-            ctx.failed += 1;
-        }
-    } else {
-        // Not a recognized test type, just check if it's truthy
-        try ctx.writeIndent();
-        try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, description.? });
-        ctx.passed += 1;
-    }
+    // Not a recognized test type (pass or fail), treat as truthy success
+    try ctx.writeIndent();
+    try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, description.? });
+    ctx.passed += 1;
 }
 
 pub fn runSpec(
