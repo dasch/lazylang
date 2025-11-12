@@ -1935,6 +1935,7 @@ fn valuesEqual(a: Value, b: Value) bool {
         },
         .function => false, // Functions are not comparable
         .native_fn => false, // Native functions are not comparable
+        .thunk => false, // Thunks should be forced before comparison
         .array => |av| switch (b) {
             .array => |bv| blk: {
                 if (av.elements.len != bv.elements.len) break :blk false;
