@@ -551,3 +551,54 @@ This will create an HTML file in the `docs/` directory with all documented value
 * Mobile-responsive design
 
 Documentation comments are extracted from `///` comments that appear immediately before variable definitions and object fields.
+
+## REPL
+
+The `lazylang repl` command starts an interactive Read-Eval-Print Loop for experimenting with Lazylang code.
+
+```bash
+lazylang repl
+```
+
+### Features
+
+- **Interactive evaluation**: Type expressions and see results immediately
+- **Variable persistence**: Variables defined in the REPL persist across inputs
+- **Multi-line support**: Enter complex expressions across multiple lines
+- **Formatted output**: Results are nicely formatted using the built-in formatter
+- **Colored output**: Syntax highlighting for better readability
+- **Special commands**:
+  - `:help` or `:h` - Show help message
+  - `:quit` or `:q` - Exit the REPL
+  - `:clear` or `:c` - Clear the environment
+
+### Example Session
+
+```
+> x = 42
+=> 42
+> y = 10
+=> 10
+> x + y
+=> 52
+> user = { name: "Alice", age: 30 }
+=>
+{ name: "Alice", age: 30 }
+> :quit
+Goodbye!
+```
+
+### Testing
+
+To run the REPL integration tests:
+
+```bash
+./test_repl_manual.sh
+```
+
+The test suite covers:
+- Basic arithmetic operations
+- Variable assignment and persistence
+- Object and array creation
+- Help command
+- Nested expressions

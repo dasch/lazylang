@@ -5,6 +5,7 @@ const error_reporter = @import("error_reporter.zig");
 const error_context = @import("error_context.zig");
 const json_error = @import("json_error.zig");
 const formatter = @import("formatter.zig");
+const repl = @import("repl.zig");
 
 pub const CommandResult = struct {
     exit_code: u8,
@@ -40,6 +41,10 @@ pub fn run(
 
     if (std.mem.eql(u8, subcommand, "run")) {
         return try runRun(allocator, args[2..], stdout, stderr);
+    }
+
+    if (std.mem.eql(u8, subcommand, "repl")) {
+        return try runRepl(allocator, args[2..], stdout, stderr);
     }
 
     try stderr.print("error: unknown subcommand '{s}'\n", .{subcommand});
@@ -1003,6 +1008,25 @@ fn writeIndexHtmlContent(file: anytype, modules: []const ModuleInfo) !void {
     try file.writeAll("  </div>\n");
     try file.writeAll("</body>\n");
     try file.writeAll("</html>\n");
+}
+
+fn runRepl(
+    allocator: std.mem.Allocator,
+    args: []const []const u8,
+    _: anytype,
+    stderr: anytype,
+) !CommandResult {
+    if (args.len > 0) {
+        try stderr.print("error: repl subcommand does not take arguments\n", .{});
+        return .{ .exit_code = 1 };
+    }
+
+    // For REPL, we need direct access to stdout/stderr, not buffered
+    var stdout_file = std.fs.File{ .handle = std.posix.STDOUT_FILENO };
+    var stderr_file = std.fs.File{ .handle = std.posix.STDERR_FILENO };
+
+    try repl.runReplDirect(allocator, &stdout_file, &stderr_file);
+    return .{ .exit_code = 0 };
 }
 
 fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocItem, modules: []const ModuleInfo) !void {
