@@ -85,11 +85,14 @@ fn showSourceContext(writer: anytype, source: []const u8, filename: []const u8, 
     try w.writeAll("\x1b[1;31m");
     if (loc.length <= 1) {
         try w.writeAll("^");
+    } else if (loc.length == 2) {
+        try w.writeAll("^^");
     } else {
-        // Underline the entire token
-        var j: usize = 0;
+        // For longer spans, use ^--- style
+        try w.writeAll("^");
+        var j: usize = 1;
         while (j < loc.length) : (j += 1) {
-            try w.writeAll("^");
+            try w.writeAll("-");
         }
     }
     try w.writeAll("\x1b[0m\n");

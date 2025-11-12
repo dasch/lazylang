@@ -93,7 +93,7 @@ pub fn arrayFold(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalEr
         accumulator = switch (function) {
             .function => |func| blk: {
                 // Apply first argument (accumulator)
-                const env1 = try eval.matchPattern(arena, func.param, accumulator, func.env);
+                const env1 = try eval.matchPattern(arena, func.param, accumulator, func.env, &ctx);
                 const intermediate = try eval.evaluateExpression(arena, func.body, env1, null, &ctx);
 
                 // The result should be a function, apply second argument (element)
@@ -101,7 +101,7 @@ pub fn arrayFold(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalEr
                     .function => |f| f,
                     else => return error.TypeMismatch,
                 };
-                const env2 = try eval.matchPattern(arena, func2.param, element, func2.env);
+                const env2 = try eval.matchPattern(arena, func2.param, element, func2.env, &ctx);
                 break :blk try eval.evaluateExpression(arena, func2.body, env2, null, &ctx);
             },
             else => return error.TypeMismatch,

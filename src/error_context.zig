@@ -1,11 +1,29 @@
 const std = @import("std");
 const error_reporter = @import("error_reporter.zig");
 
+/// Additional context data for specific error types
+pub const ErrorData = union(enum) {
+    unknown_field: struct {
+        field_name: []const u8,
+        available_fields: []const []const u8,
+    },
+    type_mismatch: struct {
+        expected: []const u8,
+        found: []const u8,
+        operation: ?[]const u8 = null,
+    },
+    unknown_identifier: struct {
+        name: []const u8,
+    },
+    none: void,
+};
+
 /// Thread-local error context that captures the last error location
 /// This is a workaround for Zig's error system which doesn't allow attaching data to errors
 pub const ErrorContext = struct {
     last_error_location: ?error_reporter.SourceLocation = null,
     last_error_token_lexeme: ?[]const u8 = null,
+    last_error_data: ErrorData = .none,
     source: []const u8 = "",
     identifiers: std.ArrayList([]const u8),
     allocator: std.mem.Allocator,
@@ -19,6 +37,24 @@ pub const ErrorContext = struct {
 
     pub fn deinit(self: *ErrorContext) void {
         self.identifiers.deinit(self.allocator);
+
+        // Free ErrorData memory
+        switch (self.last_error_data) {
+            .unknown_field => |data| {
+                self.allocator.free(data.field_name);
+                for (data.available_fields) |field| {
+                    self.allocator.free(field);
+                }
+                self.allocator.free(data.available_fields);
+            },
+            .type_mismatch => {
+                // Type mismatch strings are static/const, no need to free
+            },
+            .unknown_identifier => |data| {
+                self.allocator.free(data.name);
+            },
+            .none => {},
+        }
     }
 
     pub fn setSource(self: *ErrorContext, source: []const u8) void {
@@ -38,6 +74,10 @@ pub const ErrorContext = struct {
         self.last_error_token_lexeme = lexeme;
     }
 
+    pub fn setErrorData(self: *ErrorContext, data: ErrorData) void {
+        self.last_error_data = data;
+    }
+
     pub fn registerIdentifier(self: *ErrorContext, name: []const u8) !void {
         try self.identifiers.append(self.allocator, name);
     }
@@ -45,10 +85,11 @@ pub const ErrorContext = struct {
     pub fn clearError(self: *ErrorContext) void {
         self.last_error_location = null;
         self.last_error_token_lexeme = null;
+        self.last_error_data = .none;
     }
 
     /// Find similar identifiers using Levenshtein distance
-    pub fn findSimilarIdentifiers(self: *ErrorContext, target: []const u8, allocator: std.mem.Allocator) !?[]const u8 {
+    pub fn findSimilarIdentifiers(self: *const ErrorContext, target: []const u8, allocator: std.mem.Allocator) !?[]const u8 {
         if (self.identifiers.items.len == 0) return null;
 
         var best_match: ?[]const u8 = null;
@@ -64,7 +105,7 @@ pub const ErrorContext = struct {
         }
 
         if (best_match) |match| {
-            return try std.fmt.allocPrint(allocator, "Did you mean '{s}'?", .{match});
+            return try std.fmt.allocPrint(allocator, "Did you mean `\x1b[36m{s}\x1b[0m`?", .{match});
         }
 
         return null;

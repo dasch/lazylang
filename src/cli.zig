@@ -1,12 +1,10 @@
 const std = @import("std");
 const evaluator = @import("eval.zig");
 const spec = @import("spec.zig");
-const syntax_highlight = @import("syntax_highlight.zig");
 const error_reporter = @import("error_reporter.zig");
 const error_context = @import("error_context.zig");
 const json_error = @import("json_error.zig");
 const formatter = @import("formatter.zig");
-const repl = @import("repl.zig");
 
 pub const CommandResult = struct {
     exit_code: u8,
@@ -42,10 +40,6 @@ pub fn run(
 
     if (std.mem.eql(u8, subcommand, "run")) {
         return try runRun(allocator, args[2..], stdout, stderr);
-    }
-
-    if (std.mem.eql(u8, subcommand, "repl")) {
-        return try runRepl(allocator, args[2..], stdout, stderr);
     }
 
     try stderr.print("error: unknown subcommand '{s}'\n", .{subcommand});
@@ -102,7 +96,7 @@ fn runEval(
             if (json_output) {
                 try json_error.reportErrorAsJson(stderr, "<inline>", &error_context.ErrorContext.init(allocator), @errorName(err), @errorName(err), null);
             } else {
-                try reportError(stderr, "<inline>", inline_expr.?, err, null);
+                try reportError(allocator, stderr, "<inline>", inline_expr.?, err, null);
             }
             return .{ .exit_code = 1 };
         };
@@ -116,7 +110,7 @@ fn runEval(
             if (json_output) {
                 try json_error.reportErrorAsJson(stderr, "<inline>", &result.error_ctx, "ParseError", "An error occurred at this location.", null);
             } else {
-                try reportErrorWithContext(stderr, "<inline>", inline_expr.?, &result.error_ctx);
+                try reportErrorWithContext(allocator, stderr, "<inline>", inline_expr.?, &result.error_ctx, result.error_type);
             }
             return .{ .exit_code = 1 };
         }
@@ -139,7 +133,7 @@ fn runEval(
         if (json_output) {
             try json_error.reportErrorAsJson(stderr, file_path.?, &error_context.ErrorContext.init(allocator), @errorName(err), @errorName(err), null);
         } else {
-            try reportError(stderr, file_path.?, file_content, err, null);
+            try reportError(allocator, stderr, file_path.?, file_content, err, null);
         }
         return .{ .exit_code = 1 };
     };
@@ -154,13 +148,13 @@ fn runEval(
         if (json_output) {
             try json_error.reportErrorAsJson(stderr, file_path.?, &result.error_ctx, "ParseError", "An error occurred at this location.", null);
         } else {
-            try reportErrorWithContext(stderr, file_path.?, file_content, &result.error_ctx);
+            try reportErrorWithContext(allocator, stderr, file_path.?, file_content, &result.error_ctx, result.error_type);
         }
         return .{ .exit_code = 1 };
     }
 }
 
-fn reportErrorWithContext(stderr: anytype, filename: []const u8, source: []const u8, err_ctx: *const error_context.ErrorContext) !void {
+fn reportErrorWithContext(allocator: std.mem.Allocator, stderr: anytype, filename: []const u8, source: []const u8, err_ctx: *const error_context.ErrorContext, err: ?anyerror) !void {
     // Check if it's a user crash
     if (evaluator.getUserCrashMessage()) |crash_message| {
         const error_info = error_reporter.ErrorInfo{
@@ -174,16 +168,18 @@ fn reportErrorWithContext(stderr: anytype, filename: []const u8, source: []const
         return;
     }
 
-    // Determine which error to report (we don't have the error type here, so use the location)
+    // If we have the error type, use the detailed error reporting
+    if (err) |error_type| {
+        try reportError(allocator, stderr, filename, source, error_type, err_ctx);
+        return;
+    }
+
+    // Fall back to generic error reporting if we don't have the error type
     const error_info = if (err_ctx.last_error_location) |loc| blk: {
-        // We have location info - show it!
         break :blk error_reporter.ErrorInfo{
             .title = "Parse or evaluation error",
             .location = loc,
-            .message = if (err_ctx.last_error_token_lexeme) |_|
-                "An error occurred at this location."
-            else
-                "An error occurred at this location.",
+            .message = "An error occurred at this location.",
             .suggestion = null,
         };
     } else error_reporter.ErrorInfo{
@@ -196,7 +192,7 @@ fn reportErrorWithContext(stderr: anytype, filename: []const u8, source: []const
     try error_reporter.reportError(stderr, source, filename, error_info);
 }
 
-fn reportError(stderr: anytype, filename: []const u8, source: []const u8, err: anyerror, err_ctx: ?*const error_context.ErrorContext) !void {
+fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const u8, source: []const u8, err: anyerror, err_ctx: ?*const error_context.ErrorContext) !void {
     const location = if (err_ctx) |ctx| ctx.last_error_location else null;
 
     const error_info = switch (err) {
@@ -224,41 +220,128 @@ fn reportError(stderr: anytype, filename: []const u8, source: []const u8, err: a
             .message = "Found an unexpected token.",
             .suggestion = "Check the syntax at this location.",
         },
-        error.UnknownIdentifier => error_reporter.ErrorInfo{
-            .title = "Unknown identifier",
-            .location = null,
-            .message = "This identifier is not defined in the current scope.",
-            .suggestion = "Check the spelling or define this variable before using it.",
+        error.UnknownIdentifier => blk: {
+            if (err_ctx) |ctx| {
+                switch (ctx.last_error_data) {
+                    .unknown_identifier => |data| {
+                        const message = try std.fmt.allocPrint(allocator, "Identifier `\x1b[36m{s}\x1b[0m` is not defined in the current scope.", .{data.name});
+                        // Try to find similar identifiers
+                        const did_you_mean = try ctx.findSimilarIdentifiers(data.name, allocator);
+                        const suggestion = if (did_you_mean) |dym|
+                            try std.fmt.allocPrint(allocator, "{s} Or define this variable before using it.", .{dym})
+                        else
+                            "Check the spelling or define this variable before using it.";
+
+                        break :blk error_reporter.ErrorInfo{
+                            .title = "Unknown identifier",
+                            .location = location,
+                            .message = message,
+                            .suggestion = suggestion,
+                        };
+                    },
+                    else => {},
+                }
+            }
+
+            break :blk error_reporter.ErrorInfo{
+                .title = "Unknown identifier",
+                .location = location,
+                .message = "This identifier is not defined in the current scope.",
+                .suggestion = "Check the spelling or define this variable before using it.",
+            };
         },
-        error.TypeMismatch => error_reporter.ErrorInfo{
-            .title = "Type mismatch",
-            .location = null,
-            .message = error_reporter.ErrorMessages.typeMismatch("", ""),
-            .suggestion = error_reporter.ErrorSuggestions.typeMismatch(),
+        error.TypeMismatch => blk: {
+            if (err_ctx) |ctx| {
+                switch (ctx.last_error_data) {
+                    .type_mismatch => |data| {
+                        const message = if (data.operation) |op|
+                            try std.fmt.allocPrint(allocator, "Expected `\x1b[36m{s}\x1b[0m` for {s}, but found `\x1b[36m{s}\x1b[0m`.", .{ data.expected, op, data.found })
+                        else
+                            try std.fmt.allocPrint(allocator, "Expected `\x1b[36m{s}\x1b[0m`, but found `\x1b[36m{s}\x1b[0m`.", .{ data.expected, data.found });
+
+                        break :blk error_reporter.ErrorInfo{
+                            .title = "Type mismatch",
+                            .location = location,
+                            .message = message,
+                            .suggestion = "Make sure you're using compatible types for this operation.",
+                        };
+                    },
+                    else => {},
+                }
+            }
+
+            break :blk error_reporter.ErrorInfo{
+                .title = "Type mismatch",
+                .location = location,
+                .message = "This operation cannot be performed on values of incompatible types.",
+                .suggestion = "Make sure you're using compatible types (e.g., numbers with numbers, strings with strings).",
+            };
         },
         error.ExpectedFunction => error_reporter.ErrorInfo{
-            .title = "Expected function",
-            .location = null,
-            .message = error_reporter.ErrorMessages.expectedFunction(),
-            .suggestion = error_reporter.ErrorSuggestions.expectedFunction(),
+            .title = "Not a function",
+            .location = location,
+            .message = "Attempted to call a value that is not a function.",
+            .suggestion = "Only functions can be called with arguments. Make sure this value is a function.",
         },
         error.ModuleNotFound => error_reporter.ErrorInfo{
             .title = "Module not found",
-            .location = null,
-            .message = "Could not find the imported module.",
-            .suggestion = "Make sure the module file exists in the correct location.",
+            .location = location,
+            .message = "Could not find the imported module file.",
+            .suggestion = "Check that the module path is correct and the file exists. Module paths are searched in LAZYLANG_PATH and stdlib/lib.",
         },
         error.WrongNumberOfArguments => error_reporter.ErrorInfo{
             .title = "Wrong number of arguments",
-            .location = null,
-            .message = "Function called with wrong number of arguments.",
-            .suggestion = "Check the function signature and call it with the correct number of arguments.",
+            .location = location,
+            .message = "Function was called with the wrong number of arguments.",
+            .suggestion = "Check the function signature and provide the correct number of arguments.",
         },
         error.InvalidArgument => error_reporter.ErrorInfo{
             .title = "Invalid argument",
-            .location = null,
-            .message = error_reporter.ErrorMessages.invalidArgument(),
-            .suggestion = "Check that the argument value is valid for this operation.",
+            .location = location,
+            .message = "An argument has an invalid value for this operation.",
+            .suggestion = "Check that argument values are within valid ranges (e.g., array indices must be non-negative).",
+        },
+        error.UnknownField => blk: {
+            if (err_ctx) |ctx| {
+                switch (ctx.last_error_data) {
+                    .unknown_field => |data| {
+                        // Build message based on available fields
+                        const message = if (data.available_fields.len == 0)
+                            try std.fmt.allocPrint(allocator, "Field `\x1b[36m{s}\x1b[0m` is not defined on this object.", .{data.field_name})
+                        else if (data.available_fields.len == 1)
+                            try std.fmt.allocPrint(allocator, "Field `\x1b[36m{s}\x1b[0m` is not defined on this object. The only available field is `\x1b[36m{s}\x1b[0m`.", .{ data.field_name, data.available_fields[0] })
+                        else if (data.available_fields.len == 2)
+                            try std.fmt.allocPrint(allocator, "Field `\x1b[36m{s}\x1b[0m` is not defined on this object. Available fields are: `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`", .{ data.field_name, data.available_fields[0], data.available_fields[1] })
+                        else if (data.available_fields.len == 3)
+                            try std.fmt.allocPrint(allocator, "Field `\x1b[36m{s}\x1b[0m` is not defined on this object. Available fields are: `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`", .{ data.field_name, data.available_fields[0], data.available_fields[1], data.available_fields[2] })
+                        else if (data.available_fields.len == 4)
+                            try std.fmt.allocPrint(allocator, "Field `\x1b[36m{s}\x1b[0m` is not defined on this object. Available fields are: `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`", .{ data.field_name, data.available_fields[0], data.available_fields[1], data.available_fields[2], data.available_fields[3] })
+                        else
+                            try std.fmt.allocPrint(allocator, "Field `\x1b[36m{s}\x1b[0m` is not defined on this object. Available fields are: `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`", .{ data.field_name, data.available_fields[0], data.available_fields[1], data.available_fields[2], data.available_fields[3], data.available_fields[4] });
+
+                        break :blk error_reporter.ErrorInfo{
+                            .title = "Unknown field",
+                            .location = location,
+                            .message = message,
+                            .suggestion = "Check the field name for typos.",
+                        };
+                    },
+                    else => {},
+                }
+            }
+
+            break :blk error_reporter.ErrorInfo{
+                .title = "Unknown field",
+                .location = location,
+                .message = "Attempted to access a field that doesn't exist on this object.",
+                .suggestion = "Check the field name for typos or verify the object structure.",
+            };
+        },
+        error.Overflow => error_reporter.ErrorInfo{
+            .title = "Arithmetic overflow",
+            .location = location,
+            .message = "An arithmetic operation resulted in a value that's too large to represent.",
+            .suggestion = "Use smaller numbers or break the calculation into smaller steps.",
         },
         error.UserCrash => blk: {
             const crash_message = evaluator.getUserCrashMessage() orelse "Program crashed with no message.";
@@ -284,9 +367,6 @@ fn reportError(stderr: anytype, filename: []const u8, source: []const u8, err: a
     };
 
     try error_reporter.reportError(stderr, source, filename, error_info);
-
-    // Clear the crash message after reporting
-    evaluator.clearUserCrashMessage();
 }
 
 fn runSpec(
@@ -429,13 +509,13 @@ fn runRun(
 
     // Parse the file
     var parser = evaluator.Parser.init(arena, file_content) catch |err| {
-        try reportError(stderr, file_path, file_content, err, null);
+        try reportError(allocator, stderr, file_path, file_content, err, null);
         return .{ .exit_code = 1 };
     };
 
-    const expression = parser.parse() catch {
+    const expression = parser.parse() catch |err| {
         var err_ctx = error_context.ErrorContext.init(allocator);
-        try reportErrorWithContext(stderr, file_path, file_content, &err_ctx);
+        try reportErrorWithContext(allocator, stderr, file_path, file_content, &err_ctx, err);
         return .{ .exit_code = 1 };
     };
 
@@ -447,7 +527,7 @@ fn runRun(
     };
 
     const value = evaluator.evaluateExpression(arena, expression, null, directory, &eval_ctx) catch |err| {
-        try reportError(stderr, file_path, file_content, err, null);
+        try reportError(allocator, stderr, file_path, file_content, err, null);
         return .{ .exit_code = 1 };
     };
 
@@ -508,13 +588,13 @@ fn runRun(
     };
 
     // Call the function with the system value
-    const bound_env = evaluator.matchPattern(arena, function.param, system_value, function.env) catch |err| {
+    const bound_env = evaluator.matchPattern(arena, function.param, system_value, function.env, &eval_ctx) catch |err| {
         try stderr.print("error: failed to bind function parameter: {}\n", .{err});
         return .{ .exit_code = 1 };
     };
 
     const result = evaluator.evaluateExpression(arena, function.body, bound_env, directory, &eval_ctx) catch |err| {
-        try reportError(stderr, file_path, file_content, err, null);
+        try reportError(allocator, stderr, file_path, file_content, err, null);
         return .{ .exit_code = 1 };
     };
 
@@ -572,9 +652,6 @@ fn runDocs(
     defer {
         for (modules_list.items) |module| {
             allocator.free(module.name);
-            if (module.module_doc) |doc| {
-                allocator.free(doc);
-            }
             for (module.items) |item| {
                 allocator.free(item.name);
                 allocator.free(item.signature);
@@ -663,14 +740,13 @@ fn extractModuleInfo(
     // Extract documentation from the expression
     var doc_items = std.ArrayListUnmanaged(DocItem){};
 
-    const module_doc = try extractDocs(expression, &doc_items, allocator);
+    try extractDocs(expression, &doc_items, allocator);
 
     const module_name = try allocator.dupe(u8, std.fs.path.stem(input_path));
 
     return ModuleInfo{
         .name = module_name,
         .items = try doc_items.toOwnedSlice(allocator),
-        .module_doc = module_doc,
     };
 }
 
@@ -686,7 +762,7 @@ fn generateModuleHtml(
     var html_file = try std.fs.cwd().createFile(html_filename, .{});
     defer html_file.close();
 
-    try writeHtmlDocs(html_file, module.name, module.items, module.module_doc, all_modules);
+    try writeHtmlDocs(html_file, module.name, module.items, all_modules);
 }
 
 fn generateIndexHtml(
@@ -713,7 +789,6 @@ const DocItem = struct {
 const ModuleInfo = struct {
     name: []const u8,
     items: []const DocItem,
-    module_doc: ?[]const u8,
 };
 
 const DocKind = enum {
@@ -762,7 +837,7 @@ fn buildSignature(allocator: std.mem.Allocator, field_name: []const u8, value: *
     return signature.toOwnedSlice(allocator);
 }
 
-fn extractDocs(expr: *const evaluator.Expression, items: *std.ArrayListUnmanaged(DocItem), allocator: std.mem.Allocator) !?[]const u8 {
+fn extractDocs(expr: *const evaluator.Expression, items: *std.ArrayListUnmanaged(DocItem), allocator: std.mem.Allocator) !void {
     switch (expr.*) {
         .let => |let_expr| {
             if (let_expr.doc) |doc| {
@@ -779,16 +854,9 @@ fn extractDocs(expr: *const evaluator.Expression, items: *std.ArrayListUnmanaged
                     .kind = .variable,
                 });
             }
-            return try extractDocs(let_expr.body, items, allocator);
+            try extractDocs(let_expr.body, items, allocator);
         },
         .object => |obj| {
-            // Extract module-level documentation
-            const module_doc = if (obj.module_doc) |doc|
-                try allocator.dupe(u8, doc)
-            else
-                null;
-
-            // Extract field-level documentation
             for (obj.fields) |field| {
                 if (field.doc) |doc| {
                     const signature = try buildSignature(allocator, field.key, field.value);
@@ -800,12 +868,11 @@ fn extractDocs(expr: *const evaluator.Expression, items: *std.ArrayListUnmanaged
                     });
                 } else {
                     // Also check if the field value is documented (for nested objects)
-                    _ = try extractDocs(field.value, items, allocator);
+                    try extractDocs(field.value, items, allocator);
                 }
             }
-            return module_doc;
         },
-        else => return null,
+        else => {},
     }
 }
 
@@ -814,51 +881,20 @@ fn renderMarkdownToHtml(allocator: std.mem.Allocator, markdown: []const u8) ![]c
     errdefer result.deinit(allocator);
 
     var i: usize = 0;
-    var in_list = false;
+    var in_code_block = false;
     var line_start: usize = 0;
 
     while (i < markdown.len) {
         // Check for code blocks (```)
         if (i + 2 < markdown.len and markdown[i] == '`' and markdown[i + 1] == '`' and markdown[i + 2] == '`') {
-            // Close list if open
-            if (in_list) {
-                try result.appendSlice(allocator, "</ul>\n");
-                in_list = false;
+            if (in_code_block) {
+                try result.appendSlice(allocator, "</code></pre>\n");
+                in_code_block = false;
+            } else {
+                try result.appendSlice(allocator, "<pre><code>");
+                in_code_block = true;
             }
-
-            // Skip opening ```
             i += 3;
-            // Skip to end of line (language specifier if any)
-            while (i < markdown.len and markdown[i] != '\n') : (i += 1) {}
-            if (i < markdown.len) i += 1; // skip newline
-
-            // Collect code block content until closing ```
-            const code_start = i;
-            var code_end = i;
-            while (code_end + 2 < markdown.len) {
-                if (markdown[code_end] == '`' and markdown[code_end + 1] == '`' and markdown[code_end + 2] == '`') {
-                    break;
-                }
-                code_end += 1;
-            }
-
-            // Extract code content (trim trailing newline if present)
-            var code_content = markdown[code_start..code_end];
-            if (code_content.len > 0 and code_content[code_content.len - 1] == '\n') {
-                code_content = code_content[0 .. code_content.len - 1];
-            }
-
-            // Apply syntax highlighting
-            try result.appendSlice(allocator, "<pre><code>");
-            const highlighted = try syntax_highlight.highlightCode(allocator, code_content);
-            defer allocator.free(highlighted);
-            const html = try syntax_highlight.toHtml(allocator, highlighted);
-            defer allocator.free(html);
-            try result.appendSlice(allocator, html);
-            try result.appendSlice(allocator, "</code></pre>\n");
-
-            // Skip closing ```
-            i = code_end + 3;
             // Skip to end of line
             while (i < markdown.len and markdown[i] != '\n') : (i += 1) {}
             if (i < markdown.len) i += 1; // skip newline
@@ -866,51 +902,34 @@ fn renderMarkdownToHtml(allocator: std.mem.Allocator, markdown: []const u8) ![]c
             continue;
         }
 
+        if (in_code_block) {
+            if (markdown[i] == '<') {
+                try result.appendSlice(allocator, "&lt;");
+            } else if (markdown[i] == '>') {
+                try result.appendSlice(allocator, "&gt;");
+            } else if (markdown[i] == '&') {
+                try result.appendSlice(allocator, "&amp;");
+            } else {
+                try result.append(allocator, markdown[i]);
+            }
+            i += 1;
+            continue;
+        }
+
         // Check for line breaks
         if (markdown[i] == '\n') {
             const line = markdown[line_start..i];
-            const trimmed = std.mem.trimLeft(u8, line, " \t");
 
-            // Check for headers (##)
-            if (std.mem.startsWith(u8, trimmed, "## ")) {
-                if (in_list) {
-                    try result.appendSlice(allocator, "</ul>\n");
-                    in_list = false;
-                }
-                try result.appendSlice(allocator, "<h2>");
-                try renderInlineMarkdown(allocator, &result, trimmed[3..]);
-                try result.appendSlice(allocator, "</h2>\n");
-            } else if (std.mem.startsWith(u8, trimmed, "# ")) {
-                if (in_list) {
-                    try result.appendSlice(allocator, "</ul>\n");
-                    in_list = false;
-                }
-                try result.appendSlice(allocator, "<h1>");
-                try renderInlineMarkdown(allocator, &result, trimmed[2..]);
-                try result.appendSlice(allocator, "</h1>\n");
-            } else if (std.mem.startsWith(u8, trimmed, "- ")) {
-                // Start list if not already in one
-                if (!in_list) {
-                    try result.appendSlice(allocator, "<ul>\n");
-                    in_list = true;
-                }
+            // Check if it's a list item
+            if (std.mem.startsWith(u8, std.mem.trimLeft(u8, line, " \t"), "- ")) {
+                const trimmed = std.mem.trimLeft(u8, line, " \t");
                 try result.appendSlice(allocator, "<li>");
                 try renderInlineMarkdown(allocator, &result, trimmed[2..]);
                 try result.appendSlice(allocator, "</li>\n");
             } else if (line.len > 0) {
-                // Close list if we were in one
-                if (in_list) {
-                    try result.appendSlice(allocator, "</ul>\n");
-                    in_list = false;
-                }
                 try renderInlineMarkdown(allocator, &result, line);
                 try result.appendSlice(allocator, "<br>\n");
             } else {
-                // Empty line closes list
-                if (in_list) {
-                    try result.appendSlice(allocator, "</ul>\n");
-                    in_list = false;
-                }
                 try result.appendSlice(allocator, "\n");
             }
 
@@ -925,44 +944,14 @@ fn renderMarkdownToHtml(allocator: std.mem.Allocator, markdown: []const u8) ![]c
     // Handle remaining text
     if (line_start < markdown.len) {
         const line = markdown[line_start..];
-        const trimmed = std.mem.trimLeft(u8, line, " \t");
-
-        if (std.mem.startsWith(u8, trimmed, "## ")) {
-            if (in_list) {
-                try result.appendSlice(allocator, "</ul>\n");
-                in_list = false;
-            }
-            try result.appendSlice(allocator, "<h2>");
-            try renderInlineMarkdown(allocator, &result, trimmed[3..]);
-            try result.appendSlice(allocator, "</h2>");
-        } else if (std.mem.startsWith(u8, trimmed, "# ")) {
-            if (in_list) {
-                try result.appendSlice(allocator, "</ul>\n");
-                in_list = false;
-            }
-            try result.appendSlice(allocator, "<h1>");
-            try renderInlineMarkdown(allocator, &result, trimmed[2..]);
-            try result.appendSlice(allocator, "</h1>");
-        } else if (std.mem.startsWith(u8, trimmed, "- ")) {
-            if (!in_list) {
-                try result.appendSlice(allocator, "<ul>\n");
-                in_list = true;
-            }
+        if (std.mem.startsWith(u8, std.mem.trimLeft(u8, line, " \t"), "- ")) {
+            const trimmed = std.mem.trimLeft(u8, line, " \t");
             try result.appendSlice(allocator, "<li>");
             try renderInlineMarkdown(allocator, &result, trimmed[2..]);
             try result.appendSlice(allocator, "</li>");
         } else if (line.len > 0) {
-            if (in_list) {
-                try result.appendSlice(allocator, "</ul>\n");
-                in_list = false;
-            }
             try renderInlineMarkdown(allocator, &result, line);
         }
-    }
-
-    // Close list if still open
-    if (in_list) {
-        try result.appendSlice(allocator, "</ul>\n");
     }
 
     return result.toOwnedSlice(allocator);
@@ -971,30 +960,6 @@ fn renderMarkdownToHtml(allocator: std.mem.Allocator, markdown: []const u8) ![]c
 fn renderInlineMarkdown(allocator: std.mem.Allocator, result: *std.ArrayListUnmanaged(u8), text: []const u8) !void {
     var i: usize = 0;
     while (i < text.len) {
-        // Check for function links [functionName]
-        if (text[i] == '[') {
-            const start = i + 1;
-            i += 1;
-            while (i < text.len and text[i] != ']') : (i += 1) {}
-            if (i < text.len) {
-                const func_name = text[start..i];
-                // Only convert if it looks like an identifier (no spaces)
-                if (std.mem.indexOf(u8, func_name, " ") == null) {
-                    try result.appendSlice(allocator, "<a href=\"#");
-                    try result.appendSlice(allocator, func_name);
-                    try result.appendSlice(allocator, "\">");
-                    try result.appendSlice(allocator, func_name);
-                    try result.appendSlice(allocator, "</a>");
-                    i += 1;
-                    continue;
-                }
-            }
-            // If not a valid link, just output the bracket
-            try result.append(allocator, '[');
-            i = start;
-            continue;
-        }
-
         // Check for inline code (`)
         if (text[i] == '`') {
             const start = i + 1;
@@ -1127,26 +1092,7 @@ fn writeIndexHtmlContent(file: anytype, modules: []const ModuleInfo) !void {
     try file.writeAll("</html>\n");
 }
 
-fn runRepl(
-    allocator: std.mem.Allocator,
-    args: []const []const u8,
-    _: anytype,
-    stderr: anytype,
-) !CommandResult {
-    if (args.len > 0) {
-        try stderr.print("error: repl subcommand does not take arguments\n", .{});
-        return .{ .exit_code = 1 };
-    }
-
-    // For REPL, we need direct access to stdout/stderr, not buffered
-    var stdout_file = std.fs.File{ .handle = std.posix.STDOUT_FILENO };
-    var stderr_file = std.fs.File{ .handle = std.posix.STDERR_FILENO };
-
-    try repl.runReplDirect(allocator, &stdout_file, &stderr_file);
-    return .{ .exit_code = 0 };
-}
-
-fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocItem, module_doc: ?[]const u8, modules: []const ModuleInfo) !void {
+fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocItem, modules: []const ModuleInfo) !void {
     try file.writeAll("<!DOCTYPE html>\n");
     try file.writeAll("<html lang=\"en\">\n");
     try file.writeAll("<head>\n");
@@ -1186,38 +1132,8 @@ fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocItem,
         \\    .doc-item .doc-content code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 0.9em; }
         \\    .doc-item .doc-content pre { background: #f4f4f4; padding: 12px; border-radius: 4px; overflow-x: auto; margin: 10px 0; }
         \\    .doc-item .doc-content pre code { background: none; padding: 0; }
-        \\    /* Syntax highlighting */
-        \\    .keyword { color: #0000ff; font-weight: 500; }
-        \\    .number { color: #098658; }
-        \\    .string { color: #a31515; }
-        \\    .symbol { color: #795e26; }
-        \\    .operator { color: #000000; }
-        \\    .comment { color: #008000; font-style: italic; }
-        \\    .punctuation { color: #000000; }
-        \\    .identifier { color: #001080; }
         \\    .doc-item .doc-content strong { font-weight: 600; color: #2c3e50; }
         \\    .doc-item .doc-content li { margin-left: 20px; margin-bottom: 5px; }
-        \\    .module-doc { background: white; padding: 25px; margin-bottom: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); border-left: 4px solid #3498db; }
-        \\    .module-doc .doc-content { color: #555; line-height: 1.8; font-size: 1.05em; }
-        \\    .module-doc .doc-content h2 { color: #2c3e50; margin-top: 20px; margin-bottom: 10px; font-size: 1.4em; }
-        \\    .module-doc .doc-content code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 0.9em; }
-        \\    .module-doc .doc-content pre { background: #f4f4f4; padding: 12px; border-radius: 4px; overflow-x: auto; margin: 10px 0; }
-        \\    .module-doc .doc-content pre code { background: none; padding: 0; }
-        \\    /* Apply syntax highlighting to module docs as well */
-        \\    .module-doc .keyword { color: #0000ff; font-weight: 500; }
-        \\    .module-doc .number { color: #098658; }
-        \\    .module-doc .string { color: #a31515; }
-        \\    .module-doc .symbol { color: #795e26; }
-        \\    .module-doc .operator { color: #000000; }
-        \\    .module-doc .comment { color: #008000; font-style: italic; }
-        \\    .module-doc .punctuation { color: #000000; }
-        \\    .module-doc .identifier { color: #001080; }
-        \\    .module-doc .doc-content strong { font-weight: 600; color: #2c3e50; }
-        \\    .module-doc .doc-content li { margin-left: 20px; margin-bottom: 5px; }
-        \\    .module-doc .doc-content a { color: #3498db; text-decoration: none; font-weight: 500; }
-        \\    .module-doc .doc-content a:hover { text-decoration: underline; }
-        \\    .doc-item .doc-content a { color: #3498db; text-decoration: none; font-weight: 500; }
-        \\    .doc-item .doc-content a:hover { text-decoration: underline; }
         \\    .no-results { text-align: center; padding: 40px; color: #999; }
         \\    .search-result-label { font-size: 0.85em; color: #7f8c8d; margin-left: 5px; }
         \\    @media (max-width: 768px) { .sidebar { display: none; } .main { margin-left: 0; } .container { padding: 10px; } .doc-item { padding: 15px; } }
@@ -1294,27 +1210,6 @@ fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocItem,
     var buffer: [32768]u8 = undefined;
     var fba = std.heap.FixedBufferAllocator.init(&buffer);
     const temp_allocator = fba.allocator();
-
-    // Render module-level documentation if present
-    if (module_doc) |doc| {
-        try file.writeAll("      <div class=\"module-doc\">\n");
-        try file.writeAll("        <div class=\"doc-content\">\n");
-        try file.writeAll("          ");
-
-        // Render markdown to HTML
-        fba.reset();
-        if (renderMarkdownToHtml(temp_allocator, doc)) |html| {
-            try file.writeAll(html);
-        } else |_| {
-            // Fallback to plain text if markdown rendering fails
-            try file.writeAll(doc);
-        }
-        fba.reset();
-
-        try file.writeAll("\n");
-        try file.writeAll("        </div>\n");
-        try file.writeAll("      </div>\n");
-    }
 
     for (items) |item| {
         try file.writeAll("      <div class=\"doc-item\" id=\"");

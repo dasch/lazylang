@@ -62,7 +62,6 @@ pub const Token = struct {
     line: usize, // 1-indexed line number
     column: usize, // 1-indexed column number
     offset: usize, // byte offset in source
-    doc_comments: ?[]const u8, // Documentation comments preceding this token
 };
 
 const TokenizerError = error{
@@ -189,7 +188,6 @@ const ObjectField = struct {
 
 const ObjectLiteral = struct {
     fields: []ObjectField,
-    module_doc: ?[]const u8, // Module-level documentation
 };
 
 const ObjectExtend = struct {
@@ -307,7 +305,6 @@ pub const Tokenizer = struct {
                 .line = self.line,
                 .column = self.column,
                 .offset = self.index,
-                .doc_comments = null,
             };
         }
 
@@ -524,7 +521,6 @@ pub const Tokenizer = struct {
                     .line = start_line,
                     .column = start_column,
                     .offset = start_content - 1, // include the opening quote
-                    .doc_comments = null,
                 };
                 self.advance(); // skip closing quote
                 return token;
@@ -574,8 +570,8 @@ pub const Tokenizer = struct {
                             // Documentation comment
                             self.index += 3; // skip '///'
 
-                            // Skip exactly one space if present (common prefix)
-                            if (self.index < self.source.len and self.source[self.index] == ' ') {
+                            // Skip leading whitespace in the comment
+                            while (self.index < self.source.len and (self.source[self.index] == ' ' or self.source[self.index] == '\t')) {
                                 self.index += 1;
                             }
 
@@ -617,7 +613,6 @@ pub const Tokenizer = struct {
             .line = start_line,
             .column = start_column,
             .offset = start,
-            .doc_comments = null,
         };
     }
 
@@ -668,58 +663,6 @@ pub const Tokenizer = struct {
     fn clearDocComments(self: *Tokenizer) void {
         self.pending_doc_comments.clearRetainingCapacity();
     }
-
-    fn consumeModuleLevelDocComments(self: *Tokenizer) ?[]const u8 {
-        if (self.pending_doc_comments.items.len == 0) {
-            return null;
-        }
-
-        // Find the separator marker (---)
-        var split_at: ?usize = null;
-        for (self.pending_doc_comments.items, 0..) |comment, i| {
-            if (std.mem.eql(u8, comment, "---")) {
-                split_at = i;
-                break;
-            }
-        }
-
-        // If no separator found, consume all comments as module docs
-        const end_index = split_at orelse self.pending_doc_comments.items.len;
-        if (end_index == 0) {
-            return null;
-        }
-
-        // Join comments up to the split point
-        var total_len: usize = 0;
-        for (self.pending_doc_comments.items[0..end_index]) |comment| {
-            const separator_len: usize = if (total_len > 0) 1 else 0;
-            total_len = total_len + comment.len + separator_len;
-        }
-
-        if (total_len == 0) {
-            return null;
-        }
-
-        var result = self.arena.alloc(u8, total_len) catch return null;
-        var offset: usize = 0;
-        for (self.pending_doc_comments.items[0..end_index], 0..) |comment, i| {
-            if (i > 0) {
-                result[offset] = '\n';
-                offset += 1;
-            }
-            @memcpy(result[offset .. offset + comment.len], comment);
-            offset += comment.len;
-        }
-
-        // Remove consumed comments from the list (including the --- separator if present)
-        const remove_count = if (split_at) |idx| idx + 1 else end_index;
-        for (0..self.pending_doc_comments.items.len - remove_count) |i| {
-            self.pending_doc_comments.items[i] = self.pending_doc_comments.items[i + remove_count];
-        }
-        self.pending_doc_comments.items.len -= remove_count;
-
-        return result;
-    }
 };
 
 pub const Parser = struct {
@@ -765,13 +708,11 @@ pub const Parser = struct {
             self.recordError();
             return error.ExpectedExpression;
         }
-
         const expr = try self.parseLambda();
         if (self.current.kind != .eof) {
             self.recordError();
             return error.UnexpectedToken;
         }
-
         return expr;
     }
 
@@ -1443,18 +1384,13 @@ pub const Parser = struct {
     }
 
     fn parseObject(self: *Parser) ParseError!*Expression {
-        // Consume module-level doc comments (up to --- separator)
-        // Due to parser lookahead, the tokenizer has accumulated both module docs
-        // and first field docs. We split at the --- separator.
-        const module_doc = self.tokenizer.consumeModuleLevelDocComments();
-
         try self.expect(.l_brace);
 
         // Empty object
         if (self.current.kind == .r_brace) {
             try self.advance();
             const node = try self.allocateExpression();
-            node.* = .{ .object = .{ .fields = &[_]ObjectField{}, .module_doc = module_doc } };
+            node.* = .{ .object = .{ .fields = &[_]ObjectField{} } };
             return node;
         }
 
@@ -1479,7 +1415,12 @@ pub const Parser = struct {
             return error.UnexpectedToken;
         }
 
+        // Consume doc comments that were accumulated during lookahead tokenization
+        // These will be for the first field (if there is one)
+        const first_field_doc = self.tokenizer.consumeDocComments();
+
         var fields = std.ArrayListUnmanaged(ObjectField){};
+        var is_first_field = true;
 
         while (self.current.kind != .r_brace) {
             if (self.current.kind != .identifier) {
@@ -1488,8 +1429,12 @@ pub const Parser = struct {
                 return error.UnexpectedToken;
             }
 
-            // Consume doc comments for this field
-            const doc = self.tokenizer.consumeDocComments();
+            // Use the doc comments we saved for the first field,
+            // or consume fresh ones for subsequent fields
+            const doc = if (is_first_field) blk: {
+                is_first_field = false;
+                break :blk first_field_doc;
+            } else self.tokenizer.consumeDocComments();
 
             const key = self.current.lexeme;
             try self.advance();
@@ -1534,7 +1479,7 @@ pub const Parser = struct {
 
         const slice = try fields.toOwnedSlice(self.arena);
         const node = try self.allocateExpression();
-        node.* = .{ .object = .{ .fields = slice, .module_doc = module_doc } };
+        node.* = .{ .object = .{ .fields = slice } };
         return node;
     }
 
@@ -1991,7 +1936,6 @@ fn valuesEqual(a: Value, b: Value) bool {
         },
         .function => false, // Functions are not comparable
         .native_fn => false, // Native functions are not comparable
-        .thunk => false, // Thunks should be forced before comparison
         .array => |av| switch (b) {
             .array => |bv| blk: {
                 if (av.elements.len != bv.elements.len) break :blk false;
@@ -2030,6 +1974,7 @@ fn valuesEqual(a: Value, b: Value) bool {
             },
             else => false,
         },
+        .thunk => false, // Thunks are not directly comparable
     };
 }
 
@@ -2043,8 +1988,8 @@ pub const EvalError = ParseError || std.mem.Allocator.Error || std.process.GetEn
     WrongNumberOfArguments,
     InvalidArgument,
     UnknownField,
-    UserCrash,
     CyclicReference,
+    UserCrash,
 };
 
 pub const EvalContext = struct {
@@ -2138,9 +2083,15 @@ pub fn matchPattern(
     pattern: *Pattern,
     value: Value,
     base_env: ?*Environment,
+    ctx: *const EvalContext,
 ) EvalError!?*Environment {
     return switch (pattern.*) {
         .identifier => |name| blk: {
+            // Register this identifier for "did you mean" suggestions
+            if (ctx.error_ctx) |err_ctx| {
+                err_ctx.registerIdentifier(name) catch {};
+            }
+
             const new_env = try arena.create(Environment);
             new_env.* = .{
                 .parent = base_env,
@@ -2200,7 +2151,7 @@ pub fn matchPattern(
 
             var current_env = base_env;
             for (tuple_pattern.elements, 0..) |elem_pattern, i| {
-                current_env = try matchPattern(arena, elem_pattern, tuple_value.elements[i], current_env);
+                current_env = try matchPattern(arena, elem_pattern, tuple_value.elements[i], current_env, ctx);
             }
             break :blk current_env;
         },
@@ -2226,11 +2177,16 @@ pub fn matchPattern(
 
             // Match fixed elements
             for (array_pattern.elements, 0..) |elem_pattern, i| {
-                current_env = try matchPattern(arena, elem_pattern, array_value.elements[i], current_env);
+                current_env = try matchPattern(arena, elem_pattern, array_value.elements[i], current_env, ctx);
             }
 
             // If there's a rest pattern, bind remaining elements to it
             if (array_pattern.rest) |rest_name| {
+                // Register this identifier for "did you mean" suggestions
+                if (ctx.error_ctx) |err_ctx| {
+                    err_ctx.registerIdentifier(rest_name) catch {};
+                }
+
                 const remaining_count = array_value.elements.len - array_pattern.elements.len;
                 const remaining_elements = try arena.alloc(Value, remaining_count);
                 for (0..remaining_count) |i| {
@@ -2260,9 +2216,8 @@ pub fn matchPattern(
                 var found = false;
                 for (object_value.fields) |value_field| {
                     if (std.mem.eql(u8, value_field.key, pattern_field.key)) {
-                        // Force the field value if it's a thunk, then match the pattern
-                        const forced_value = try force(arena, value_field.value);
-                        current_env = try matchPattern(arena, pattern_field.pattern, forced_value, current_env);
+                        // Match the field's pattern against the field's value
+                        current_env = try matchPattern(arena, pattern_field.pattern, value_field.value, current_env, ctx);
                         found = true;
                         break;
                     }
@@ -2322,9 +2277,7 @@ fn mergeObjects(arena: std.mem.Allocator, base: ObjectValue, extension: ObjectVa
         }
     }
 
-    // Prefer extension's module_doc if it exists, otherwise use base's
-    const module_doc = extension.module_doc orelse base.module_doc;
-    return Value{ .object = .{ .fields = try result_fields.toOwnedSlice(arena), .module_doc = module_doc } };
+    return Value{ .object = .{ .fields = try result_fields.toOwnedSlice(arena), .module_doc = null } };
 }
 
 /// Force evaluation of a thunk if needed
@@ -2359,7 +2312,13 @@ pub fn evaluateExpression(
         .null_literal => .null_value,
         .symbol => |value| .{ .symbol = try arena.dupe(u8, value) },
         .identifier => |name| blk: {
-            const resolved = lookup(env, name) orelse return error.UnknownIdentifier;
+            const resolved = lookup(env, name) orelse {
+                if (ctx.error_ctx) |err_ctx| {
+                    const name_copy = ctx.allocator.dupe(u8, name) catch name;
+                    err_ctx.setErrorData(.{ .unknown_identifier = .{ .name = name_copy } });
+                }
+                return error.UnknownIdentifier;
+            };
             break :blk resolved;
         },
         .string_literal => |value| .{ .string = try arena.dupe(u8, value) },
@@ -2394,6 +2353,12 @@ pub fn evaluateExpression(
 
             if (is_recursive) {
                 const identifier = let_expr.pattern.identifier;
+
+                // Register this identifier for "did you mean" suggestions
+                if (ctx.error_ctx) |err_ctx| {
+                    err_ctx.registerIdentifier(identifier) catch {};
+                }
+
                 // Create environment entry with placeholder value
                 const recursive_env = try arena.create(Environment);
                 recursive_env.* = .{
@@ -2413,7 +2378,7 @@ pub fn evaluateExpression(
             } else {
                 // Non-recursive case: evaluate value first, then pattern match
                 const value = try evaluateExpression(arena, let_expr.value, env, current_dir, ctx);
-                const new_env = try matchPattern(arena, let_expr.pattern, value, env);
+                const new_env = try matchPattern(arena, let_expr.pattern, value, env, ctx);
                 break :blk try evaluateExpression(arena, let_expr.body, new_env, current_dir, ctx);
             }
         },
@@ -2438,11 +2403,41 @@ pub fn evaluateExpression(
                 .add, .subtract, .multiply => blk2: {
                     const left_int = switch (left_value) {
                         .integer => |v| v,
-                        else => return error.TypeMismatch,
+                        else => {
+                            if (ctx.error_ctx) |err_ctx| {
+                                const op_name = switch (binary.op) {
+                                    .add => "addition",
+                                    .subtract => "subtraction",
+                                    .multiply => "multiplication",
+                                    else => unreachable,
+                                };
+                                err_ctx.setErrorData(.{ .type_mismatch = .{
+                                    .expected = "integer",
+                                    .found = getValueTypeName(left_value),
+                                    .operation = op_name,
+                                } });
+                            }
+                            return error.TypeMismatch;
+                        },
                     };
                     const right_int = switch (right_value) {
                         .integer => |v| v,
-                        else => return error.TypeMismatch,
+                        else => {
+                            if (ctx.error_ctx) |err_ctx| {
+                                const op_name = switch (binary.op) {
+                                    .add => "addition",
+                                    .subtract => "subtraction",
+                                    .multiply => "multiplication",
+                                    else => unreachable,
+                                };
+                                err_ctx.setErrorData(.{ .type_mismatch = .{
+                                    .expected = "integer",
+                                    .found = getValueTypeName(right_value),
+                                    .operation = op_name,
+                                } });
+                            }
+                            return error.TypeMismatch;
+                        },
                     };
 
                     const int_result = switch (binary.op) {
@@ -2456,22 +2451,58 @@ pub fn evaluateExpression(
                 .logical_and => blk2: {
                     const left_bool = switch (left_value) {
                         .boolean => |v| v,
-                        else => return error.TypeMismatch,
+                        else => {
+                            if (ctx.error_ctx) |err_ctx| {
+                                err_ctx.setErrorData(.{ .type_mismatch = .{
+                                    .expected = "boolean",
+                                    .found = getValueTypeName(left_value),
+                                    .operation = "logical AND (&&)",
+                                } });
+                            }
+                            return error.TypeMismatch;
+                        },
                     };
                     const right_bool = switch (right_value) {
                         .boolean => |v| v,
-                        else => return error.TypeMismatch,
+                        else => {
+                            if (ctx.error_ctx) |err_ctx| {
+                                err_ctx.setErrorData(.{ .type_mismatch = .{
+                                    .expected = "boolean",
+                                    .found = getValueTypeName(right_value),
+                                    .operation = "logical AND (&&)",
+                                } });
+                            }
+                            return error.TypeMismatch;
+                        },
                     };
                     break :blk2 Value{ .boolean = left_bool and right_bool };
                 },
                 .logical_or => blk2: {
                     const left_bool = switch (left_value) {
                         .boolean => |v| v,
-                        else => return error.TypeMismatch,
+                        else => {
+                            if (ctx.error_ctx) |err_ctx| {
+                                err_ctx.setErrorData(.{ .type_mismatch = .{
+                                    .expected = "boolean",
+                                    .found = getValueTypeName(left_value),
+                                    .operation = "logical OR (||)",
+                                } });
+                            }
+                            return error.TypeMismatch;
+                        },
                     };
                     const right_bool = switch (right_value) {
                         .boolean => |v| v,
-                        else => return error.TypeMismatch,
+                        else => {
+                            if (ctx.error_ctx) |err_ctx| {
+                                err_ctx.setErrorData(.{ .type_mismatch = .{
+                                    .expected = "boolean",
+                                    .found = getValueTypeName(right_value),
+                                    .operation = "logical OR (||)",
+                                } });
+                            }
+                            return error.TypeMismatch;
+                        },
                     };
                     break :blk2 Value{ .boolean = left_bool or right_bool };
                 },
@@ -2486,11 +2517,43 @@ pub fn evaluateExpression(
                 .less_than, .greater_than, .less_or_equal, .greater_or_equal => blk2: {
                     const left_int = switch (left_value) {
                         .integer => |v| v,
-                        else => return error.TypeMismatch,
+                        else => {
+                            if (ctx.error_ctx) |err_ctx| {
+                                const op_name = switch (binary.op) {
+                                    .less_than => "comparison (<)",
+                                    .greater_than => "comparison (>)",
+                                    .less_or_equal => "comparison (<=)",
+                                    .greater_or_equal => "comparison (>=)",
+                                    else => unreachable,
+                                };
+                                err_ctx.setErrorData(.{ .type_mismatch = .{
+                                    .expected = "integer",
+                                    .found = getValueTypeName(left_value),
+                                    .operation = op_name,
+                                } });
+                            }
+                            return error.TypeMismatch;
+                        },
                     };
                     const right_int = switch (right_value) {
                         .integer => |v| v,
-                        else => return error.TypeMismatch,
+                        else => {
+                            if (ctx.error_ctx) |err_ctx| {
+                                const op_name = switch (binary.op) {
+                                    .less_than => "comparison (<)",
+                                    .greater_than => "comparison (>)",
+                                    .less_or_equal => "comparison (<=)",
+                                    .greater_or_equal => "comparison (>=)",
+                                    else => unreachable,
+                                };
+                                err_ctx.setErrorData(.{ .type_mismatch = .{
+                                    .expected = "integer",
+                                    .found = getValueTypeName(right_value),
+                                    .operation = op_name,
+                                } });
+                            }
+                            return error.TypeMismatch;
+                        },
                     };
 
                     const bool_result = switch (binary.op) {
@@ -2507,7 +2570,7 @@ pub fn evaluateExpression(
                     // The left side is the value, the right side is the function
                     switch (right_value) {
                         .function => |function_ptr| {
-                            const bound_env = try matchPattern(arena, function_ptr.param, left_value, function_ptr.env);
+                            const bound_env = try matchPattern(arena, function_ptr.param, left_value, function_ptr.env, ctx);
                             break :blk2 try evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx);
                         },
                         .native_fn => |native_fn| {
@@ -2555,7 +2618,7 @@ pub fn evaluateExpression(
             // Try each pattern branch
             for (when_matches.branches) |branch| {
                 // Try to match the pattern
-                const match_env = matchPattern(arena, branch.pattern, value, env) catch |err| {
+                const match_env = matchPattern(arena, branch.pattern, value, env, ctx) catch |err| {
                     // If pattern doesn't match, try next branch
                     if (err == error.TypeMismatch) continue;
                     return err;
@@ -2579,7 +2642,7 @@ pub fn evaluateExpression(
 
             switch (function_value) {
                 .function => |function_ptr| {
-                    const bound_env = try matchPattern(arena, function_ptr.param, argument_value, function_ptr.env);
+                    const bound_env = try matchPattern(arena, function_ptr.param, argument_value, function_ptr.env, ctx);
                     break :blk try evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx);
                 },
                 .native_fn => |native_fn| {
@@ -2627,18 +2690,9 @@ pub fn evaluateExpression(
             const fields = try arena.alloc(ObjectFieldValue, object.fields.len);
             for (object.fields, 0..) |field, i| {
                 const key_copy = try arena.dupe(u8, field.key);
-                // Wrap field value in a thunk for lazy evaluation
-                const thunk = try arena.create(Thunk);
-                thunk.* = .{
-                    .expr = field.value,
-                    .env = env,
-                    .current_dir = current_dir,
-                    .ctx = ctx,
-                    .state = .unevaluated,
-                };
-                fields[i] = .{ .key = key_copy, .value = .{ .thunk = thunk } };
+                fields[i] = .{ .key = key_copy, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx) };
             }
-            break :blk Value{ .object = .{ .fields = fields, .module_doc = object.module_doc } };
+            break :blk Value{ .object = .{ .fields = fields, .module_doc = null } };
         },
         .object_extend => |extend| blk: {
             // Evaluate the base expression
@@ -2654,7 +2708,7 @@ pub fn evaluateExpression(
                         fields[i] = .{ .key = key_copy, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx) };
                     }
                     const obj_arg = Value{ .object = .{ .fields = fields, .module_doc = null } };
-                    const bound_env = try matchPattern(arena, function_ptr.param, obj_arg, function_ptr.env);
+                    const bound_env = try matchPattern(arena, function_ptr.param, obj_arg, function_ptr.env, ctx);
                     break :blk try evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx);
                 },
                 .native_fn => |native_fn| {
@@ -2679,9 +2733,7 @@ pub fn evaluateExpression(
                             // Patch: merge with existing field if it exists and is an object
                             const existing_value = findObjectField(base_obj, field.key);
                             if (existing_value) |existing| {
-                                // Force the existing value if it's a thunk
-                                const forced_existing = try force(arena, existing);
-                                const existing_obj = switch (forced_existing) {
+                                const existing_obj = switch (existing) {
                                     .object => |o| o,
                                     else => return error.TypeMismatch,
                                 };
@@ -2721,7 +2773,7 @@ pub fn evaluateExpression(
         .import_expr => |import_expr| try importModule(arena, import_expr.path, current_dir, ctx),
         .field_access => |field_access| blk: {
             const object_value = try evaluateExpression(arena, field_access.object, env, current_dir, ctx);
-            break :blk try accessField(arena, object_value, field_access.field);
+            break :blk try accessField(object_value, field_access.field, ctx);
         },
         .field_accessor => |field_accessor| blk: {
             // Create a function that accesses the specified fields
@@ -2762,7 +2814,7 @@ pub fn evaluateExpression(
             // Create new object with only the specified fields
             const new_fields = try arena.alloc(ObjectFieldValue, field_projection.fields.len);
             for (field_projection.fields, 0..) |field_name, i| {
-                const field_value = try accessField(arena, object_value, field_name);
+                const field_value = try accessField(object_value, field_name, ctx);
                 new_fields[i] = .{
                     .key = try arena.dupe(u8, field_name),
                     .value = field_value,
@@ -2774,7 +2826,7 @@ pub fn evaluateExpression(
     };
 }
 
-fn accessField(arena: std.mem.Allocator, object_value: Value, field_name: []const u8) EvalError!Value {
+fn accessField(object_value: Value, field_name: []const u8, ctx: *const EvalContext) EvalError!Value {
     const object = switch (object_value) {
         .object => |obj| obj,
         else => return error.TypeMismatch,
@@ -2783,12 +2835,36 @@ fn accessField(arena: std.mem.Allocator, object_value: Value, field_name: []cons
     // Look for the field
     for (object.fields) |field| {
         if (std.mem.eql(u8, field.key, field_name)) {
-            // Force the thunk if the value is a thunk
-            return try force(arena, field.value);
+            return field.value;
         }
     }
 
-    // Field not found - provide "did you mean" suggestions (TODO: implement)
+    // Field not found - store context for better error message
+    if (ctx.error_ctx) |err_ctx| {
+        // Copy the field name so it survives
+        const field_name_copy = try ctx.allocator.dupe(u8, field_name);
+
+        // Collect available field names (up to 5 for readability)
+        var available = std.ArrayList([]const u8){};
+        defer available.deinit(ctx.allocator);
+
+        for (object.fields) |field| {
+            if (available.items.len < 5) {
+                // Copy each field name so it survives
+                const key_copy = try ctx.allocator.dupe(u8, field.key);
+                try available.append(ctx.allocator, key_copy);
+            }
+        }
+
+        const fields_copy = try ctx.allocator.alloc([]const u8, available.items.len);
+        @memcpy(fields_copy, available.items);
+
+        err_ctx.setErrorData(.{ .unknown_field = .{
+            .field_name = field_name_copy,
+            .available_fields = fields_copy,
+        } });
+    }
+
     return error.UnknownField;
 }
 
@@ -2826,7 +2902,7 @@ fn evaluateArrayComprehension(
     switch (iterable_value) {
         .array => |arr| {
             for (arr.elements) |element| {
-                const new_env = try matchPattern(arena, clause.pattern, element, env);
+                const new_env = try matchPattern(arena, clause.pattern, element, env, ctx);
                 try evaluateArrayComprehension(arena, result, comp, clause_index + 1, new_env, current_dir, ctx);
             }
         },
@@ -2878,7 +2954,7 @@ fn evaluateObjectComprehension(
     switch (iterable_value) {
         .array => |arr| {
             for (arr.elements) |element| {
-                const new_env = try matchPattern(arena, clause.pattern, element, env);
+                const new_env = try matchPattern(arena, clause.pattern, element, env, ctx);
                 try evaluateObjectComprehension(arena, result, comp, clause_index + 1, new_env, current_dir, ctx);
             }
         },
@@ -2887,11 +2963,10 @@ fn evaluateObjectComprehension(
                 // Create a tuple (key, value) for object iteration
                 const tuple_elements = try arena.alloc(Value, 2);
                 tuple_elements[0] = .{ .string = try arena.dupe(u8, field.key) };
-                // Force the thunk if the value is a thunk
-                tuple_elements[1] = try force(arena, field.value);
+                tuple_elements[1] = field.value;
                 const tuple_value = Value{ .tuple = .{ .elements = tuple_elements } };
 
-                const new_env = try matchPattern(arena, clause.pattern, tuple_value, env);
+                const new_env = try matchPattern(arena, clause.pattern, tuple_value, env, ctx);
                 try evaluateObjectComprehension(arena, result, comp, clause_index + 1, new_env, current_dir, ctx);
             }
         },
@@ -2960,9 +3035,6 @@ pub fn createBuiltinEnvironment(arena: std.mem.Allocator) !?*Environment {
     env = try addBuiltin(arena, env, "__object_values", builtins.objectValues);
     env = try addBuiltin(arena, env, "__object_get", builtins.objectGet);
 
-    // Error handling builtins
-    env = try addBuiltin(arena, env, "crash", builtins.crash);
-
     // YAML builtins
     env = try addBuiltin(arena, env, "__yaml_parse", builtins.yamlParse);
     env = try addBuiltin(arena, env, "__yaml_encode", builtins.yamlEncode);
@@ -2991,6 +3063,22 @@ fn lookup(env: ?*Environment, name: []const u8) ?Value {
     return null;
 }
 
+fn getValueTypeName(value: Value) []const u8 {
+    return switch (value) {
+        .integer => "integer",
+        .boolean => "boolean",
+        .null_value => "null",
+        .symbol => "symbol",
+        .string => "string",
+        .array => "array",
+        .tuple => "tuple",
+        .object => "object",
+        .function => "function",
+        .native_fn => "native function",
+        .thunk => "thunk",
+    };
+}
+
 fn valueToString(allocator: std.mem.Allocator, value: Value) ![]u8 {
     return switch (value) {
         .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
@@ -3003,10 +3091,6 @@ fn valueToString(allocator: std.mem.Allocator, value: Value) ![]u8 {
 }
 
 pub fn formatValue(allocator: std.mem.Allocator, value: Value) ![]u8 {
-    return formatValueWithArena(allocator, allocator, value);
-}
-
-fn formatValueWithArena(allocator: std.mem.Allocator, arena: std.mem.Allocator, value: Value) error{OutOfMemory}![]u8 {
     return switch (value) {
         .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
         .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
@@ -3014,11 +3098,6 @@ fn formatValueWithArena(allocator: std.mem.Allocator, arena: std.mem.Allocator, 
         .symbol => |s| try std.fmt.allocPrint(allocator, "{s}", .{s}),
         .function => try std.fmt.allocPrint(allocator, "<function>", .{}),
         .native_fn => try std.fmt.allocPrint(allocator, "<native function>", .{}),
-        .thunk => blk: {
-            // Force the thunk and format the result
-            const forced = force(arena, value) catch break :blk try std.fmt.allocPrint(allocator, "<thunk error>", .{});
-            break :blk try formatValueWithArena(allocator, arena, forced);
-        },
         .array => |arr| blk: {
             var builder = std.ArrayList(u8){};
             errdefer builder.deinit(allocator);
@@ -3026,7 +3105,7 @@ fn formatValueWithArena(allocator: std.mem.Allocator, arena: std.mem.Allocator, 
             try builder.append(allocator, '[');
             for (arr.elements, 0..) |element, i| {
                 if (i != 0) try builder.appendSlice(allocator, ", ");
-                const formatted = try formatValueWithArena(allocator, arena, element);
+                const formatted = try formatValue(allocator, element);
                 defer allocator.free(formatted);
                 try builder.appendSlice(allocator, formatted);
             }
@@ -3041,7 +3120,7 @@ fn formatValueWithArena(allocator: std.mem.Allocator, arena: std.mem.Allocator, 
             try builder.append(allocator, '(');
             for (tup.elements, 0..) |element, i| {
                 if (i != 0) try builder.appendSlice(allocator, ", ");
-                const formatted = try formatValueWithArena(allocator, arena, element);
+                const formatted = try formatValue(allocator, element);
                 defer allocator.free(formatted);
                 try builder.appendSlice(allocator, formatted);
             }
@@ -3061,7 +3140,7 @@ fn formatValueWithArena(allocator: std.mem.Allocator, arena: std.mem.Allocator, 
                     if (i != 0) try builder.appendSlice(allocator, ", ");
                     try builder.appendSlice(allocator, field.key);
                     try builder.appendSlice(allocator, ": ");
-                    const formatted = try formatValueWithArena(allocator, arena, field.value);
+                    const formatted = try formatValue(allocator, field.value);
                     defer allocator.free(formatted);
                     try builder.appendSlice(allocator, formatted);
                 }
@@ -3071,6 +3150,7 @@ fn formatValueWithArena(allocator: std.mem.Allocator, arena: std.mem.Allocator, 
             break :blk try builder.toOwnedSlice(allocator);
         },
         .string => |str| try std.fmt.allocPrint(allocator, "\"{s}\"", .{str}),
+        .thunk => try std.fmt.allocPrint(allocator, "<thunk>", .{}),
     };
 }
 
@@ -3088,6 +3168,7 @@ pub const EvalOutput = struct {
 pub const EvalResult = struct {
     output: ?EvalOutput,
     error_ctx: error_context.ErrorContext,
+    error_type: ?EvalError = null,  // Preserve the error type for better error messages
 
     pub fn deinit(self: *EvalResult) void {
         if (self.output) |*out| {
@@ -3117,23 +3198,25 @@ fn evalSourceWithContext(
 
     var parser = try Parser.init(arena.allocator(), source);
     parser.setErrorContext(&err_ctx);
-    const expression = parser.parse() catch {
+    const expression = parser.parse() catch |err| {
         arena.deinit();
         return EvalResult{
             .output = null,
             .error_ctx = err_ctx,
+            .error_type = err,
         };
     };
 
     const builtin_env = try createBuiltinEnvironment(arena.allocator());
-    const value = evaluateExpression(arena.allocator(), expression, builtin_env, current_dir, &context) catch {
+    const value = evaluateExpression(arena.allocator(), expression, builtin_env, current_dir, &context) catch |err| {
         arena.deinit();
         return EvalResult{
             .output = null,
             .error_ctx = err_ctx,
+            .error_type = err,
         };
     };
-    const formatted = try formatValueWithArena(allocator, arena.allocator(), value);
+    const formatted = try formatValue(allocator, value);
 
     arena.deinit();
     return EvalResult{
@@ -3156,7 +3239,11 @@ fn evalSource(
     if (result.output) |output| {
         return output;
     } else {
-        // This shouldn't happen since we catch errors in evalSourceWithContext
+        // Return the actual error type that occurred
+        if (result.error_type) |err| {
+            return err;
+        }
+        // Fallback if no error type was preserved (shouldn't happen)
         return error.UnknownIdentifier;
     }
 }
