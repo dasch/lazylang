@@ -85,19 +85,25 @@ pub fn runReplDirect(
 
     while (true) {
         // Show prompt
+        const indent_level = if (input_buffer.items.len > 0)
+            calculateIndentation(input_buffer.items)
+        else
+            0;
+
         if (input_buffer.items.len == 0) {
             try colored(.green, "> ", &stdout);
         } else {
             try colored(.gray, ".. ", &stdout);
         }
 
-        // Read a line with arrow key support
+        // Read a line with arrow key support (and auto-indentation in multi-line mode)
         const line = try readLineWithHistory(
             allocator,
             &stdin_file,
             &stdout,
             &history,
             &history_index,
+            indent_level * 2,
         );
         defer allocator.free(line);
 
@@ -265,6 +271,40 @@ pub fn runReplDirect(
     try colored(.cyan, "Goodbye!\n", &stdout);
 }
 
+fn calculateIndentation(input: []const u8) usize {
+    // Calculate indentation level based on unclosed brackets/braces
+    var count: i32 = 0;
+    var in_string = false;
+    var escape_next = false;
+
+    for (input) |c| {
+        if (escape_next) {
+            escape_next = false;
+            continue;
+        }
+
+        if (c == '\\') {
+            escape_next = true;
+            continue;
+        }
+
+        if (c == '"') {
+            in_string = !in_string;
+            continue;
+        }
+
+        if (in_string) continue;
+
+        switch (c) {
+            '{', '[', '(' => count += 1,
+            '}', ']', ')' => count -= 1,
+            else => {},
+        }
+    }
+
+    return if (count > 0) @intCast(count) else 0;
+}
+
 fn isIncompleteInput(input: []const u8) bool {
     // Very basic heuristic: check for unbalanced brackets/braces
     var brace_count: i32 = 0;
@@ -383,6 +423,7 @@ fn readLineWithHistory(
     stdout: *const PrintContext,
     history: *std.ArrayList([]const u8),
     history_index: *?usize,
+    indent_spaces: usize,
 ) ![]const u8 {
     var line_buffer = std.ArrayList(u8){};
     // DON'T defer deinit - we're returning a slice from it
@@ -390,6 +431,15 @@ fn readLineWithHistory(
 
     var cursor_pos: usize = 0;
     var eof_seen = false;
+
+    // Pre-fill with indentation spaces
+    if (indent_spaces > 0) {
+        for (0..indent_spaces) |_| {
+            try line_buffer.append(allocator, ' ');
+            try stdout.print(" ", .{});
+        }
+        cursor_pos = indent_spaces;
+    }
 
     while (true) {
         var byte: [1]u8 = undefined;
