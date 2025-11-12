@@ -1741,7 +1741,7 @@ pub const EvalError = ParseError || std.mem.Allocator.Error || std.process.GetEn
     InvalidArgument,
 };
 
-const EvalContext = struct {
+pub const EvalContext = struct {
     allocator: std.mem.Allocator,
     lazy_paths: [][]const u8,
     error_ctx: ?*error_context.ErrorContext = null,
