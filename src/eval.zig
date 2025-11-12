@@ -3367,6 +3367,38 @@ pub fn createBuiltinEnvironment(arena: std.mem.Allocator) !?*Environment {
     return env;
 }
 
+/// Create an environment with both builtin functions and standard library modules
+pub fn createStdlibEnvironment(
+    arena: std.mem.Allocator,
+    current_dir: ?[]const u8,
+    ctx: *const EvalContext,
+) EvalError!?*Environment {
+    // Start with builtin environment
+    var env = try createBuiltinEnvironment(arena);
+
+    // Import standard library modules (if available)
+    const stdlib_modules = [_][]const u8{ "Array", "Float", "Math", "Object", "String" };
+    for (stdlib_modules) |module_name| {
+        // Try to import the module, but continue if it's not found
+        const module_value = importModule(arena, module_name, current_dir, ctx) catch |err| {
+            if (err == error.ModuleNotFound) {
+                // Module not found, skip it
+                continue;
+            }
+            return err;
+        };
+        const new_env = try arena.create(Environment);
+        new_env.* = .{
+            .parent = env,
+            .name = module_name,
+            .value = module_value,
+        };
+        env = new_env;
+    }
+
+    return env;
+}
+
 fn addBuiltin(arena: std.mem.Allocator, parent: ?*Environment, name: []const u8, function: NativeFn) !?*Environment {
     const new_env = try arena.create(Environment);
     new_env.* = .{
@@ -4075,8 +4107,8 @@ fn evalSourceWithFormat(
         };
     };
 
-    const builtin_env = try createBuiltinEnvironment(arena.allocator());
-    const value = evaluateExpression(arena.allocator(), expression, builtin_env, current_dir, &context) catch |err| {
+    const env = try createStdlibEnvironment(arena.allocator(), current_dir, &context);
+    const value = evaluateExpression(arena.allocator(), expression, env, current_dir, &context) catch |err| {
         arena.deinit();
         return EvalResult{
             .output = null,
@@ -4253,7 +4285,7 @@ pub fn evalFileValue(
     var parser = try Parser.init(arena, contents);
     const expression = try parser.parse();
 
-    const builtin_env = try createBuiltinEnvironment(arena);
     const directory = std.fs.path.dirname(path);
-    return try evaluateExpression(arena, expression, builtin_env, directory, &context);
+    const env = try createStdlibEnvironment(arena, directory, &context);
+    return try evaluateExpression(arena, expression, env, directory, &context);
 }

@@ -1,0 +1,30 @@
+/// Example demonstrating automatic import of standard library modules
+///
+/// Array, Float, Math, Object, and String are automatically available
+/// without needing explicit imports!
+
+{
+  // Use Array module without importing
+  doubled: Array.map (x -> x * 2) [1, 2, 3, 4, 5]
+  sum: Array.fold (acc -> x -> acc + x) 0 [2, 4, 6, 8, 10]
+
+  // Use String module without importing
+  uppercased: String.toUpperCase "hello world"
+  words: String.split " " "hello world"
+
+  // Use Math module without importing
+  maxValue: Math.max 42 100
+  minValue: Math.min 42 100
+
+  // Use Object module without importing
+  keys: Object.keys { name: "Alice", age: 30, city: "NYC" }
+
+  // Use Float module without importing
+  rounded: Float.round 3.14159
+
+  // You can still shadow these if needed
+  customArray: (
+    Array = "shadowed!"
+    Array
+  )
+}
