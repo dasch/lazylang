@@ -2,8 +2,9 @@
 ///
 /// This module includes functions for common string operations such as:
 /// - **Querying**: [length], [isEmpty], [startsWith], [endsWith], [contains]
-/// - **Transforming**: [toUpperCase], [toLowerCase], [trim], [chars]
-/// - **Combining**: [concat], [split]
+/// - **Transforming**: [toUpperCase], [toLowerCase], [trim], [chars], [slice], [repeat], [replace]
+/// - **Combining**: [concat], [append], [join], [split]
+/// - **Slicing**: [left], [right], [dropLeft], [dropRight]
 ///
 /// ## Examples
 ///
@@ -32,7 +33,7 @@
   /// ```
   length: str -> __string_length str
 
-  /// Concatenates two strings together.
+  /// Appends one string to another.
   ///
   /// **Parameters:**
   /// - `prefix`: String to prepend
@@ -40,9 +41,23 @@
   ///
   /// **Example:**
   /// ```
-  /// String.concat "Hello, " "world!"  // Returns "Hello, world!"
+  /// String.append "Hello, " "world!"  // Returns "Hello, world!"
   /// ```
-  concat: prefix -> str -> __string_concat (prefix, str)
+  append: prefix -> str -> __string_concat (prefix, str)
+
+  /// Concatenates an array of strings into a single string.
+  /// Returns an empty string if the array is empty.
+  ///
+  /// **Parameter:**
+  /// - `strs`: Array of strings to concatenate
+  ///
+  /// **Example:**
+  /// ```
+  /// String.concat ["hello", " ", "world"]  // Returns "hello world"
+  /// String.concat ["a", "b", "c"]          // Returns "abc"
+  /// String.concat []                       // Returns ""
+  /// ```
+  concat: strs -> __array_concat_all strs
 
   /// Splits a string into an array of substrings using a delimiter.
   ///
@@ -151,4 +166,114 @@
   /// String.contains "xyz" "hello world"    // Returns false
   /// ```
   contains: substring -> str -> __string_contains (str, substring)
+
+  /// Repeats a string n times.
+  ///
+  /// **Parameters:**
+  /// - `count`: Number of times to repeat
+  /// - `str`: The string to repeat
+  ///
+  /// **Example:**
+  /// ```
+  /// String.repeat 3 "ha"   // Returns "hahaha"
+  /// String.repeat 0 "x"    // Returns ""
+  /// ```
+  repeat: count -> str -> __string_repeat (count, str)
+
+  /// Replaces all occurrences of a substring with another string.
+  ///
+  /// **Parameters:**
+  /// - `from`: The substring to replace
+  /// - `to`: The replacement string
+  /// - `str`: The string to perform replacement on
+  ///
+  /// **Example:**
+  /// ```
+  /// String.replace "world" "Lazylang" "hello world"  // Returns "hello Lazylang"
+  /// String.replace "a" "o" "banana"                  // Returns "bonono"
+  /// ```
+  replace: from -> to -> str -> __string_replace (from, to, str)
+
+  /// Joins an array of strings with a separator.
+  ///
+  /// **Parameters:**
+  /// - `separator`: The separator to insert between elements
+  /// - `arr`: Array of strings to join
+  ///
+  /// **Example:**
+  /// ```
+  /// String.join ", " ["a", "b", "c"]  // Returns "a, b, c"
+  /// String.join "" ["hello", "world"]  // Returns "helloworld"
+  /// ```
+  join: separator -> arr -> __string_join (separator, arr)
+
+  /// Extracts a substring from start (inclusive) to end (exclusive).
+  /// Supports negative indices (counting from the end).
+  ///
+  /// **Parameters:**
+  /// - `start`: The starting index (inclusive)
+  /// - `end`: The ending index (exclusive)
+  /// - `str`: The string to slice
+  ///
+  /// **Example:**
+  /// ```
+  /// String.slice 0 5 "hello world"        // Returns "hello"
+  /// String.slice 6 11 "hello world"       // Returns "world"
+  /// String.slice (0 - 5) 11 "hello world"  // Returns "world"
+  /// ```
+  slice: start -> end -> str -> __string_slice (start, end, str)
+
+  /// Keeps the first n characters of a string.
+  ///
+  /// **Parameters:**
+  /// - `n`: Number of characters to keep
+  /// - `str`: The string to slice
+  ///
+  /// **Example:**
+  /// ```
+  /// String.left 5 "hello world"  // Returns "hello"
+  /// ```
+  left: n -> str -> __string_slice (0, n, str)
+
+  /// Keeps the last n characters of a string.
+  ///
+  /// **Parameters:**
+  /// - `n`: Number of characters to keep
+  /// - `str`: The string to slice
+  ///
+  /// **Example:**
+  /// ```
+  /// String.right 5 "hello world"  // Returns "world"
+  /// ```
+  right: n -> str ->
+    len = __string_length str
+    __string_slice (len - n, len, str)
+
+  /// Drops the first n characters of a string.
+  ///
+  /// **Parameters:**
+  /// - `n`: Number of characters to drop
+  /// - `str`: The string to slice
+  ///
+  /// **Example:**
+  /// ```
+  /// String.dropLeft 6 "hello world"  // Returns "world"
+  /// ```
+  dropLeft: n -> str ->
+    len = __string_length str
+    __string_slice (n, len, str)
+
+  /// Drops the last n characters of a string.
+  ///
+  /// **Parameters:**
+  /// - `n`: Number of characters to drop
+  /// - `str`: The string to slice
+  ///
+  /// **Example:**
+  /// ```
+  /// String.dropRight 6 "hello world"  // Returns "hello"
+  /// ```
+  dropRight: n -> str ->
+    len = __string_length str
+    __string_slice (0, len - n, str)
 }

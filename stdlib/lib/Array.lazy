@@ -1,10 +1,10 @@
 /// Provides utilities for working with arrays in Lazylang.
 ///
 /// This module includes functions for common array operations such as:
-/// - **Querying**: [length], [get]
-/// - **Transforming**: [map], [flatMap], [filter], [skip], [reverse]
-/// - **Reducing**: [fold]
-/// - **Combining**: [concatAll]
+/// - **Querying**: [length], [get], [isEmpty]
+/// - **Transforming**: [map], [flatMap], [filter], [skip], [reverse], [slice], [sort], [sortBy], [uniq]
+/// - **Reducing**: [fold], [all], [any], [none]
+/// - **Note**: groupBy is not yet implemented (requires computed field names)
 ///
 /// ## Examples
 ///
@@ -132,17 +132,130 @@
   /// ```
   reverse: arr -> __array_reverse arr
 
-  /// Concatenates an array of strings into a single string.
-  /// Returns an empty string if the array is empty.
-  ///
-  /// **Parameter:**
-  /// - `strs`: Array of strings to concatenate
+  /// Returns an empty array.
   ///
   /// **Example:**
   /// ```
-  /// Array.concatAll ["hello", " ", "world"]  // Returns "hello world"
-  /// Array.concatAll ["a", "b", "c"]          // Returns "abc"
-  /// Array.concatAll []                       // Returns ""
+  /// Array.empty  // Returns []
   /// ```
-  concatAll: strs -> __array_concat_all strs
+  empty: []
+
+  /// Checks if an array is empty.
+  ///
+  /// **Parameter:**
+  /// - `arr`: The array to check
+  ///
+  /// **Example:**
+  /// ```
+  /// Array.isEmpty []        // Returns true
+  /// Array.isEmpty [1, 2, 3] // Returns false
+  /// ```
+  isEmpty: arr -> __array_length arr == 0
+
+  /// Extracts a slice of an array from start (inclusive) to end (exclusive).
+  /// Supports negative indices (counting from the end).
+  ///
+  /// **Parameters:**
+  /// - `start`: The starting index (inclusive)
+  /// - `end`: The ending index (exclusive)
+  /// - `arr`: The array to slice
+  ///
+  /// **Example:**
+  /// ```
+  /// Array.slice 1 3 [0, 1, 2, 3, 4]    // Returns [1, 2]
+  /// Array.slice 0 2 ["a", "b", "c"]    // Returns ["a", "b"]
+  /// Array.slice (0 - 2) 5 [1, 2, 3, 4]  // Returns [3, 4]
+  /// ```
+  slice: start -> end -> arr -> __array_slice (start, end, arr)
+
+  /// Sorts an array in ascending order.
+  /// Works with integers and strings.
+  ///
+  /// **Parameter:**
+  /// - `arr`: The array to sort
+  ///
+  /// **Example:**
+  /// ```
+  /// Array.sort [3, 1, 4, 1, 5]      // Returns [1, 1, 3, 4, 5]
+  /// Array.sort ["c", "a", "b"]      // Returns ["a", "b", "c"]
+  /// ```
+  sort: arr -> __array_sort arr
+
+  /// Sorts an array by a computed key function.
+  ///
+  /// **Parameters:**
+  /// - `keyFn`: Function that returns the sort key for each element
+  /// - `arr`: The array to sort
+  ///
+  /// **Example:**
+  /// ```
+  /// Array.sortBy (.age) [{name: "Alice", age: 30}, {name: "Bob", age: 25}]
+  /// // Returns [{name: "Bob", age: 25}, {name: "Alice", age: 30}]
+  /// ```
+  sortBy: keyFn -> arr ->
+    // Create array of (key, value) pairs
+    pairs = [{ key: keyFn x, value: x } for x in arr]
+    // Sort pairs by key
+    sorted = __array_sort [p.key for p in pairs]
+    // Map back to find original values
+    [p.value for sortedKey in sorted for p in pairs when p.key == sortedKey]
+
+  /// Returns an array with duplicate elements removed.
+  /// Preserves the first occurrence of each unique element.
+  ///
+  /// **Parameter:**
+  /// - `arr`: The array to deduplicate
+  ///
+  /// **Example:**
+  /// ```
+  /// Array.uniq [1, 2, 2, 3, 1, 4]  // Returns [1, 2, 3, 4]
+  /// Array.uniq ["a", "b", "a"]     // Returns ["a", "b"]
+  /// ```
+  uniq: arr -> __array_uniq arr
+
+  /// Tests whether all elements satisfy a predicate.
+  ///
+  /// **Parameters:**
+  /// - `pred`: Predicate function to test each element
+  /// - `arr`: The array to test
+  ///
+  /// **Example:**
+  /// ```
+  /// Array.all (x -> x > 0) [1, 2, 3]    // Returns true
+  /// Array.all (x -> x > 0) [1, -2, 3]   // Returns false
+  /// Array.all (x -> x > 0) []           // Returns true
+  /// ```
+  all: pred -> arr -> __array_fold ((acc -> x -> acc && pred x), true, arr)
+
+  /// Tests whether any element satisfies a predicate.
+  ///
+  /// **Parameters:**
+  /// - `pred`: Predicate function to test each element
+  /// - `arr`: The array to test
+  ///
+  /// **Example:**
+  /// ```
+  /// Array.any (x -> x > 2) [1, 2, 3]  // Returns true
+  /// Array.any (x -> x > 5) [1, 2, 3]  // Returns false
+  /// Array.any (x -> x > 0) []         // Returns false
+  /// ```
+  any: pred -> arr -> __array_fold ((acc -> x -> acc || pred x), false, arr)
+
+  /// Tests whether no elements satisfy a predicate.
+  ///
+  /// **Parameters:**
+  /// - `pred`: Predicate function to test each element
+  /// - `arr`: The array to test
+  ///
+  /// **Example:**
+  /// ```
+  /// Array.none (x -> x > 5) [1, 2, 3]  // Returns true
+  /// Array.none (x -> x > 2) [1, 2, 3]  // Returns false
+  /// Array.none (x -> x > 0) []         // Returns true
+  /// ```
+  none: pred -> arr -> __array_fold ((acc -> x -> acc && !(pred x)), true, arr)
+
+  // TODO: groupBy is not yet implemented because Lazylang doesn't support
+  // computed field names in object literals { [expr]: value }
+  // groupBy: keyFn -> arr -> ...
 }

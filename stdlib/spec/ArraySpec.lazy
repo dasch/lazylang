@@ -1,26 +1,129 @@
 { describe, it, mustEq } = import 'Spec'
-{ get } = import 'Array'
+Array = import 'Array'
 
 describe "Array" [
   describe "get" [
     it "returns (#ok, value) when the index is in-bounds" do
       arr = [10, 20, 30]
-      mustEq (#ok, 20) (get 1 arr)
+      mustEq (#ok, 20) (Array.get 1 arr)
 
     it "returns (#ok, value) for the first element" do
       arr = [10, 20, 30]
-      mustEq (#ok, 10) (get 0 arr)
+      mustEq (#ok, 10) (Array.get 0 arr)
 
     it "returns (#ok, value) for the last element" do
       arr = [10, 20, 30]
-      mustEq (#ok, 30) (get 2 arr)
+      mustEq (#ok, 30) (Array.get 2 arr)
 
     it "returns #outOfBounds when index equals array length" do
       arr = [10, 20, 30]
-      mustEq #outOfBounds (get 3 arr)
+      mustEq #outOfBounds (Array.get 3 arr)
 
     it "returns #outOfBounds when index exceeds array length" do
       arr = [10, 20, 30]
-      mustEq #outOfBounds (get 10 arr)
+      mustEq #outOfBounds (Array.get 10 arr)
   ]
+
+  describe "empty" [
+    it "returns an empty array" do
+      mustEq [] (Array.empty)
+  ]
+
+  describe "isEmpty" [
+    it "returns true for empty array" do
+      mustEq true (Array.isEmpty [])
+
+    it "returns false for non-empty array" do
+      mustEq false (Array.isEmpty [1, 2, 3])
+  ]
+
+  describe "slice" [
+    it "extracts a middle slice" do
+      mustEq [1, 2] (Array.slice 1 3 [0, 1, 2, 3, 4])
+
+    it "extracts from beginning" do
+      mustEq ["a", "b"] (Array.slice 0 2 ["a", "b", "c"])
+
+    it "extracts to end" do
+      mustEq [3, 4] (Array.slice 3 5 [0, 1, 2, 3, 4])
+
+    it "returns empty array when start equals end" do
+      mustEq [] (Array.slice 2 2 [0, 1, 2, 3])
+
+    it "handles negative indices" do
+      mustEq [3, 4] (Array.slice (0 - 2) 5 [1, 2, 3, 4])
+  ]
+
+  describe "sort" [
+    it "sorts integers in ascending order" do
+      mustEq [1, 1, 3, 4, 5] (Array.sort [3, 1, 4, 1, 5])
+
+    it "sorts strings alphabetically" do
+      mustEq ["a", "b", "c"] (Array.sort ["c", "a", "b"])
+
+    it "handles empty array" do
+      mustEq [] (Array.sort [])
+
+    it "handles single element" do
+      mustEq [42] (Array.sort [42])
+  ]
+
+  describe "sortBy" [
+    it "sorts by computed key" do
+      arr = [{name: "Alice", age: 30}, {name: "Bob", age: 25}, {name: "Charlie", age: 35}]
+      result = Array.sortBy (.age) arr
+      first = when Array.get 0 result matches
+        (#ok, val) then val
+        otherwise null
+      mustEq 25 (first.age)
+  ]
+
+  describe "uniq" [
+    it "removes duplicate integers" do
+      mustEq [1, 2, 3, 4] (Array.uniq [1, 2, 2, 3, 1, 4])
+
+    it "removes duplicate strings" do
+      mustEq ["a", "b"] (Array.uniq ["a", "b", "a"])
+
+    it "handles empty array" do
+      mustEq [] (Array.uniq [])
+
+    it "handles array with no duplicates" do
+      mustEq [1, 2, 3] (Array.uniq [1, 2, 3])
+  ]
+
+  describe "all" [
+    it "returns true when all elements satisfy predicate" do
+      mustEq true (Array.all (x -> x > 0) [1, 2, 3])
+
+    it "returns false when some element fails predicate" do
+      mustEq false (Array.all (x -> x > 0) [1, (0 - 2), 3])
+
+    it "returns true for empty array" do
+      mustEq true (Array.all (x -> x > 0) [])
+  ]
+
+  describe "any" [
+    it "returns true when some element satisfies predicate" do
+      mustEq true (Array.any (x -> x > 2) [1, 2, 3])
+
+    it "returns false when no element satisfies predicate" do
+      mustEq false (Array.any (x -> x > 5) [1, 2, 3])
+
+    it "returns false for empty array" do
+      mustEq false (Array.any (x -> x > 0) [])
+  ]
+
+  describe "none" [
+    it "returns true when no element satisfies predicate" do
+      mustEq true (Array.none (x -> x > 5) [1, 2, 3])
+
+    it "returns false when some element satisfies predicate" do
+      mustEq false (Array.none (x -> x > 2) [1, 2, 3])
+
+    it "returns true for empty array" do
+      mustEq true (Array.none (x -> x > 0) [])
+  ]
+
+  // TODO: Add groupBy tests when computed field names are supported
 ]

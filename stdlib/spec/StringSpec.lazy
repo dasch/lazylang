@@ -1,164 +1,275 @@
 { describe, it, mustEq } = import 'Spec'
-{ length, concat, split, toUpperCase, toLowerCase, chars, isEmpty, trim, startsWith, endsWith, contains } = import 'String'
+String = import 'String'
 
 describe "String" [
   describe "length" [
     it "returns the length of a non-empty string" do
-      mustEq 5 (length "hello")
+      mustEq 5 (String.length "hello")
 
     it "returns 0 for an empty string" do
-      mustEq 0 (length "")
+      mustEq 0 (String.length "")
+  ]
+
+  describe "append" [
+    it "appends two non-empty strings" do
+      mustEq "Hello, world!" (String.append "Hello, " "world!")
+
+    it "appends with empty string prefix" do
+      mustEq "world" (String.append "" "world")
+
+    it "appends with empty string subject" do
+      mustEq "Hello" (String.append "Hello" "")
   ]
 
   describe "concat" [
-    it "concatenates two non-empty strings" do
-      mustEq "Hello, world!" (concat "Hello, " "world!")
+    it "concatenates array of strings" do
+      mustEq "hello world" (String.concat ["hello", " ", "world"])
 
-    it "concatenates with empty string prefix" do
-      mustEq "world" (concat "" "world")
+    it "concatenates array with multiple strings" do
+      mustEq "abc" (String.concat ["a", "b", "c"])
 
-    it "concatenates with empty string subject" do
-      mustEq "Hello" (concat "Hello" "")
+    it "returns empty string for empty array" do
+      mustEq "" (String.concat [])
+
+    it "handles single element array" do
+      mustEq "hello" (String.concat ["hello"])
   ]
 
   describe "split" [
     it "splits a string by comma delimiter" do
-      mustEq ["apple", "banana", "cherry"] (split "," "apple,banana,cherry")
+      mustEq ["apple", "banana", "cherry"] (String.split "," "apple,banana,cherry")
 
     it "splits a string by space delimiter" do
-      mustEq ["hello", "world"] (split " " "hello world")
+      mustEq ["hello", "world"] (String.split " " "hello world")
 
     it "returns single element array when delimiter not found" do
-      mustEq ["hello"] (split "," "hello")
+      mustEq ["hello"] (String.split "," "hello")
 
     it "returns empty strings when delimiter is at boundaries" do
-      mustEq ["", "hello", ""] (split "," ",hello,")
+      mustEq ["", "hello", ""] (String.split "," ",hello,")
   ]
 
   describe "toUpperCase" [
     it "converts lowercase string to uppercase" do
-      mustEq "HELLO" (toUpperCase "hello")
+      mustEq "HELLO" (String.toUpperCase "hello")
 
     it "leaves uppercase string unchanged" do
-      mustEq "HELLO" (toUpperCase "HELLO")
+      mustEq "HELLO" (String.toUpperCase "HELLO")
 
     it "converts mixed case string to uppercase" do
-      mustEq "HELLO WORLD" (toUpperCase "Hello World")
+      mustEq "HELLO WORLD" (String.toUpperCase "Hello World")
 
     it "returns empty string for empty input" do
-      mustEq "" (toUpperCase "")
+      mustEq "" (String.toUpperCase "")
   ]
 
   describe "toLowerCase" [
     it "converts uppercase string to lowercase" do
-      mustEq "hello" (toLowerCase "HELLO")
+      mustEq "hello" (String.toLowerCase "HELLO")
 
     it "leaves lowercase string unchanged" do
-      mustEq "hello" (toLowerCase "hello")
+      mustEq "hello" (String.toLowerCase "hello")
 
     it "converts mixed case string to lowercase" do
-      mustEq "hello world" (toLowerCase "Hello World")
+      mustEq "hello world" (String.toLowerCase "Hello World")
 
     it "returns empty string for empty input" do
-      mustEq "" (toLowerCase "")
+      mustEq "" (String.toLowerCase "")
   ]
 
   describe "chars" [
     it "splits a string into individual characters" do
-      mustEq ["h", "e", "l", "l", "o"] (chars "hello")
+      mustEq ["h", "e", "l", "l", "o"] (String.chars "hello")
 
     it "returns empty array for empty string" do
-      mustEq [] (chars "")
+      mustEq [] (String.chars "")
 
     it "handles single character string" do
-      mustEq ["a"] (chars "a")
+      mustEq ["a"] (String.chars "a")
   ]
 
   describe "isEmpty" [
     it "returns true for empty string" do
-      mustEq true (isEmpty "")
+      mustEq true (String.isEmpty "")
 
     it "returns false for non-empty string" do
-      mustEq false (isEmpty "hello")
+      mustEq false (String.isEmpty "hello")
 
     it "returns false for whitespace string" do
-      mustEq false (isEmpty " ")
+      mustEq false (String.isEmpty " ")
   ]
 
   describe "trim" [
     it "removes leading and trailing whitespace" do
-      mustEq "hello" (trim "  hello  ")
+      mustEq "hello" (String.trim "  hello  ")
 
     it "removes only leading whitespace" do
-      mustEq "hello" (trim "  hello")
+      mustEq "hello" (String.trim "  hello")
 
     it "removes only trailing whitespace" do
-      mustEq "hello" (trim "hello  ")
+      mustEq "hello" (String.trim "hello  ")
 
     it "leaves string without whitespace unchanged" do
-      mustEq "hello" (trim "hello")
+      mustEq "hello" (String.trim "hello")
 
     it "preserves internal whitespace" do
-      mustEq "hello world" (trim "  hello world  ")
+      mustEq "hello world" (String.trim "  hello world  ")
 
     it "returns empty string when only whitespace" do
-      mustEq "" (trim "   ")
+      mustEq "" (String.trim "   ")
   ]
 
   describe "startsWith" [
     it "returns true when string starts with prefix" do
-      mustEq true (startsWith "hello" "hello world")
+      mustEq true (String.startsWith "hello" "hello world")
 
     it "returns false when string does not start with prefix" do
-      mustEq false (startsWith "world" "hello world")
+      mustEq false (String.startsWith "world" "hello world")
 
     it "returns true for empty prefix" do
-      mustEq true (startsWith "" "hello")
+      mustEq true (String.startsWith "" "hello")
 
     it "returns true when prefix equals string" do
-      mustEq true (startsWith "hello" "hello")
+      mustEq true (String.startsWith "hello" "hello")
 
     it "returns false when prefix is longer than string" do
-      mustEq false (startsWith "hello world!" "hello")
+      mustEq false (String.startsWith "hello world!" "hello")
   ]
 
   describe "endsWith" [
     it "returns true when string ends with suffix" do
-      mustEq true (endsWith "world" "hello world")
+      mustEq true (String.endsWith "world" "hello world")
 
     it "returns false when string does not end with suffix" do
-      mustEq false (endsWith "hello" "hello world")
+      mustEq false (String.endsWith "hello" "hello world")
 
     it "returns true for empty suffix" do
-      mustEq true (endsWith "" "hello")
+      mustEq true (String.endsWith "" "hello")
 
     it "returns true when suffix equals string" do
-      mustEq true (endsWith "hello" "hello")
+      mustEq true (String.endsWith "hello" "hello")
 
     it "returns false when suffix is longer than string" do
-      mustEq false (endsWith "hello world!" "world")
+      mustEq false (String.endsWith "hello world!" "world")
   ]
 
   describe "contains" [
     it "returns true when string contains substring" do
-      mustEq true (contains "lo wo" "hello world")
+      mustEq true (String.contains "lo wo" "hello world")
 
     it "returns false when string does not contain substring" do
-      mustEq false (contains "xyz" "hello world")
+      mustEq false (String.contains "xyz" "hello world")
 
     it "returns true for empty substring" do
-      mustEq true (contains "" "hello")
+      mustEq true (String.contains "" "hello")
 
     it "returns true when substring equals string" do
-      mustEq true (contains "hello" "hello")
+      mustEq true (String.contains "hello" "hello")
 
     it "returns true when substring is at the start" do
-      mustEq true (contains "hello" "hello world")
+      mustEq true (String.contains "hello" "hello world")
 
     it "returns true when substring is at the end" do
-      mustEq true (contains "world" "hello world")
+      mustEq true (String.contains "world" "hello world")
 
     it "returns false when substring is longer than string" do
-      mustEq false (contains "hello world!" "hello")
+      mustEq false (String.contains "hello world!" "hello")
+  ]
+
+  describe "repeat" [
+    it "repeats a string multiple times" do
+      mustEq "hahaha" (String.repeat 3 "ha")
+
+    it "returns empty string when count is 0" do
+      mustEq "" (String.repeat 0 "x")
+
+    it "handles single repetition" do
+      mustEq "hello" (String.repeat 1 "hello")
+  ]
+
+  describe "replace" [
+    it "replaces all occurrences of substring" do
+      mustEq "hello Lazylang" (String.replace "world" "Lazylang" "hello world")
+
+    it "replaces multiple occurrences" do
+      mustEq "bonono" (String.replace "a" "o" "banana")
+
+    it "returns original when substring not found" do
+      mustEq "hello" (String.replace "x" "y" "hello")
+
+    it "handles empty replacement" do
+      mustEq "heo" (String.replace "ll" "" "hello")
+  ]
+
+  describe "join" [
+    it "joins array with separator" do
+      mustEq "a, b, c" (String.join ", " ["a", "b", "c"])
+
+    it "joins with empty separator" do
+      mustEq "helloworld" (String.join "" ["hello", "world"])
+
+    it "returns empty string for empty array" do
+      mustEq "" (String.join ", " [])
+
+    it "returns single element without separator" do
+      mustEq "hello" (String.join ", " ["hello"])
+  ]
+
+  describe "slice" [
+    it "extracts substring from start to end" do
+      mustEq "hello" (String.slice 0 5 "hello world")
+
+    it "extracts substring from middle" do
+      mustEq "world" (String.slice 6 11 "hello world")
+
+    it "handles negative indices" do
+      mustEq "world" (String.slice (0 - 5) 11 "hello world")
+
+    it "returns empty string when start equals end" do
+      mustEq "" (String.slice 5 5 "hello world")
+  ]
+
+  describe "left" [
+    it "keeps first n characters" do
+      mustEq "hello" (String.left 5 "hello world")
+
+    it "keeps all characters when n >= length" do
+      mustEq "hi" (String.left 10 "hi")
+
+    it "returns empty string when n is 0" do
+      mustEq "" (String.left 0 "hello")
+  ]
+
+  describe "right" [
+    it "keeps last n characters" do
+      mustEq "world" (String.right 5 "hello world")
+
+    it "keeps all characters when n >= length" do
+      mustEq "hi" (String.right 10 "hi")
+
+    it "returns empty string when n is 0" do
+      mustEq "" (String.right 0 "hello")
+  ]
+
+  describe "dropLeft" [
+    it "drops first n characters" do
+      mustEq "world" (String.dropLeft 6 "hello world")
+
+    it "returns empty string when n >= length" do
+      mustEq "" (String.dropLeft 10 "hi")
+
+    it "returns original string when n is 0" do
+      mustEq "hello" (String.dropLeft 0 "hello")
+  ]
+
+  describe "dropRight" [
+    it "drops last n characters" do
+      mustEq "hello" (String.dropRight 6 "hello world")
+
+    it "returns empty string when n >= length" do
+      mustEq "" (String.dropRight 10 "hi")
+
+    it "returns original string when n is 0" do
+      mustEq "hello" (String.dropRight 0 "hello")
   ]
 ]
