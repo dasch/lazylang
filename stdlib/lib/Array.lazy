@@ -75,49 +75,4 @@
   /// Array.skip (x -> x > 2) [1, 2, 3, 4]  // Returns [1, 2]
   /// ```
   skip: pred -> arr -> [x for x in arr when !(pred x)]
-
-  /// Folds an array from the left using an accumulator function.
-  ///
-  /// **Parameters:**
-  /// - `fn`: Binary function (acc -> elem -> new_acc)
-  /// - `init`: Initial accumulator value
-  /// - `arr`: The array to fold
-  ///
-  /// **Example:**
-  /// ```
-  /// Array.fold (acc -> x -> acc + x) 0 [1, 2, 3]  // Returns 6
-  /// ```
-  fold: fn -> init -> arr -> when arr matches
-    [] then init
-    [head, ...tail] then fold fn (fn init head) tail
-
-  /// Reverses an array.
-  ///
-  /// **Parameter:**
-  /// - `arr`: The array to reverse
-  ///
-  /// **Example:**
-  /// ```
-  /// Array.reverse [1, 2, 3]  // Returns [3, 2, 1]
-  /// ```
-  reverse: arr ->
-    reverseHelper = acc -> xs -> when xs matches
-      [] then acc
-      [head, ...tail] then reverseHelper [head, ...acc] tail
-    reverseHelper [] arr
-
-  /// Concatenates an array of strings into a single string.
-  /// Returns an empty string if the array is empty.
-  ///
-  /// **Parameter:**
-  /// - `strs`: Array of strings to concatenate
-  ///
-  /// **Example:**
-  /// ```
-  /// Array.concatAll ["hello", " ", "world"]  // Returns "hello world"
-  /// Array.concatAll []  // Returns ""
-  /// ```
-  concatAll: strs -> when strs matches
-    [] then ""
-    [head, ...tail] then __string_concat (head, concatAll tail)
 }
