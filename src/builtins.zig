@@ -381,6 +381,109 @@ pub fn objectGet(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalEr
     return eval.Value{ .symbol = "#noSuchKey" };
 }
 
+pub fn mathPow(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple_arg = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
+
+    const base = switch (tuple_arg.elements[0]) {
+        .integer => |i| @as(f64, @floatFromInt(i)),
+        else => return error.TypeMismatch,
+    };
+
+    const exponent = switch (tuple_arg.elements[1]) {
+        .integer => |i| @as(f64, @floatFromInt(i)),
+        else => return error.TypeMismatch,
+    };
+
+    const result = std.math.pow(f64, base, exponent);
+    return eval.Value{ .integer = @intFromFloat(result) };
+}
+
+pub fn mathSqrt(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const n = switch (args[0]) {
+        .integer => |i| @as(f64, @floatFromInt(i)),
+        else => return error.TypeMismatch,
+    };
+
+    const result = @sqrt(n);
+    return eval.Value{ .integer = @intFromFloat(result) };
+}
+
+pub fn mathFloor(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const n = switch (args[0]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    // For integers, floor is identity
+    return eval.Value{ .integer = n };
+}
+
+pub fn mathCeil(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const n = switch (args[0]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    // For integers, ceil is identity
+    return eval.Value{ .integer = n };
+}
+
+pub fn mathRound(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const n = switch (args[0]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    // For integers, round is identity
+    return eval.Value{ .integer = n };
+}
+
+pub fn mathLog(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const n = switch (args[0]) {
+        .integer => |i| @as(f64, @floatFromInt(i)),
+        else => return error.TypeMismatch,
+    };
+
+    const result = @log(n);
+    return eval.Value{ .integer = @intFromFloat(result) };
+}
+
+pub fn mathExp(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const n = switch (args[0]) {
+        .integer => |i| @as(f64, @floatFromInt(i)),
+        else => return error.TypeMismatch,
+    };
+
+    const result = @exp(n);
+    return eval.Value{ .integer = @intFromFloat(result) };
+}
+
 // Utility to create a curried native function wrapper
 // This allows native functions to be partially applied like regular functions
 pub fn curry2(comptime impl: fn (std.mem.Allocator, eval.Value, eval.Value) eval.EvalError!eval.Value) eval.NativeFn {
