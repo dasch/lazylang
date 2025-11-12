@@ -181,8 +181,13 @@ const TupleLiteral = struct {
     elements: []*Expression,
 };
 
+const ObjectFieldKey = union(enum) {
+    static: []const u8,
+    dynamic: *Expression,
+};
+
 const ObjectField = struct {
-    key: []const u8,
+    key: ObjectFieldKey,
     value: *Expression,
     is_patch: bool, // true if no colon (merge), false if colon (overwrite)
     doc: ?[]const u8, // Combined documentation comments
@@ -1505,10 +1510,72 @@ pub const Parser = struct {
                 return self.parseObjectComprehension(key_expr, value_expr);
             }
 
-            // TODO: Support dynamic fields in regular objects
-            // For now, just return an error
-            self.recordError();
-            return error.UnexpectedToken;
+            // Regular object with dynamic field - parse remaining fields
+            var fields = std.ArrayListUnmanaged(ObjectField){};
+            try fields.append(self.arena, .{
+                .key = .{ .dynamic = key_expr },
+                .value = value_expr,
+                .is_patch = false,
+                .doc = null
+            });
+
+            // Continue parsing remaining fields if any
+            while (self.current.kind == .comma or self.current.preceded_by_newline) {
+                if (self.current.kind == .comma) {
+                    try self.advance();
+                    if (self.current.kind == .r_brace) break;
+                }
+                if (self.current.kind == .r_brace) break;
+
+                // Parse next field (could be static or dynamic)
+                if (self.current.kind == .l_bracket) {
+                    // Another dynamic field
+                    try self.advance(); // consume '['
+                    const next_key_expr = try self.parseLambda();
+                    try self.expect(.r_bracket);
+                    try self.expect(.colon);
+                    const next_value_expr = try self.parseLambda();
+                    try fields.append(self.arena, .{
+                        .key = .{ .dynamic = next_key_expr },
+                        .value = next_value_expr,
+                        .is_patch = false,
+                        .doc = null
+                    });
+                } else if (self.current.kind == .identifier) {
+                    // Static field
+                    const doc = self.tokenizer.consumeDocComments();
+                    const static_key = self.current.lexeme;
+                    try self.advance();
+
+                    var is_patch = false;
+                    const static_value_expr = if (self.current.kind == .colon) blk: {
+                        try self.advance();
+                        break :blk try self.parseLambda();
+                    } else if (self.current.kind == .l_brace and !self.current.preceded_by_newline) blk: {
+                        is_patch = true;
+                        break :blk try self.parseObject();
+                    } else blk: {
+                        const node = try self.allocateExpression();
+                        node.* = .{ .identifier = static_key };
+                        break :blk node;
+                    };
+
+                    try fields.append(self.arena, .{
+                        .key = .{ .static = static_key },
+                        .value = static_value_expr,
+                        .is_patch = is_patch,
+                        .doc = doc
+                    });
+                } else {
+                    break;
+                }
+            }
+
+            try self.expect(.r_brace);
+            const slice = try fields.toOwnedSlice(self.arena);
+            const node = try self.allocateExpression();
+            node.* = .{ .object = .{ .fields = slice, .module_doc = module_doc } };
+            return node;
         }
 
         var fields = std.ArrayListUnmanaged(ObjectField){};
@@ -1545,7 +1612,7 @@ pub const Parser = struct {
                 break :blk node;
             };
 
-            try fields.append(self.arena, .{ .key = key, .value = value_expr, .is_patch = is_patch, .doc = doc });
+            try fields.append(self.arena, .{ .key = .{ .static = key }, .value = value_expr, .is_patch = is_patch, .doc = doc });
 
             if (self.current.kind == .comma) {
                 try self.advance();
@@ -2858,20 +2925,78 @@ pub fn evaluateExpression(
             break :blk Value{ .tuple = .{ .elements = values } };
         },
         .object => |object| blk: {
-            const fields = try arena.alloc(ObjectFieldValue, object.fields.len);
-            for (object.fields, 0..) |field, i| {
-                const key_copy = try arena.dupe(u8, field.key);
-                // Wrap field value in a thunk for lazy evaluation
-                const thunk = try arena.create(Thunk);
-                thunk.* = .{
-                    .expr = field.value,
-                    .env = env,
-                    .current_dir = current_dir,
-                    .ctx = ctx,
-                    .state = .unevaluated,
-                };
-                fields[i] = .{ .key = key_copy, .value = .{ .thunk = thunk } };
+            // First pass: evaluate dynamic keys and count total fields
+            var fields_list = std.ArrayList(ObjectFieldValue){};
+            defer fields_list.deinit(arena);
+
+            for (object.fields) |field| {
+                switch (field.key) {
+                    .static => |static_key| {
+                        const key_copy = try arena.dupe(u8, static_key);
+                        // Wrap field value in a thunk for lazy evaluation
+                        const thunk = try arena.create(Thunk);
+                        thunk.* = .{
+                            .expr = field.value,
+                            .env = env,
+                            .current_dir = current_dir,
+                            .ctx = ctx,
+                            .state = .unevaluated,
+                        };
+                        try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk } });
+                    },
+                    .dynamic => |key_expr| {
+                        // Evaluate the key expression
+                        const key_value = try evaluateExpression(arena, key_expr, env, current_dir, ctx);
+
+                        switch (key_value) {
+                            .null_value => {
+                                // null key: skip this field
+                                continue;
+                            },
+                            .string => |key_string| {
+                                // Single string key
+                                const key_copy = try arena.dupe(u8, key_string);
+                                const thunk = try arena.create(Thunk);
+                                thunk.* = .{
+                                    .expr = field.value,
+                                    .env = env,
+                                    .current_dir = current_dir,
+                                    .ctx = ctx,
+                                    .state = .unevaluated,
+                                };
+                                try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk } });
+                            },
+                            .array => |arr| {
+                                // Array of keys: create multiple fields with same value
+                                for (arr.elements) |elem| {
+                                    switch (elem) {
+                                        .null_value => {
+                                            // Skip null elements in array
+                                            continue;
+                                        },
+                                        .string => |key_string| {
+                                            const key_copy = try arena.dupe(u8, key_string);
+                                            const thunk = try arena.create(Thunk);
+                                            thunk.* = .{
+                                                .expr = field.value,
+                                                .env = env,
+                                                .current_dir = current_dir,
+                                                .ctx = ctx,
+                                                .state = .unevaluated,
+                                            };
+                                            try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk } });
+                                        },
+                                        else => return error.TypeMismatch,
+                                    }
+                                }
+                            },
+                            else => return error.TypeMismatch,
+                        }
+                    },
+                }
             }
+
+            const fields = try fields_list.toOwnedSlice(arena);
             break :blk Value{ .object = .{ .fields = fields, .module_doc = object.module_doc } };
         },
         .object_extend => |extend| blk: {
@@ -2882,36 +3007,53 @@ pub fn evaluateExpression(
             switch (base_value) {
                 .function => |function_ptr| {
                     // Build an object from the extension fields and apply the function
-                    const fields = try arena.alloc(ObjectFieldValue, extend.fields.len);
-                    for (extend.fields, 0..) |field, i| {
-                        const key_copy = try arena.dupe(u8, field.key);
-                        fields[i] = .{ .key = key_copy, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx) };
+                    // Note: object_extend only supports static keys
+                    var fields_list = std.ArrayList(ObjectFieldValue){};
+                    defer fields_list.deinit(arena);
+                    for (extend.fields) |field| {
+                        const static_key = switch (field.key) {
+                            .static => |k| k,
+                            .dynamic => return error.TypeMismatch, // Dynamic keys not supported in object_extend
+                        };
+                        const key_copy = try arena.dupe(u8, static_key);
+                        try fields_list.append(arena, .{ .key = key_copy, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx) });
                     }
-                    const obj_arg = Value{ .object = .{ .fields = fields, .module_doc = null } };
+                    const obj_arg = Value{ .object = .{ .fields = try fields_list.toOwnedSlice(arena), .module_doc = null } };
                     const bound_env = try matchPattern(arena, function_ptr.param, obj_arg, function_ptr.env);
                     break :blk try evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx);
                 },
                 .native_fn => |native_fn| {
                     // Build an object from the extension fields and call native function
-                    const fields = try arena.alloc(ObjectFieldValue, extend.fields.len);
-                    for (extend.fields, 0..) |field, i| {
-                        const key_copy = try arena.dupe(u8, field.key);
-                        fields[i] = .{ .key = key_copy, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx) };
+                    // Note: object_extend only supports static keys
+                    var fields_list = std.ArrayList(ObjectFieldValue){};
+                    defer fields_list.deinit(arena);
+                    for (extend.fields) |field| {
+                        const static_key = switch (field.key) {
+                            .static => |k| k,
+                            .dynamic => return error.TypeMismatch, // Dynamic keys not supported in object_extend
+                        };
+                        const key_copy = try arena.dupe(u8, static_key);
+                        try fields_list.append(arena, .{ .key = key_copy, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx) });
                     }
-                    const obj_arg = Value{ .object = .{ .fields = fields, .module_doc = null } };
+                    const obj_arg = Value{ .object = .{ .fields = try fields_list.toOwnedSlice(arena), .module_doc = null } };
                     const args = [_]Value{obj_arg};
                     break :blk try native_fn(arena, &args);
                 },
                 .object => |base_obj| {
                     // Build the extension object with proper handling of is_patch
+                    // Note: object_extend only supports static keys
                     var extension_fields = std.ArrayListUnmanaged(ObjectFieldValue){};
                     for (extend.fields) |field| {
-                        const key_copy = try arena.dupe(u8, field.key);
+                        const static_key = switch (field.key) {
+                            .static => |k| k,
+                            .dynamic => return error.TypeMismatch, // Dynamic keys not supported in object_extend
+                        };
+                        const key_copy = try arena.dupe(u8, static_key);
                         const value = try evaluateExpression(arena, field.value, env, current_dir, ctx);
 
                         if (field.is_patch) {
                             // Patch: merge with existing field if it exists and is an object
-                            const existing_value = findObjectField(base_obj, field.key);
+                            const existing_value = findObjectField(base_obj, static_key);
                             if (existing_value) |existing| {
                                 // Force the existing value if it's a thunk
                                 const forced_existing = try force(arena, existing);

@@ -858,10 +858,16 @@ fn extractDocs(expr: *const evaluator.Expression, items: *std.ArrayListUnmanaged
         },
         .object => |obj| {
             for (obj.fields) |field| {
+                // Only extract documentation from static keys
+                const static_key = switch (field.key) {
+                    .static => |k| k,
+                    .dynamic => continue, // Skip dynamic keys for documentation
+                };
+
                 if (field.doc) |doc| {
-                    const signature = try buildSignature(allocator, field.key, field.value);
+                    const signature = try buildSignature(allocator, static_key, field.value);
                     try items.append(allocator, .{
-                        .name = try allocator.dupe(u8, field.key),
+                        .name = try allocator.dupe(u8, static_key),
                         .signature = signature,
                         .doc = try allocator.dupe(u8, doc),
                         .kind = .field,
