@@ -617,11 +617,50 @@ pub const Server = struct {
 
     /// Handle textDocument/hover request
     fn handleHover(self: *Self, id: ?std.json.Value, message: std.json.Value) !void {
-        _ = message;
-        // Return null for now (no hover info)
-        // TODO: Implement hover information
-        try self.handler.writeResponse(id, "null");
-        std.log.info("Hover request handled (not implemented)", .{});
+        const params = message.object.get("params").?.object;
+        const text_document = params.get("textDocument").?.object;
+        const position = params.get("position").?.object;
+        const uri = text_document.get("uri").?.string;
+
+        const doc = self.documents.get(uri) orelse {
+            try self.handler.writeErrorResponse(id, json_rpc.ErrorCode.InvalidParams, "Document not found");
+            return;
+        };
+
+        const line = @as(u32, @intCast(position.get("line").?.integer));
+        const character = @as(u32, @intCast(position.get("character").?.integer));
+
+        // Compute hover info
+        const hover_info = try self.computeHoverInfo(doc.text, line, character);
+        defer if (hover_info) |info| {
+            self.allocator.free(info.contents);
+        };
+
+        if (hover_info) |info| {
+            // Build JSON response
+            var response_buf = std.ArrayList(u8){};
+            defer response_buf.deinit(self.allocator);
+
+            const writer = response_buf.writer(self.allocator);
+
+            try writer.writeAll("{\"contents\":{\"kind\":\"markdown\",\"value\":\"");
+            // Escape the markdown content
+            for (info.contents) |c| {
+                if (c == '"' or c == '\\') try writer.writeByte('\\');
+                if (c == '\n') {
+                    try writer.writeAll("\\n");
+                } else {
+                    try writer.writeByte(c);
+                }
+            }
+            try writer.writeAll("\"}}");
+
+            try self.handler.writeResponse(id, response_buf.items);
+            std.log.info("Sent hover info for: {s}", .{uri});
+        } else {
+            try self.handler.writeResponse(id, "null");
+            std.log.info("No hover info found for position", .{});
+        }
     }
 
     /// Handle textDocument/documentSymbol request
@@ -847,6 +886,126 @@ pub const Server = struct {
 
         return try ranges.toOwnedSlice(self.allocator);
     }
+
+    /// Compute hover information for an identifier at a given position
+    fn computeHoverInfo(self: *Self, text: []const u8, target_line: u32, target_char: u32) !?HoverInfo {
+        // Find the identifier at the cursor position
+        var tokenizer = evaluator.Tokenizer.init(text, self.allocator);
+        var target_identifier: ?[]const u8 = null;
+
+        while (true) {
+            const token = tokenizer.next() catch break;
+            if (token.kind == .eof) break;
+
+            if (token.kind == .identifier) {
+                // Calculate position (tokens use 1-based, LSP uses 0-based)
+                const token_line: u32 = @intCast(if (token.line > 0) token.line - 1 else 0);
+                const token_col: u32 = @intCast(if (token.column > 0) token.column - 1 else 0);
+
+                if (token_line == target_line and target_char >= token_col and target_char < token_col + token.lexeme.len) {
+                    target_identifier = token.lexeme;
+                    break;
+                }
+            }
+        }
+
+        const identifier = target_identifier orelse return null;
+
+        // Parse the document to find definitions
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+
+        var parser = evaluator.Parser.init(arena.allocator(), text) catch return null;
+        const ast = parser.parse() catch return null;
+
+        // Search the AST for this identifier's definition
+        const def_info = try self.findDefinitionInAST(ast.*, identifier, arena.allocator());
+        defer if (def_info) |info| {
+            if (info.doc) |doc| arena.allocator().free(doc);
+        };
+
+        if (def_info) |info| {
+            // Build markdown hover content
+            var content = std.ArrayList(u8){};
+            defer content.deinit(self.allocator);
+
+            const writer = content.writer(self.allocator);
+
+            // Show documentation if available
+            if (info.doc) |doc| {
+                try writer.writeAll(doc);
+                try writer.writeAll("\n\n");
+            }
+
+            // Show identifier name
+            try writer.writeAll("```lazylang\n");
+            try writer.writeAll(identifier);
+            try writer.writeAll("\n```");
+
+            return HoverInfo{
+                .contents = try self.allocator.dupe(u8, content.items),
+            };
+        }
+
+        return null;
+    }
+
+    /// Definition information found in AST
+    const DefinitionInfo = struct {
+        doc: ?[]const u8,
+        expr: *evaluator.Expression,
+    };
+
+    /// Find definition of an identifier in the AST
+    fn findDefinitionInAST(self: *Self, expr: evaluator.Expression, identifier: []const u8, arena: std.mem.Allocator) !?DefinitionInfo {
+        return switch (expr) {
+            .let => |let| blk: {
+                // Check if this let binding defines the identifier (simple identifier pattern only)
+                if (let.pattern.data == .identifier) {
+                    const pat_id = let.pattern.data.identifier;
+                    if (std.mem.eql(u8, pat_id, identifier)) {
+                        // Found it! Extract doc comments if any
+                        const doc_copy = if (let.doc) |doc|
+                            try arena.dupe(u8, doc)
+                        else
+                            null;
+
+                        break :blk DefinitionInfo{
+                            .doc = doc_copy,
+                            .expr = let.value,
+                        };
+                    }
+                }
+                // Recursively search the body
+                break :blk try self.findDefinitionInAST(let.body.*, identifier, arena);
+            },
+            .object => |obj| blk: {
+                // Search object fields
+                for (obj.fields) |field| {
+                    // Check if field key matches (only static keys)
+                    const key_str = switch (field.key) {
+                        .static => |s| s,
+                        .dynamic => continue, // Skip dynamic keys
+                    };
+
+                    if (std.mem.eql(u8, key_str, identifier)) {
+                        // Found it! Return with doc comments
+                        const doc_copy = if (field.doc) |doc|
+                            try arena.dupe(u8, doc)
+                        else
+                            null;
+
+                        break :blk DefinitionInfo{
+                            .doc = doc_copy,
+                            .expr = field.value,
+                        };
+                    }
+                }
+                break :blk null;
+            },
+            else => null,
+        };
+    }
 };
 
 /// Diagnostic information for LSP
@@ -880,6 +1039,11 @@ const FoldingRange = struct {
     start_line: u32,
     end_line: u32,
     kind: ?[]const u8, // "comment", "imports", "region", etc.
+};
+
+/// Hover information for LSP
+const HoverInfo = struct {
+    contents: []const u8, // Markdown formatted string
 };
 
 /// Text document representation
