@@ -637,7 +637,7 @@ pub const Server = struct {
 
         for (text, 0..) |c, i| {
             if (current_line == target_line) {
-                line_end = i;
+                line_end = i + 1; // Use past-the-end indexing
                 if (c == '\n') break;
             } else if (c == '\n') {
                 current_line += 1;
@@ -928,7 +928,7 @@ pub const Server = struct {
 
         for (text, 0..) |c, i| {
             if (current_line == target_line) {
-                line_end = i;
+                line_end = i + 1; // Use past-the-end indexing
                 if (c == '\n') break;
             } else if (c == '\n') {
                 current_line += 1;
