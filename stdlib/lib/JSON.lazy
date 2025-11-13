@@ -10,6 +10,7 @@
 /// **Not supported:** Floats (converted to integers), NaN/Infinity
 ///
 /// Uses Zig's standard library JSON parser for robust JSON 1.0 compliance.
+/// ---
 {
   /// Parses a JSON string into a Lazylang value.
   ///

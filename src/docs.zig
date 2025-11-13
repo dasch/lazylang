@@ -68,6 +68,7 @@ pub const DocItem = struct {
 pub const ModuleInfo = struct {
     name: []const u8,
     items: []const DocItem,
+    module_doc: ?[]const u8, // Module-level documentation
 };
 
 pub const DocKind = enum {
@@ -609,7 +610,7 @@ pub fn writeIndexHtmlContent(allocator: std.mem.Allocator, file: anytype, module
     try writeHtmlFooter(file);
 }
 
-pub fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocItem, modules: []const ModuleInfo) !void {
+pub fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocItem, modules: []const ModuleInfo, module_doc: ?[]const u8, allocator: std.mem.Allocator) !void {
     // Write title with module name
     try file.writeAll("<!DOCTYPE html>\n");
     try file.writeAll("<html lang=\"en\">\n");
@@ -715,6 +716,20 @@ pub fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocI
     try file.writeAll("    </header>\n");
     try file.writeAll("    <div class=\"container\">\n");
     try file.writeAll("    <div id=\"docs\">\n");
+
+    // Render module-level documentation if available
+    if (module_doc) |doc| {
+        const html = try renderMarkdownToHtml(allocator, doc);
+        defer allocator.free(html);
+
+        try file.writeAll("      <div class=\"doc-item module-doc\">\n");
+        try file.writeAll("        <div class=\"doc-content\">\n");
+        try file.writeAll("          ");
+        try file.writeAll(html);
+        try file.writeAll("\n");
+        try file.writeAll("        </div>\n");
+        try file.writeAll("      </div>\n");
+    }
 
     // We need access to allocator for markdown rendering
     // For now, let's use a stack allocator approach with a larger buffer
@@ -908,7 +923,7 @@ pub fn generateModuleHtml(
     var html_file = try std.fs.cwd().createFile(html_filename, .{});
     defer html_file.close();
 
-    try writeHtmlDocs(html_file, module.name, module.items, all_modules);
+    try writeHtmlDocs(html_file, module.name, module.items, all_modules, module.module_doc, allocator);
 }
 
 pub fn generateIndexHtml(
@@ -979,10 +994,17 @@ pub fn extractModuleInfo(
     var doc_items = std.ArrayListUnmanaged(DocItem){};
     try extractDocs(expression, &doc_items, allocator);
 
+    // Extract module-level documentation if available
+    const module_doc: ?[]const u8 = switch (expression.*) {
+        .object => |obj| if (obj.module_doc) |doc| try allocator.dupe(u8, doc) else null,
+        else => null,
+    };
+
     const module_name = try allocator.dupe(u8, std.fs.path.stem(input_path));
 
     return ModuleInfo{
         .name = module_name,
         .items = try doc_items.toOwnedSlice(allocator),
+        .module_doc = module_doc,
     };
 }
