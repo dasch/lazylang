@@ -223,6 +223,7 @@ pub fn runReplDirect(
                 let_expr.pattern,
                 bound_value,
                 global_env,
+                &eval_ctx,
             ) catch |err| {
                 try printError(stderr, "Pattern match error", @errorName(err));
                 input_buffer.clearRetainingCapacity();

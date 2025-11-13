@@ -255,7 +255,19 @@ const FieldProjection = struct {
     fields: [][]const u8, // List of fields to extract
 };
 
-pub const Pattern = union(enum) {
+pub const Pattern = struct {
+    data: PatternData,
+    location: PatternLocation,
+};
+
+pub const PatternLocation = struct {
+    line: usize,
+    column: usize,
+    offset: usize,
+    length: usize,
+};
+
+pub const PatternData = union(enum) {
     identifier: []const u8,
     integer: i64,
     float: f64,
@@ -1769,65 +1781,69 @@ pub const Parser = struct {
         return node;
     }
 
+    fn createPattern(self: *Parser, data: PatternData, token: Token) !*Pattern {
+        const pattern = try self.arena.create(Pattern);
+        pattern.* = .{
+            .data = data,
+            .location = .{
+                .line = token.line,
+                .column = token.column,
+                .offset = token.offset,
+                .length = token.lexeme.len,
+            },
+        };
+        return pattern;
+    }
+
     fn parsePattern(self: *Parser) ParseError!*Pattern {
         switch (self.current.kind) {
             .number => {
+                const token = self.current;
                 const lexeme = self.current.lexeme;
                 // Check if the number contains a decimal point
                 const has_decimal_point = std.mem.indexOfScalar(u8, lexeme, '.') != null;
                 try self.advance();
-                const pattern = try self.arena.create(Pattern);
                 if (has_decimal_point) {
                     const value = try std.fmt.parseFloat(f64, lexeme);
-                    pattern.* = .{ .float = value };
+                    return try self.createPattern(.{ .float = value }, token);
                 } else {
                     const value = try std.fmt.parseInt(i64, lexeme, 10);
-                    pattern.* = .{ .integer = value };
+                    return try self.createPattern(.{ .integer = value }, token);
                 }
-                return pattern;
             },
             .string => {
+                const token = self.current;
                 const value = self.current.lexeme;
                 try self.advance();
-                const pattern = try self.arena.create(Pattern);
-                pattern.* = .{ .string_literal = value };
-                return pattern;
+                return try self.createPattern(.{ .string_literal = value }, token);
             },
             .symbol => {
+                const token = self.current;
                 const value = self.current.lexeme;
                 try self.advance();
-                const pattern = try self.arena.create(Pattern);
-                pattern.* = .{ .symbol = value };
-                return pattern;
+                return try self.createPattern(.{ .symbol = value }, token);
             },
             .identifier => {
+                const token = self.current;
                 const name = self.current.lexeme;
 
                 // Check for boolean and null literals
                 if (std.mem.eql(u8, name, "true")) {
                     try self.advance();
-                    const pattern = try self.arena.create(Pattern);
-                    pattern.* = .{ .boolean = true };
-                    return pattern;
+                    return try self.createPattern(.{ .boolean = true }, token);
                 }
                 if (std.mem.eql(u8, name, "false")) {
                     try self.advance();
-                    const pattern = try self.arena.create(Pattern);
-                    pattern.* = .{ .boolean = false };
-                    return pattern;
+                    return try self.createPattern(.{ .boolean = false }, token);
                 }
                 if (std.mem.eql(u8, name, "null")) {
                     try self.advance();
-                    const pattern = try self.arena.create(Pattern);
-                    pattern.* = .null_literal;
-                    return pattern;
+                    return try self.createPattern(.null_literal, token);
                 }
 
                 // Regular identifier pattern
                 try self.advance();
-                const pattern = try self.arena.create(Pattern);
-                pattern.* = .{ .identifier = name };
-                return pattern;
+                return try self.createPattern(.{ .identifier = name }, token);
             },
             .l_paren => return self.parseTuplePattern(),
             .l_bracket => return self.parseArrayPattern(),
@@ -1837,6 +1853,7 @@ pub const Parser = struct {
     }
 
     fn parseTuplePattern(self: *Parser) ParseError!*Pattern {
+        const start_token = self.current;
         try self.expect(.l_paren);
 
         var elements = std.ArrayListUnmanaged(*Pattern){};
@@ -1858,12 +1875,11 @@ pub const Parser = struct {
         try self.expect(.r_paren);
 
         const slice = try elements.toOwnedSlice(self.arena);
-        const pattern = try self.arena.create(Pattern);
-        pattern.* = .{ .tuple = .{ .elements = slice } };
-        return pattern;
+        return try self.createPattern(.{ .tuple = .{ .elements = slice } }, start_token);
     }
 
     fn parseArrayPattern(self: *Parser) ParseError!*Pattern {
+        const start_token = self.current;
         try self.expect(.l_bracket);
 
         var elements = std.ArrayListUnmanaged(*Pattern){};
@@ -1899,18 +1915,18 @@ pub const Parser = struct {
         try self.expect(.r_bracket);
 
         const slice = try elements.toOwnedSlice(self.arena);
-        const pattern = try self.arena.create(Pattern);
-        pattern.* = .{ .array = .{ .elements = slice, .rest = rest } };
-        return pattern;
+        return try self.createPattern(.{ .array = .{ .elements = slice, .rest = rest } }, start_token);
     }
 
     fn parseObjectPattern(self: *Parser) ParseError!*Pattern {
+        const start_token = self.current;
         try self.expect(.l_brace);
 
         var fields = std.ArrayListUnmanaged(ObjectPatternField){};
 
         while (self.current.kind != .r_brace) {
             if (self.current.kind != .identifier) return error.UnexpectedToken;
+            const field_token = self.current;
             const field_name = self.current.lexeme;
             try self.advance();
 
@@ -1925,8 +1941,7 @@ pub const Parser = struct {
                 });
             } else {
                 // Field extraction: { key } is short for { key: key }
-                const field_pattern = try self.arena.create(Pattern);
-                field_pattern.* = .{ .identifier = field_name };
+                const field_pattern = try self.createPattern(.{ .identifier = field_name }, field_token);
                 try fields.append(self.arena, .{
                     .key = field_name,
                     .pattern = field_pattern,
@@ -1946,9 +1961,7 @@ pub const Parser = struct {
         try self.expect(.r_brace);
 
         const slice = try fields.toOwnedSlice(self.arena);
-        const pattern = try self.arena.create(Pattern);
-        pattern.* = .{ .object = .{ .fields = slice } };
-        return pattern;
+        return try self.createPattern(.{ .object = .{ .fields = slice } }, start_token);
     }
 
     fn expect(self: *Parser, kind: TokenKind) ParseError!void {
@@ -2303,8 +2316,9 @@ pub fn matchPattern(
     pattern: *Pattern,
     value: Value,
     base_env: ?*Environment,
+    ctx: *const EvalContext,
 ) EvalError!?*Environment {
-    return switch (pattern.*) {
+    return switch (pattern.data) {
         .identifier => |name| blk: {
             const new_env = try arena.create(Environment);
             new_env.* = .{
@@ -2317,80 +2331,332 @@ pub fn matchPattern(
         .integer => |expected| blk: {
             const actual = switch (value) {
                 .integer => |v| v,
-                else => return error.TypeMismatch,
+                else => {
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.setErrorLocation(
+                            pattern.location.line,
+                            pattern.location.column,
+                            pattern.location.offset,
+                            pattern.location.length,
+                        );
+                        const pattern_str = formatPatternValue(std.heap.page_allocator, pattern) catch "integer";
+                        const value_str = formatValueShort(std.heap.page_allocator, value) catch getValueTypeName(value);
+                        err_ctx.setErrorData(.{ .type_mismatch = .{
+                            .expected = pattern_str,
+                            .found = value_str,
+                            .operation = "destructuring",
+                        } });
+                    }
+                    return error.TypeMismatch;
+                },
             };
-            if (expected != actual) return error.TypeMismatch;
+            if (expected != actual) {
+                if (ctx.error_ctx) |err_ctx| {
+                    err_ctx.setErrorLocation(
+                        pattern.location.line,
+                        pattern.location.column,
+                        pattern.location.offset,
+                        pattern.location.length,
+                    );
+                    const pattern_str = formatPatternValue(std.heap.page_allocator, pattern) catch "value";
+                    const value_str = formatValueShort(std.heap.page_allocator, value) catch "value";
+                    err_ctx.setErrorData(.{ .type_mismatch = .{
+                        .expected = pattern_str,
+                        .found = value_str,
+                        .operation = "destructuring",
+                    } });
+                }
+                return error.TypeMismatch;
+            }
             break :blk base_env;
         },
         .float => |expected| blk: {
             const actual = switch (value) {
                 .float => |v| v,
-                else => return error.TypeMismatch,
+                else => {
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.setErrorLocation(
+                            pattern.location.line,
+                            pattern.location.column,
+                            pattern.location.offset,
+                            pattern.location.length,
+                        );
+                        err_ctx.setErrorData(.{ .type_mismatch = .{
+                            .expected = getPatternTypeName(pattern),
+                            .found = getValueTypeName(value),
+                            .operation = "destructuring",
+                        } });
+                    }
+                    return error.TypeMismatch;
+                },
             };
-            if (expected != actual) return error.TypeMismatch;
+            if (expected != actual) {
+                if (ctx.error_ctx) |err_ctx| {
+                    err_ctx.setErrorLocation(
+                        pattern.location.line,
+                        pattern.location.column,
+                        pattern.location.offset,
+                        pattern.location.length,
+                    );
+                    const pattern_str = formatPatternValue(std.heap.page_allocator, pattern) catch "value";
+                    const value_str = formatValueShort(std.heap.page_allocator, value) catch "value";
+                    err_ctx.setErrorData(.{ .type_mismatch = .{
+                        .expected = pattern_str,
+                        .found = value_str,
+                        .operation = "destructuring",
+                    } });
+                }
+                return error.TypeMismatch;
+            }
             break :blk base_env;
         },
         .boolean => |expected| blk: {
             const actual = switch (value) {
                 .boolean => |v| v,
-                else => return error.TypeMismatch,
+                else => {
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.setErrorLocation(
+                            pattern.location.line,
+                            pattern.location.column,
+                            pattern.location.offset,
+                            pattern.location.length,
+                        );
+                        err_ctx.setErrorData(.{ .type_mismatch = .{
+                            .expected = getPatternTypeName(pattern),
+                            .found = getValueTypeName(value),
+                            .operation = "destructuring",
+                        } });
+                    }
+                    return error.TypeMismatch;
+                },
             };
-            if (expected != actual) return error.TypeMismatch;
+            if (expected != actual) {
+                if (ctx.error_ctx) |err_ctx| {
+                    err_ctx.setErrorLocation(
+                        pattern.location.line,
+                        pattern.location.column,
+                        pattern.location.offset,
+                        pattern.location.length,
+                    );
+                    const pattern_str = formatPatternValue(std.heap.page_allocator, pattern) catch "value";
+                    const value_str = formatValueShort(std.heap.page_allocator, value) catch "value";
+                    err_ctx.setErrorData(.{ .type_mismatch = .{
+                        .expected = pattern_str,
+                        .found = value_str,
+                        .operation = "destructuring",
+                    } });
+                }
+                return error.TypeMismatch;
+            }
             break :blk base_env;
         },
         .null_literal => blk: {
             switch (value) {
                 .null_value => {},
-                else => return error.TypeMismatch,
+                else => {
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.setErrorLocation(
+                            pattern.location.line,
+                            pattern.location.column,
+                            pattern.location.offset,
+                            pattern.location.length,
+                        );
+                        err_ctx.setErrorData(.{ .type_mismatch = .{
+                            .expected = "null",
+                            .found = getValueTypeName(value),
+                            .operation = "destructuring",
+                        } });
+                    }
+                    return error.TypeMismatch;
+                },
             }
             break :blk base_env;
         },
         .string_literal => |expected| blk: {
             const actual = switch (value) {
                 .string => |v| v,
-                else => return error.TypeMismatch,
+                else => {
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.setErrorLocation(
+                            pattern.location.line,
+                            pattern.location.column,
+                            pattern.location.offset,
+                            pattern.location.length,
+                        );
+                        err_ctx.setErrorData(.{ .type_mismatch = .{
+                            .expected = "string",
+                            .found = getValueTypeName(value),
+                            .operation = "destructuring",
+                        } });
+                    }
+                    return error.TypeMismatch;
+                },
             };
-            if (!std.mem.eql(u8, expected, actual)) return error.TypeMismatch;
+            if (!std.mem.eql(u8, expected, actual)) {
+                if (ctx.error_ctx) |err_ctx| {
+                    err_ctx.setErrorLocation(
+                        pattern.location.line,
+                        pattern.location.column,
+                        pattern.location.offset,
+                        pattern.location.length,
+                    );
+                    const pattern_str = formatPatternValue(std.heap.page_allocator, pattern) catch "value";
+                    const value_str = formatValueShort(std.heap.page_allocator, value) catch "value";
+                    err_ctx.setErrorData(.{ .type_mismatch = .{
+                        .expected = pattern_str,
+                        .found = value_str,
+                        .operation = "destructuring",
+                    } });
+                }
+                return error.TypeMismatch;
+            }
             break :blk base_env;
         },
         .symbol => |expected| blk: {
             const actual = switch (value) {
                 .symbol => |v| v,
-                else => return error.TypeMismatch,
+                else => {
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.setErrorLocation(
+                            pattern.location.line,
+                            pattern.location.column,
+                            pattern.location.offset,
+                            pattern.location.length,
+                        );
+                        err_ctx.setErrorData(.{ .type_mismatch = .{
+                            .expected = "symbol",
+                            .found = getValueTypeName(value),
+                            .operation = "destructuring",
+                        } });
+                    }
+                    return error.TypeMismatch;
+                },
             };
-            if (!std.mem.eql(u8, expected, actual)) return error.TypeMismatch;
+            if (!std.mem.eql(u8, expected, actual)) {
+                if (ctx.error_ctx) |err_ctx| {
+                    err_ctx.setErrorLocation(
+                        pattern.location.line,
+                        pattern.location.column,
+                        pattern.location.offset,
+                        pattern.location.length,
+                    );
+                    const pattern_str = formatPatternValue(std.heap.page_allocator, pattern) catch "value";
+                    const value_str = formatValueShort(std.heap.page_allocator, value) catch "value";
+                    err_ctx.setErrorData(.{ .type_mismatch = .{
+                        .expected = pattern_str,
+                        .found = value_str,
+                        .operation = "destructuring",
+                    } });
+                }
+                return error.TypeMismatch;
+            }
             break :blk base_env;
         },
         .tuple => |tuple_pattern| blk: {
             const tuple_value = switch (value) {
                 .tuple => |t| t,
-                else => return error.TypeMismatch,
+                else => {
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.setErrorLocation(
+                            pattern.location.line,
+                            pattern.location.column,
+                            pattern.location.offset,
+                            pattern.location.length,
+                        );
+                        err_ctx.setErrorData(.{ .type_mismatch = .{
+                            .expected = "tuple",
+                            .found = getValueTypeName(value),
+                            .operation = "destructuring",
+                        } });
+                    }
+                    return error.TypeMismatch;
+                },
             };
 
             if (tuple_pattern.elements.len != tuple_value.elements.len) {
+                if (ctx.error_ctx) |err_ctx| {
+                    err_ctx.setErrorLocation(
+                        pattern.location.line,
+                        pattern.location.column,
+                        pattern.location.offset,
+                        pattern.location.length,
+                    );
+                    const pattern_str = formatPatternValue(std.heap.page_allocator, pattern) catch "tuple";
+                    const value_str = formatValueShort(std.heap.page_allocator, value) catch "tuple";
+                    err_ctx.setErrorData(.{ .type_mismatch = .{
+                        .expected = pattern_str,
+                        .found = value_str,
+                        .operation = "destructuring",
+                    } });
+                }
                 return error.TypeMismatch;
             }
 
             var current_env = base_env;
             for (tuple_pattern.elements, 0..) |elem_pattern, i| {
-                current_env = try matchPattern(arena, elem_pattern, tuple_value.elements[i], current_env);
+                current_env = try matchPattern(arena, elem_pattern, tuple_value.elements[i], current_env, ctx);
             }
             break :blk current_env;
         },
         .array => |array_pattern| blk: {
             const array_value = switch (value) {
                 .array => |a| a,
-                else => return error.TypeMismatch,
+                else => {
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.setErrorLocation(
+                            pattern.location.line,
+                            pattern.location.column,
+                            pattern.location.offset,
+                            pattern.location.length,
+                        );
+                        err_ctx.setErrorData(.{ .type_mismatch = .{
+                            .expected = "array",
+                            .found = getValueTypeName(value),
+                            .operation = "destructuring",
+                        } });
+                    }
+                    return error.TypeMismatch;
+                },
             };
 
             // If there's no rest pattern, lengths must match exactly
             if (array_pattern.rest == null) {
                 if (array_pattern.elements.len != array_value.elements.len) {
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.setErrorLocation(
+                            pattern.location.line,
+                            pattern.location.column,
+                            pattern.location.offset,
+                            pattern.location.length,
+                        );
+                        const pattern_str = formatPatternValue(std.heap.page_allocator, pattern) catch "array";
+                        const value_str = formatValueShort(std.heap.page_allocator, value) catch "array";
+                        err_ctx.setErrorData(.{ .type_mismatch = .{
+                            .expected = pattern_str,
+                            .found = value_str,
+                            .operation = "destructuring",
+                        } });
+                    }
                     return error.TypeMismatch;
                 }
             } else {
                 // With rest pattern, array must have at least as many elements as fixed patterns
                 if (array_value.elements.len < array_pattern.elements.len) {
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.setErrorLocation(
+                            pattern.location.line,
+                            pattern.location.column,
+                            pattern.location.offset,
+                            pattern.location.length,
+                        );
+                        const pattern_str = formatPatternValue(std.heap.page_allocator, pattern) catch "array";
+                        const value_str = formatValueShort(std.heap.page_allocator, value) catch "array";
+                        err_ctx.setErrorData(.{ .type_mismatch = .{
+                            .expected = pattern_str,
+                            .found = value_str,
+                            .operation = "destructuring",
+                        } });
+                    }
                     return error.TypeMismatch;
                 }
             }
@@ -2399,7 +2665,7 @@ pub fn matchPattern(
 
             // Match fixed elements
             for (array_pattern.elements, 0..) |elem_pattern, i| {
-                current_env = try matchPattern(arena, elem_pattern, array_value.elements[i], current_env);
+                current_env = try matchPattern(arena, elem_pattern, array_value.elements[i], current_env, ctx);
             }
 
             // If there's a rest pattern, bind remaining elements to it
@@ -2424,7 +2690,22 @@ pub fn matchPattern(
         .object => |object_pattern| blk: {
             const object_value = switch (value) {
                 .object => |o| o,
-                else => return error.TypeMismatch,
+                else => {
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.setErrorLocation(
+                            pattern.location.line,
+                            pattern.location.column,
+                            pattern.location.offset,
+                            pattern.location.length,
+                        );
+                        err_ctx.setErrorData(.{ .type_mismatch = .{
+                            .expected = "object",
+                            .found = getValueTypeName(value),
+                            .operation = "destructuring",
+                        } });
+                    }
+                    return error.TypeMismatch;
+                },
             };
 
             var current_env = base_env;
@@ -2435,16 +2716,60 @@ pub fn matchPattern(
                     if (std.mem.eql(u8, value_field.key, pattern_field.key)) {
                         // Force the field value if it's a thunk, then match the pattern
                         const forced_value = try force(arena, value_field.value);
-                        current_env = try matchPattern(arena, pattern_field.pattern, forced_value, current_env);
+                        current_env = try matchPattern(arena, pattern_field.pattern, forced_value, current_env, ctx);
                         found = true;
                         break;
                     }
                 }
-                if (!found) return error.TypeMismatch;
+                if (!found) {
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.setErrorLocation(
+                            pattern.location.line,
+                            pattern.location.column,
+                            pattern.location.offset,
+                            pattern.location.length,
+                        );
+                        // List available fields
+                        var available_fields = std.ArrayList([]const u8){};
+                        defer available_fields.deinit(std.heap.page_allocator);
+                        for (object_value.fields) |field| {
+                            available_fields.append(std.heap.page_allocator, field.key) catch {};
+                        }
+
+                        const pattern_str = std.fmt.allocPrint(std.heap.page_allocator, "object with field '{s}'", .{pattern_field.key}) catch "object";
+                        const value_str = if (object_value.fields.len == 0)
+                            std.fmt.allocPrint(std.heap.page_allocator, "object with no fields", .{}) catch "object"
+                        else blk2: {
+                            var fields_str = std.ArrayList(u8){};
+                            defer fields_str.deinit(std.heap.page_allocator);
+                            fields_str.appendSlice(std.heap.page_allocator, "object with fields: {") catch break :blk2 "object";
+                            for (object_value.fields, 0..) |field, i| {
+                                if (i > 0) fields_str.appendSlice(std.heap.page_allocator, ", ") catch break :blk2 "object";
+                                fields_str.appendSlice(std.heap.page_allocator, field.key) catch break :blk2 "object";
+                            }
+                            fields_str.append(std.heap.page_allocator, '}') catch break :blk2 "object";
+                            break :blk2 fields_str.toOwnedSlice(std.heap.page_allocator) catch "object";
+                        };
+                        err_ctx.setErrorData(.{ .type_mismatch = .{
+                            .expected = pattern_str,
+                            .found = value_str,
+                            .operation = "destructuring",
+                        } });
+                    }
+                    return error.TypeMismatch;
+                }
             }
             break :blk current_env;
         },
     };
+}
+
+// Helper for error reporting
+fn setPatternMatchError(arena: std.mem.Allocator, pattern_str: []const u8, value_str: []const u8) !void {
+    _ = arena;
+    _ = pattern_str;
+    _ = value_str;
+    // This is a placeholder for now - we're using setErrorData instead
 }
 
 fn findObjectField(obj: ObjectValue, key: []const u8) ?Value {
@@ -2561,13 +2886,13 @@ pub fn evaluateExpression(
         .let => |let_expr| blk: {
             // For recursive definitions, if the pattern is a simple identifier,
             // we create the environment binding before evaluating the value
-            const is_recursive = switch (let_expr.pattern.*) {
+            const is_recursive = switch (let_expr.pattern.data) {
                 .identifier => true,
                 else => false,
             };
 
             if (is_recursive) {
-                const identifier = let_expr.pattern.identifier;
+                const identifier = let_expr.pattern.data.identifier;
                 // Create environment entry with placeholder value
                 const recursive_env = try arena.create(Environment);
                 recursive_env.* = .{
@@ -2587,7 +2912,7 @@ pub fn evaluateExpression(
             } else {
                 // Non-recursive case: evaluate value first, then pattern match
                 const value = try evaluateExpression(arena, let_expr.value, env, current_dir, ctx);
-                const new_env = try matchPattern(arena, let_expr.pattern, value, env);
+                const new_env = try matchPattern(arena, let_expr.pattern, value, env, ctx);
                 break :blk try evaluateExpression(arena, let_expr.body, new_env, current_dir, ctx);
             }
         },
@@ -2857,7 +3182,7 @@ pub fn evaluateExpression(
                     // The left side is the value, the right side is the function
                     switch (right_value) {
                         .function => |function_ptr| {
-                            const bound_env = try matchPattern(arena, function_ptr.param, left_value, function_ptr.env);
+                            const bound_env = try matchPattern(arena, function_ptr.param, left_value, function_ptr.env, ctx);
                             break :blk2 try evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx);
                         },
                         .native_fn => |native_fn| {
@@ -2905,7 +3230,7 @@ pub fn evaluateExpression(
             // Try each pattern branch
             for (when_matches.branches) |branch| {
                 // Try to match the pattern
-                const match_env = matchPattern(arena, branch.pattern, value, env) catch |err| {
+                const match_env = matchPattern(arena, branch.pattern, value, env, ctx) catch |err| {
                     // If pattern doesn't match, try next branch
                     if (err == error.TypeMismatch) continue;
                     return err;
@@ -2929,7 +3254,7 @@ pub fn evaluateExpression(
 
             switch (function_value) {
                 .function => |function_ptr| {
-                    const bound_env = try matchPattern(arena, function_ptr.param, argument_value, function_ptr.env);
+                    const bound_env = try matchPattern(arena, function_ptr.param, argument_value, function_ptr.env, ctx);
                     break :blk try evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx);
                 },
                 .native_fn => |native_fn| {
@@ -3090,7 +3415,7 @@ pub fn evaluateExpression(
                         try fields_list.append(arena, .{ .key = key_copy, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx) });
                     }
                     const obj_arg = Value{ .object = .{ .fields = try fields_list.toOwnedSlice(arena), .module_doc = null } };
-                    const bound_env = try matchPattern(arena, function_ptr.param, obj_arg, function_ptr.env);
+                    const bound_env = try matchPattern(arena, function_ptr.param, obj_arg, function_ptr.env, ctx);
                     break :blk try evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx);
                 },
                 .native_fn => |native_fn| {
@@ -3173,7 +3498,10 @@ pub fn evaluateExpression(
         .field_accessor => |field_accessor| blk: {
             // Create a function that accesses the specified fields
             const param = try arena.create(Pattern);
-            param.* = .{ .identifier = "__obj" };
+            param.* = .{
+                .data = .{ .identifier = "__obj" },
+                .location = .{ .line = 0, .column = 0, .offset = 0, .length = 0 },
+            };
 
             // Build the body expression: __obj.field1.field2...
             var body_expr = try arena.create(Expression);
@@ -3273,7 +3601,7 @@ fn evaluateArrayComprehension(
     switch (iterable_value) {
         .array => |arr| {
             for (arr.elements) |element| {
-                const new_env = try matchPattern(arena, clause.pattern, element, env);
+                const new_env = try matchPattern(arena, clause.pattern, element, env, ctx);
                 try evaluateArrayComprehension(arena, result, comp, clause_index + 1, new_env, current_dir, ctx);
             }
         },
@@ -3325,7 +3653,7 @@ fn evaluateObjectComprehension(
     switch (iterable_value) {
         .array => |arr| {
             for (arr.elements) |element| {
-                const new_env = try matchPattern(arena, clause.pattern, element, env);
+                const new_env = try matchPattern(arena, clause.pattern, element, env, ctx);
                 try evaluateObjectComprehension(arena, result, comp, clause_index + 1, new_env, current_dir, ctx);
             }
         },
@@ -3338,7 +3666,7 @@ fn evaluateObjectComprehension(
                 tuple_elements[1] = try force(arena, field.value);
                 const tuple_value = Value{ .tuple = .{ .elements = tuple_elements } };
 
-                const new_env = try matchPattern(arena, clause.pattern, tuple_value, env);
+                const new_env = try matchPattern(arena, clause.pattern, tuple_value, env, ctx);
                 try evaluateObjectComprehension(arena, result, comp, clause_index + 1, new_env, current_dir, ctx);
             }
         },
@@ -3505,6 +3833,75 @@ fn getValueTypeName(value: Value) []const u8 {
         .function => "function",
         .native_fn => "native function",
         .thunk => "thunk",
+    };
+}
+
+fn getPatternTypeName(pattern: *Pattern) []const u8 {
+    return switch (pattern.data) {
+        .identifier => "identifier",
+        .integer => "integer",
+        .float => "float",
+        .boolean => "boolean",
+        .null_literal => "null",
+        .symbol => "symbol",
+        .string_literal => "string",
+        .tuple => "tuple",
+        .array => "array",
+        .object => "object",
+    };
+}
+
+fn formatPatternValue(allocator: std.mem.Allocator, pattern: *Pattern) ![]u8 {
+    return switch (pattern.data) {
+        .identifier => |name| try std.fmt.allocPrint(allocator, "{s}", .{name}),
+        .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
+        .float => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
+        .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
+        .null_literal => try allocator.dupe(u8, "null"),
+        .symbol => |s| try std.fmt.allocPrint(allocator, "#{s}", .{s}),
+        .string_literal => |s| try std.fmt.allocPrint(allocator, "\"{s}\"", .{s}),
+        .tuple => |t| try std.fmt.allocPrint(allocator, "tuple with {d} elements", .{t.elements.len}),
+        .array => |a| if (a.rest) |_|
+            try std.fmt.allocPrint(allocator, "array with at least {d} elements", .{a.elements.len})
+        else
+            try std.fmt.allocPrint(allocator, "array with exactly {d} elements", .{a.elements.len}),
+        .object => |o| try std.fmt.allocPrint(allocator, "object with fields: {s}", .{try formatObjectFields(allocator, o)}),
+    };
+}
+
+fn formatObjectFields(allocator: std.mem.Allocator, obj_pattern: ObjectPattern) ![]u8 {
+    if (obj_pattern.fields.len == 0) return allocator.dupe(u8, "{}");
+
+    var result = std.ArrayList(u8){};
+    defer result.deinit(allocator);
+    try result.append(allocator, '{');
+
+    for (obj_pattern.fields, 0..) |field, i| {
+        if (i > 0) try result.appendSlice(allocator, ", ");
+        try result.appendSlice(allocator, field.key);
+    }
+
+    try result.append(allocator, '}');
+    return result.toOwnedSlice(allocator);
+}
+
+fn formatValueShort(allocator: std.mem.Allocator, value: Value) ![]u8 {
+    return switch (value) {
+        .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
+        .float => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
+        .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
+        .null_value => try allocator.dupe(u8, "null"),
+        .symbol => |s| try std.fmt.allocPrint(allocator, "#{s}", .{s}),
+        .string => |s| if (s.len > 20)
+            try std.fmt.allocPrint(allocator, "\"{s}...\"", .{s[0..20]})
+        else
+            try std.fmt.allocPrint(allocator, "\"{s}\"", .{s}),
+        .array => |a| try std.fmt.allocPrint(allocator, "array with {d} elements", .{a.elements.len}),
+        .tuple => |t| try std.fmt.allocPrint(allocator, "tuple with {d} elements", .{t.elements.len}),
+        .object => |o| try std.fmt.allocPrint(allocator, "object with {d} fields", .{o.fields.len}),
+        .function => try allocator.dupe(u8, "function"),
+        .native_fn => try allocator.dupe(u8, "native function"),
+        .thunk => try allocator.dupe(u8, "thunk"),
     };
 }
 

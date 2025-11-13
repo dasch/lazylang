@@ -76,7 +76,7 @@ pub const DocKind = enum {
 };
 
 fn extractParamNames(pattern: *const evaluator.Pattern, names: *std.ArrayList([]const u8), allocator: std.mem.Allocator) !void {
-    switch (pattern.*) {
+    switch (pattern.data) {
         .identifier => |ident| {
             try names.append(allocator, ident);
         },
@@ -121,7 +121,7 @@ fn extractDocs(expr: *const evaluator.Expression, items: *std.ArrayListUnmanaged
         .let => |let_expr| {
             if (let_expr.doc) |doc| {
                 // Extract the name from the pattern
-                const name = switch (let_expr.pattern.*) {
+                const name = switch (let_expr.pattern.data) {
                     .identifier => |ident| ident,
                     else => "unknown",
                 };

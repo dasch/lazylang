@@ -99,6 +99,7 @@ pub fn build(b: *std.Build) void {
         "tests/eval/variables_test.zig",
         "tests/eval/destructuring_test.zig",
         "tests/eval/pattern_matching_test.zig",
+        "tests/eval/pattern_matching_errors_test.zig",
         "tests/eval/where_test.zig",
         "tests/eval/do_test.zig",
         "tests/eval/symbols_test.zig",

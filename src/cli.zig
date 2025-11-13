@@ -234,7 +234,7 @@ fn runEval(
         if (json_output) {
             try json_error.reportErrorAsJson(stderr, file_path.?, &result.error_ctx, "ParseError", "An error occurred at this location.", null);
         } else {
-            try reportErrorWithContext(allocator, stderr, file_path.?, file_content, &result.error_ctx, null);
+            try reportErrorWithContext(allocator, stderr, file_path.?, file_content, &result.error_ctx, result.err);
         }
         return .{ .exit_code = 1 };
     }
@@ -731,7 +731,7 @@ fn runRun(
     };
 
     // Call the function with the system value
-    const bound_env = evaluator.matchPattern(arena, function.param, system_value, function.env) catch |err| {
+    const bound_env = evaluator.matchPattern(arena, function.param, system_value, function.env, &eval_ctx) catch |err| {
         try stderr.print("error: failed to bind function parameter: {}\n", .{err});
         return .{ .exit_code = 1 };
     };
