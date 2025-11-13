@@ -18,7 +18,7 @@ fn writeHtmlHeader(file: anytype, title: []const u8) !void {
 fn writeCommonCss(file: anytype, sidebar_width: []const u8) !void {
     try file.writeAll(
         \\    * { margin: 0; padding: 0; box-sizing: border-box; }
-        \\    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; background: #f5f5f5; display: flex; }
+        \\    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; background: white; display: flex; }
         \\
     );
 
@@ -46,8 +46,8 @@ fn writeCommonCss(file: anytype, sidebar_width: []const u8) !void {
     try file.writeAll(
         \\; flex: 1; }
         \\    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-        \\    header { background: #2c3e50; color: white; padding: 30px 0; margin-bottom: 30px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        \\    h1 { font-size: 2.5em; font-weight: 300; }
+        \\    header { padding: 30px 0 20px 0; margin-bottom: 20px; border-bottom: 1px solid #e0e0e0; }
+        \\    h1 { font-size: 2.5em; font-weight: 300; color: #333; }
         \\
     );
 }
@@ -491,11 +491,11 @@ pub fn writeIndexHtmlContent(allocator: std.mem.Allocator, file: anytype, module
     // Index-specific CSS
     try file.writeAll(
         \\    .module-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
-        \\    .module-card { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        \\    .module-card h2 { color: #2c3e50; margin-bottom: 15px; font-size: 1.5em; }
-        \\    .module-card h2 a { color: #2c3e50; text-decoration: none; }
+        \\    .module-card { padding: 15px 0; border-bottom: 1px solid #e0e0e0; }
+        \\    .module-card h2 { color: #333; margin-bottom: 10px; font-size: 1.5em; }
+        \\    .module-card h2 a { color: #333; text-decoration: none; }
         \\    .module-card h2 a:hover { color: #3498db; }
-        \\    .module-card .item-count { color: #7f8c8d; font-size: 0.9em; margin-top: 10px; }
+        \\    .module-card .item-count { color: #7f8c8d; font-size: 0.9em; margin-top: 5px; }
         \\    @media (max-width: 768px) { .sidebar { display: none; } .main { margin-left: 0; } .container { padding: 10px; } .module-list { grid-template-columns: 1fr; } }
         \\
     );
@@ -534,15 +534,15 @@ pub fn writeIndexHtmlContent(allocator: std.mem.Allocator, file: anytype, module
 
     // Render README content if available
     if (readme_content) |readme| {
-        try file.writeAll("      <div class=\"readme-content\" style=\"background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); line-height: 1.8; color: #333;\">\n");
+        try file.writeAll("      <div class=\"readme-content\" style=\"line-height: 1.8; color: #333;\">\n");
         try file.writeAll("      <style>\n");
-        try file.writeAll("        .readme-content h1 { font-size: 2.5em; color: #2c3e50; margin-top: 0 !important; margin-bottom: 0.5em; font-weight: 300; }\n");
-        try file.writeAll("        .readme-content h2 { font-size: 1.8em; color: #2c3e50; margin-top: 1.5em; margin-bottom: 0.5em; font-weight: 400; }\n");
-        try file.writeAll("        .readme-content h3 { font-size: 1.4em; color: #2c3e50; margin-top: 1.2em; margin-bottom: 0.4em; }\n");
+        try file.writeAll("        .readme-content h1 { font-size: 2.5em; color: #333; margin-top: 0 !important; margin-bottom: 0.5em; font-weight: 300; }\n");
+        try file.writeAll("        .readme-content h2 { font-size: 1.8em; color: #333; margin-top: 1.5em; margin-bottom: 0.5em; font-weight: 400; }\n");
+        try file.writeAll("        .readme-content h3 { font-size: 1.4em; color: #333; margin-top: 1.2em; margin-bottom: 0.4em; }\n");
         try file.writeAll("        .readme-content p { margin-bottom: 1em; color: #555; }\n");
         try file.writeAll("        .readme-content li { margin-left: 1.5em; margin-bottom: 0.5em; color: #555; }\n");
         try file.writeAll("        .readme-content code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Monaco', 'Menlo', 'Courier New', monospace; font-size: 0.9em; color: #c7254e; }\n");
-        try file.writeAll("        .readme-content pre { background: #f8f8f8; border: 1px solid #e1e4e8; border-radius: 6px; padding: 16px; overflow-x: auto; margin: 1em 0; }\n");
+        try file.writeAll("        .readme-content pre { background: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 4px; padding: 16px; overflow-x: auto; margin: 1em 0; }\n");
         try file.writeAll("        .readme-content pre code { background: none; padding: 0; color: #333; font-size: 0.95em; }\n");
         try file.writeAll("      </style>\n");
 
@@ -626,18 +626,21 @@ pub fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocI
         \\    .sidebar .nested a { padding: 8px 20px 8px 35px; font-size: 0.9em; color: #bdc3c7; }
         \\    .sidebar .nested a:hover { background: #3d5469; color: #ecf0f1; }
         \\    .sidebar .nested a.active { background: #2c3e50; color: #3498db; border-left: 3px solid #3498db; padding-left: 32px; }
-        \\    .doc-item { background: white; padding: 25px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        \\    .doc-item h2 { color: #2c3e50; margin-bottom: 10px; font-size: 1.5em; }
+        \\    .doc-item { margin-bottom: 30px; padding-bottom: 20px; border-bottom: 1px solid #e0e0e0; }
+        \\    .doc-item:last-child { border-bottom: none; }
+        \\    .doc-item h2 { color: #333; margin-bottom: 10px; font-size: 1.5em; }
         \\    .doc-item .kind { display: inline-block; padding: 4px 10px; background: #3498db; color: white; border-radius: 4px; font-size: 0.85em; margin-bottom: 10px; }
-        \\    .doc-item .doc-content { color: #555; line-height: 1.8; }
+        \\    .doc-item .doc-content { color: #555; line-height: 1.8; margin-left: 20px; }
         \\    .doc-item .doc-content code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 0.9em; }
-        \\    .doc-item .doc-content pre { background: #f4f4f4; padding: 12px; border-radius: 4px; overflow-x: auto; margin: 10px 0; }
+        \\    .doc-item .doc-content pre { background: #f9f9f9; padding: 12px; border: 1px solid #e0e0e0; border-radius: 4px; overflow-x: auto; margin: 10px 0; }
         \\    .doc-item .doc-content pre code { background: none; padding: 0; }
-        \\    .doc-item .doc-content strong { font-weight: 600; color: #2c3e50; }
+        \\    .doc-item .doc-content strong { font-weight: 600; color: #333; }
         \\    .doc-item .doc-content li { margin-left: 20px; margin-bottom: 5px; }
+        \\    .doc-item.module-doc { border-bottom: 2px solid #e0e0e0; margin-bottom: 40px; padding-bottom: 30px; }
+        \\    .doc-item.module-doc .doc-content { margin-left: 0; }
         \\    .no-results { text-align: center; padding: 40px; color: #999; }
         \\    .search-result-label { font-size: 0.85em; color: #7f8c8d; margin-left: 5px; }
-        \\    @media (max-width: 768px) { .sidebar { display: none; } .main { margin-left: 0; } .container { padding: 10px; } .doc-item { padding: 15px; } }
+        \\    @media (max-width: 768px) { .sidebar { display: none; } .main { margin-left: 0; } .container { padding: 10px; } }
         \\
     );
     try file.writeAll("  </style>\n");
