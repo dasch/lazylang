@@ -37,6 +37,29 @@
         "path": "./syntaxes/lazylang.tmLanguage.json"
       }
     ],
+    "snippets": [
+      {
+        "language": "lazylang",
+        "path": "./snippets/lazylang.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "lazylang.evalFile",
+        "title": "Lazylang: Eval File",
+        "category": "Lazylang"
+      },
+      {
+        "command": "lazylang.runFile",
+        "title": "Lazylang: Run File",
+        "category": "Lazylang"
+      },
+      {
+        "command": "lazylang.runTests",
+        "title": "Lazylang: Run Tests",
+        "category": "Lazylang"
+      }
+    ],
     "configuration": {
       "type": "object",
       "title": "Lazylang",

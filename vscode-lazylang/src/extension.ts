@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { workspace, ExtensionContext, window, languages, TextDocument, Range, TextEdit, CancellationToken, FormattingOptions } from 'vscode';
+import { workspace, ExtensionContext, window, languages, TextDocument, Range, TextEdit, CancellationToken, FormattingOptions, commands, TextEditor } from 'vscode';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 
@@ -17,6 +17,9 @@ let client: LanguageClient;
 
 export function activate(context: ExtensionContext) {
     console.log('Lazylang extension is now active');
+
+    // Register custom commands
+    registerCommands(context);
 
     // Find the LSP server executable
     const serverPath = findLspServer(context);
@@ -217,6 +220,146 @@ function findLspServer(context: ExtensionContext): string | null {
         const lspPath = path.join(dir, 'lazylang-lsp');
         if (fs.existsSync(lspPath)) {
             return lspPath;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Register custom Lazylang commands
+ */
+function registerCommands(context: ExtensionContext) {
+    // Command: Lazylang: Eval File
+    const evalCommand = commands.registerTextEditorCommand('lazylang.evalFile', async (editor: TextEditor) => {
+        const document = editor.document;
+        if (document.languageId !== 'lazylang') {
+            window.showErrorMessage('This command only works with Lazylang files');
+            return;
+        }
+
+        const lazyLangPath = findLazyLangExecutable();
+        if (!lazyLangPath) {
+            window.showErrorMessage('Lazylang executable not found. Please build the project.');
+            return;
+        }
+
+        try {
+            const filePath = document.uri.fsPath;
+            const { stdout, stderr } = await execFilePromise(lazyLangPath, ['eval', filePath]);
+
+            if (stderr) {
+                window.showErrorMessage(`Lazylang Error:\n${stderr}`);
+            } else {
+                const outputChannel = window.createOutputChannel('Lazylang');
+                outputChannel.clear();
+                outputChannel.appendLine('=== Lazylang Eval Output ===');
+                outputChannel.appendLine(stdout);
+                outputChannel.show();
+            }
+        } catch (error: any) {
+            window.showErrorMessage(`Failed to eval file: ${error.message}`);
+        }
+    });
+
+    // Command: Lazylang: Run File
+    const runCommand = commands.registerTextEditorCommand('lazylang.runFile', async (editor: TextEditor) => {
+        const document = editor.document;
+        if (document.languageId !== 'lazylang') {
+            window.showErrorMessage('This command only works with Lazylang files');
+            return;
+        }
+
+        const lazyLangPath = findLazyLangExecutable();
+        if (!lazyLangPath) {
+            window.showErrorMessage('Lazylang executable not found. Please build the project.');
+            return;
+        }
+
+        try {
+            const filePath = document.uri.fsPath;
+            const { stdout, stderr } = await execFilePromise(lazyLangPath, ['run', filePath]);
+
+            if (stderr) {
+                window.showErrorMessage(`Lazylang Error:\n${stderr}`);
+            } else {
+                const outputChannel = window.createOutputChannel('Lazylang');
+                outputChannel.clear();
+                outputChannel.appendLine('=== Lazylang Run Output ===');
+                outputChannel.appendLine(stdout);
+                outputChannel.show();
+            }
+        } catch (error: any) {
+            window.showErrorMessage(`Failed to run file: ${error.message}`);
+        }
+    });
+
+    // Command: Lazylang: Run Tests
+    const testCommand = commands.registerCommand('lazylang.runTests', async () => {
+        const lazyLangPath = findLazyLangExecutable();
+        if (!lazyLangPath) {
+            window.showErrorMessage('Lazylang executable not found. Please build the project.');
+            return;
+        }
+
+        const workspaceFolders = workspace.workspaceFolders;
+        if (!workspaceFolders || workspaceFolders.length === 0) {
+            window.showErrorMessage('No workspace folder open');
+            return;
+        }
+
+        const workspaceRoot = workspaceFolders[0].uri.fsPath;
+        const testPath = path.join(workspaceRoot, 'stdlib', 'tests');
+
+        try {
+            const { stdout, stderr } = await execFilePromise(lazyLangPath, ['test', testPath], {
+                cwd: workspaceRoot
+            });
+
+            const outputChannel = window.createOutputChannel('Lazylang Tests');
+            outputChannel.clear();
+            outputChannel.appendLine('=== Lazylang Test Output ===');
+            outputChannel.appendLine(stdout);
+            if (stderr) {
+                outputChannel.appendLine('\n=== Errors ===');
+                outputChannel.appendLine(stderr);
+            }
+            outputChannel.show();
+        } catch (error: any) {
+            window.showErrorMessage(`Failed to run tests: ${error.message}`);
+        }
+    });
+
+    context.subscriptions.push(evalCommand, runCommand, testCommand);
+}
+
+/**
+ * Find the Lazylang executable (lazylang CLI).
+ */
+function findLazyLangExecutable(): string | null {
+    const workspaceFolders = workspace.workspaceFolders;
+    if (workspaceFolders && workspaceFolders.length > 0) {
+        const workspaceRoot = workspaceFolders[0].uri.fsPath;
+
+        // Check zig-out/bin in workspace
+        const workspacePath = path.join(workspaceRoot, 'zig-out', 'bin', 'lazylang');
+        if (fs.existsSync(workspacePath)) {
+            return workspacePath;
+        }
+
+        // Check parent directory (for git worktrees)
+        const parentPath = path.join(workspaceRoot, '..', 'zig-out', 'bin', 'lazylang');
+        if (fs.existsSync(parentPath)) {
+            return path.resolve(parentPath);
+        }
+    }
+
+    // Try to find in PATH
+    const pathDirs = (process.env.PATH || '').split(path.delimiter);
+    for (const dir of pathDirs) {
+        const execPath = path.join(dir, 'lazylang');
+        if (fs.existsSync(execPath)) {
+            return execPath;
         }
     }
 

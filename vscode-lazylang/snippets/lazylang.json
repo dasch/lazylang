@@ -1,0 +1,80 @@
+{
+  "Let binding": {
+    "prefix": "let",
+    "body": [
+      "let ${1:name} = ${2:value}",
+      "$0"
+    ],
+    "description": "Create a let binding"
+  },
+  "Function": {
+    "prefix": "fn",
+    "body": [
+      "${1:name} = ${2:param} -> ${3:body}"
+    ],
+    "description": "Create a function"
+  },
+  "Lambda": {
+    "prefix": "lambda",
+    "body": [
+      "${1:param} -> ${2:body}"
+    ],
+    "description": "Create a lambda function"
+  },
+  "If expression": {
+    "prefix": "if",
+    "body": [
+      "if ${1:condition} then",
+      "  ${2:thenBranch}",
+      "else",
+      "  ${3:elseBranch}"
+    ],
+    "description": "Create an if-then-else expression"
+  },
+  "When matches": {
+    "prefix": "when",
+    "body": [
+      "when ${1:value} matches",
+      "  ${2:pattern} -> ${3:expression}",
+      "  _ -> ${4:default}"
+    ],
+    "description": "Create a when-matches expression"
+  },
+  "Array comprehension": {
+    "prefix": "forarray",
+    "body": [
+      "[${1:expr} for ${2:x} in ${3:list}]"
+    ],
+    "description": "Create an array comprehension"
+  },
+  "Object comprehension": {
+    "prefix": "forobj",
+    "body": [
+      "{ [${1:key}]: ${2:value} for ${3:x} in ${4:list} }"
+    ],
+    "description": "Create an object comprehension"
+  },
+  "Import": {
+    "prefix": "import",
+    "body": [
+      "import '${1:module}'"
+    ],
+    "description": "Import a module"
+  },
+  "Object": {
+    "prefix": "obj",
+    "body": [
+      "{",
+      "  ${1:key}: ${2:value}",
+      "}"
+    ],
+    "description": "Create an object"
+  },
+  "Array": {
+    "prefix": "arr",
+    "body": [
+      "[${1:element}]"
+    ],
+    "description": "Create an array"
+  }
+}
