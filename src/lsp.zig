@@ -608,11 +608,47 @@ pub const Server = struct {
 
     /// Handle textDocument/definition request
     fn handleDefinition(self: *Self, id: ?std.json.Value, message: std.json.Value) !void {
-        _ = message;
-        // Return null for now (no definition found)
-        // TODO: Implement proper definition lookup
-        try self.handler.writeResponse(id, "null");
-        std.log.info("Definition request handled (not implemented)", .{});
+        const params = message.object.get("params").?.object;
+        const text_document = params.get("textDocument").?.object;
+        const position = params.get("position").?.object;
+        const uri = text_document.get("uri").?.string;
+
+        const doc = self.documents.get(uri) orelse {
+            try self.handler.writeErrorResponse(id, json_rpc.ErrorCode.InvalidParams, "Document not found");
+            return;
+        };
+
+        const line = @as(u32, @intCast(position.get("line").?.integer));
+        const character = @as(u32, @intCast(position.get("character").?.integer));
+
+        // Compute definition location
+        const def_loc = try self.computeDefinitionLocation(doc.text, line, character);
+
+        if (def_loc) |loc| {
+            // Build JSON response
+            var response_buf = std.ArrayList(u8){};
+            defer response_buf.deinit(self.allocator);
+
+            const writer = response_buf.writer(self.allocator);
+
+            try writer.writeAll("{\"uri\":\"");
+            try writer.writeAll(uri);
+            try writer.writeAll("\",\"range\":{\"start\":{\"line\":");
+            try writer.print("{d}", .{loc.start_line});
+            try writer.writeAll(",\"character\":");
+            try writer.print("{d}", .{loc.start_char});
+            try writer.writeAll("},\"end\":{\"line\":");
+            try writer.print("{d}", .{loc.end_line});
+            try writer.writeAll(",\"character\":");
+            try writer.print("{d}", .{loc.end_char});
+            try writer.writeAll("}}}");
+
+            try self.handler.writeResponse(id, response_buf.items);
+            std.log.info("Sent definition location for: {s}", .{uri});
+        } else {
+            try self.handler.writeResponse(id, "null");
+            std.log.info("No definition found for position", .{});
+        }
     }
 
     /// Handle textDocument/hover request
@@ -950,6 +986,43 @@ pub const Server = struct {
         return null;
     }
 
+    /// Compute definition location for an identifier at a given position
+    fn computeDefinitionLocation(self: *Self, text: []const u8, target_line: u32, target_char: u32) !?DefinitionLocation {
+        // Find the identifier at the cursor position
+        var tokenizer = evaluator.Tokenizer.init(text, self.allocator);
+        var target_identifier: ?[]const u8 = null;
+
+        while (true) {
+            const token = tokenizer.next() catch break;
+            if (token.kind == .eof) break;
+
+            if (token.kind == .identifier) {
+                // Calculate position (tokens use 1-based, LSP uses 0-based)
+                const token_line: u32 = @intCast(if (token.line > 0) token.line - 1 else 0);
+                const token_col: u32 = @intCast(if (token.column > 0) token.column - 1 else 0);
+
+                if (token_line == target_line and target_char >= token_col and target_char < token_col + token.lexeme.len) {
+                    target_identifier = token.lexeme;
+                    break;
+                }
+            }
+        }
+
+        const identifier = target_identifier orelse return null;
+
+        // Parse the document to find definitions
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+
+        var parser = evaluator.Parser.init(arena.allocator(), text) catch return null;
+        const ast = parser.parse() catch return null;
+
+        // Search the AST for this identifier's definition location
+        const def_location = try self.findDefinitionLocationInAST(ast.*, identifier);
+
+        return def_location;
+    }
+
     /// Definition information found in AST
     const DefinitionInfo = struct {
         doc: ?[]const u8,
@@ -958,7 +1031,7 @@ pub const Server = struct {
 
     /// Find definition of an identifier in the AST
     fn findDefinitionInAST(self: *Self, expr: evaluator.Expression, identifier: []const u8, arena: std.mem.Allocator) !?DefinitionInfo {
-        return switch (expr) {
+        return switch (expr.data) {
             .let => |let| blk: {
                 // Check if this let binding defines the identifier (simple identifier pattern only)
                 if (let.pattern.data == .identifier) {
@@ -1006,6 +1079,50 @@ pub const Server = struct {
             else => null,
         };
     }
+
+    /// Find definition location of an identifier in the AST
+    fn findDefinitionLocationInAST(self: *Self, expr: evaluator.Expression, identifier: []const u8) !?DefinitionLocation {
+        return switch (expr.data) {
+            .let => |let| blk: {
+                // Check if this let binding defines the identifier (simple identifier pattern only)
+                if (let.pattern.data == .identifier) {
+                    const pat_id = let.pattern.data.identifier;
+                    if (std.mem.eql(u8, pat_id, identifier)) {
+                        // Found it! Return the pattern location
+                        const loc = let.pattern.location;
+                        break :blk DefinitionLocation{
+                            .start_line = @intCast(if (loc.line > 0) loc.line - 1 else 0),
+                            .start_char = @intCast(if (loc.column > 0) loc.column - 1 else 0),
+                            .end_line = @intCast(if (loc.line > 0) loc.line - 1 else 0),
+                            .end_char = @intCast((if (loc.column > 0) loc.column - 1 else 0) + loc.length),
+                        };
+                    }
+                }
+                // Recursively search the body
+                break :blk try self.findDefinitionLocationInAST(let.body.*, identifier);
+            },
+            .object => |obj| blk: {
+                // Search object fields
+                for (obj.fields) |field| {
+                    // Check if field key matches (only static keys)
+                    const key_str = switch (field.key) {
+                        .static => |s| s,
+                        .dynamic => continue, // Skip dynamic keys
+                    };
+
+                    if (std.mem.eql(u8, key_str, identifier)) {
+                        // Found it! We need to get the location from somewhere
+                        // For now, return a location based on the field value's location
+                        // This isn't perfect but better than nothing
+                        // TODO: Add location tracking to ObjectField
+                        break :blk null;
+                    }
+                }
+                break :blk null;
+            },
+            else => null,
+        };
+    }
 };
 
 /// Diagnostic information for LSP
@@ -1044,6 +1161,14 @@ const FoldingRange = struct {
 /// Hover information for LSP
 const HoverInfo = struct {
     contents: []const u8, // Markdown formatted string
+};
+
+/// Definition location for LSP
+const DefinitionLocation = struct {
+    start_line: u32,
+    start_char: u32,
+    end_line: u32,
+    end_char: u32,
 };
 
 /// Text document representation
