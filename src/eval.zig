@@ -135,6 +135,7 @@ pub const ExpressionData = union(enum) {
     array_comprehension: ArrayComprehension,
     object_comprehension: ObjectComprehension,
     field_access: FieldAccess,
+    index: Index,
     field_accessor: FieldAccessor,
     field_projection: FieldProjection,
     operator_function: BinaryOp,
@@ -272,6 +273,11 @@ const ObjectComprehension = struct {
 const FieldAccess = struct {
     object: *Expression,
     field: []const u8,
+};
+
+const Index = struct {
+    object: *Expression,
+    index: *Expression,
 };
 
 const FieldAccessor = struct {
@@ -1294,7 +1300,38 @@ pub const Parser = struct {
                     expr = node;
                     just_applied = false;
                 },
-                .number, .string, .symbol, .l_paren, .l_bracket => {
+                .l_bracket => {
+                    // Bracket indexing: expr[index]
+                    // Must NOT be preceded by whitespace to distinguish from function application
+                    if (self.current.preceded_by_whitespace) {
+                        // This is function application with array argument
+                        const argument = try self.parsePrimary();
+                        const node = try self.allocateExpression();
+                        node.* = .{
+                            .data = .{ .application = .{ .function = expr, .argument = argument } },
+                            .location = expr.location,
+                        };
+                        expr = node;
+                        just_applied = true;
+                    } else {
+                        // This is indexing: obj[key]
+                        try self.advance(); // consume '['
+                        const index_expr = try self.parseLambda(); // Parse the index expression
+                        try self.expect(.r_bracket);
+
+                        const node = try self.allocateExpression();
+                        node.* = .{
+                            .data = .{ .index = .{
+                                .object = expr,
+                                .index = index_expr,
+                            } },
+                            .location = expr.location,
+                        };
+                        expr = node;
+                        just_applied = false;
+                    }
+                },
+                .number, .string, .symbol, .l_paren => {
                     const argument = try self.parsePrimary();
                     const node = try self.allocateExpression();
                     node.* = .{
@@ -2398,6 +2435,8 @@ pub const EvalError = ParseError || std.mem.Allocator.Error || std.process.GetEn
     UserCrash,
     CyclicReference,
     DivisionByZero,
+    IndexOutOfBounds,
+    FieldNotFound,
 };
 
 pub const EvalContext = struct {
@@ -3034,7 +3073,8 @@ pub fn evaluateExpression(
         .symbol => |value| .{ .symbol = try arena.dupe(u8, value) },
         .identifier => |name| blk: {
             const resolved = lookup(env, name) orelse return error.UnknownIdentifier;
-            break :blk resolved;
+            // Automatically force thunks when looking up identifiers
+            break :blk try force(arena, resolved);
         },
         .string_literal => |value| .{ .string = try arena.dupe(u8, value) },
         .string_interpolation => |interp| blk: {
@@ -3093,31 +3133,31 @@ pub fn evaluateExpression(
         },
         .where_expr => |where_expr| blk: {
             // For where clauses, all bindings should be mutually recursive
-            // We achieve this by wrapping values in thunks (similar to object fields)
-            // 1. Create environment entries for all bindings with thunk placeholders
-            // 2. Create thunks for all values
-            // 3. Bind thunks to environment entries
-            // 4. Evaluate the main expression
+            // Strategy:
+            // 1. For identifier patterns: wrap in thunks for lazy mutual recursion
+            // 2. For complex patterns: evaluate eagerly and pattern match
+            //
+            // This hybrid approach allows both mutual recursion (for identifiers)
+            // and complex destructuring (for objects, tuples, arrays)
 
-            // Build the environment chain with all bindings as thunk placeholders
             var current_env = env;
-            const thunks = try arena.alloc(*Thunk, where_expr.bindings.len);
+            const thunks = try arena.alloc(?*Thunk, where_expr.bindings.len);
 
-            // First pass: create thunks and environment entries for identifier patterns
+            // First pass: create thunks for identifier patterns, null for others
             for (where_expr.bindings, 0..) |binding, i| {
-                // Create thunk for this binding's value
-                const thunk = try arena.create(Thunk);
-                thunk.* = .{
-                    .expr = binding.value,
-                    .env = undefined, // Will be set after full env is built
-                    .current_dir = current_dir,
-                    .ctx = ctx,
-                    .state = .unevaluated,
-                };
-                thunks[i] = thunk;
-
                 switch (binding.pattern.data) {
                     .identifier => |name| {
+                        // Create thunk for lazy evaluation
+                        const thunk = try arena.create(Thunk);
+                        thunk.* = .{
+                            .expr = binding.value,
+                            .env = undefined, // Will be set after full env is built
+                            .current_dir = current_dir,
+                            .ctx = ctx,
+                            .state = .unevaluated,
+                        };
+                        thunks[i] = thunk;
+
                         // Create environment entry with thunk as value
                         const new_env = try arena.create(Environment);
                         new_env.* = .{
@@ -3128,16 +3168,29 @@ pub fn evaluateExpression(
                         current_env = new_env;
                     },
                     else => {
-                        // Complex patterns not yet supported in where clauses
-                        // This would require pattern matching after thunk evaluation
-                        return error.TypeMismatch;
+                        // Mark as non-thunk (will be evaluated eagerly)
+                        thunks[i] = null;
                     },
                 }
             }
 
             // Second pass: update all thunks with the full environment
-            for (thunks) |thunk| {
-                thunk.env = current_env;
+            for (thunks) |maybe_thunk| {
+                if (maybe_thunk) |thunk| {
+                    thunk.env = current_env;
+                }
+            }
+
+            // Third pass: evaluate and pattern match complex patterns
+            for (where_expr.bindings, 0..) |binding, i| {
+                if (thunks[i] == null) {
+                    // This is a complex pattern - evaluate value and pattern match
+                    const value = try evaluateExpression(arena, binding.value, current_env, current_dir, ctx);
+                    const new_env = try matchPattern(arena, binding.pattern, value, current_env, ctx) orelse {
+                        return error.TypeMismatch;
+                    };
+                    current_env = new_env;
+                }
             }
 
             // Finally, evaluate the main expression with the full environment
@@ -3722,7 +3775,47 @@ pub fn evaluateExpression(
         .import_expr => |import_expr| try importModule(arena, import_expr.path, current_dir, ctx),
         .field_access => |field_access| blk: {
             const object_value = try evaluateExpression(arena, field_access.object, env, current_dir, ctx);
-            break :blk try accessField(arena, object_value, field_access.field, expr.location, ctx);
+            const forced = try force(arena, object_value);
+            break :blk try accessField(arena, forced, field_access.field, expr.location, ctx);
+        },
+        .index => |index| blk: {
+            const object_value = try evaluateExpression(arena, index.object, env, current_dir, ctx);
+            const forced_object = try force(arena, object_value);
+            const index_value = try evaluateExpression(arena, index.index, env, current_dir, ctx);
+            const forced_index = try force(arena, index_value);
+
+            break :blk switch (forced_object) {
+                .array => |arr| blk2: {
+                    const idx = switch (forced_index) {
+                        .integer => |i| i,
+                        else => return error.TypeMismatch,
+                    };
+
+                    if (idx < 0 or idx >= arr.elements.len) {
+                        return error.IndexOutOfBounds;
+                    }
+
+                    break :blk2 arr.elements[@intCast(idx)];
+                },
+                .object => |obj| blk2: {
+                    const key = switch (forced_index) {
+                        .string => |s| s,
+                        .symbol => |s| s,
+                        else => return error.TypeMismatch,
+                    };
+
+                    // Search for the field
+                    for (obj.fields) |field| {
+                        if (std.mem.eql(u8, field.key, key)) {
+                            break :blk2 try force(arena, field.value);
+                        }
+                    }
+
+                    // Field not found
+                    return error.FieldNotFound;
+                },
+                else => return error.TypeMismatch,
+            };
         },
         .field_accessor => |field_accessor| blk: {
             // Create a function that accesses the specified fields
