@@ -1,0 +1,48 @@
+{
+  default {
+    name: "app-server"
+    application: "recipes"
+    team: "devops"
+
+    deployment {
+      enabled: true
+    }
+
+    service {
+      enabled: true
+    }
+
+    hpa {
+      enabled: true
+      minReplicas: 1
+      maxReplicas: 3
+      cpu {
+        targetAverageUtilization: 75
+      }
+    }
+  }
+
+  development {
+    env {
+      RAILS_ENV: development
+    }
+  }
+
+  staging {
+    env {
+      RAILS_ENV: staging
+    }
+  }
+
+  production {
+    hpa {
+      minReplicas: 3
+      maxReplicas: 9
+      }
+    }
+
+    env {
+      RAILS_ENV: production
+    }
+  }
+}
