@@ -75,6 +75,48 @@ pub const Server = struct {
                 return;
             }
             try self.handleSemanticTokensFull(id, message);
+        } else if (std.mem.eql(u8, method, "textDocument/completion")) {
+            if (!self.initialized) {
+                try self.handler.writeErrorResponse(id, json_rpc.ErrorCode.ServerNotInitialized, "Server not initialized");
+                return;
+            }
+            try self.handleCompletion(id, message);
+        } else if (std.mem.eql(u8, method, "textDocument/definition")) {
+            if (!self.initialized) {
+                try self.handler.writeErrorResponse(id, json_rpc.ErrorCode.ServerNotInitialized, "Server not initialized");
+                return;
+            }
+            try self.handleDefinition(id, message);
+        } else if (std.mem.eql(u8, method, "textDocument/hover")) {
+            if (!self.initialized) {
+                try self.handler.writeErrorResponse(id, json_rpc.ErrorCode.ServerNotInitialized, "Server not initialized");
+                return;
+            }
+            try self.handleHover(id, message);
+        } else if (std.mem.eql(u8, method, "textDocument/documentSymbol")) {
+            if (!self.initialized) {
+                try self.handler.writeErrorResponse(id, json_rpc.ErrorCode.ServerNotInitialized, "Server not initialized");
+                return;
+            }
+            try self.handleDocumentSymbol(id, message);
+        } else if (std.mem.eql(u8, method, "textDocument/references")) {
+            if (!self.initialized) {
+                try self.handler.writeErrorResponse(id, json_rpc.ErrorCode.ServerNotInitialized, "Server not initialized");
+                return;
+            }
+            try self.handleReferences(id, message);
+        } else if (std.mem.eql(u8, method, "textDocument/documentHighlight")) {
+            if (!self.initialized) {
+                try self.handler.writeErrorResponse(id, json_rpc.ErrorCode.ServerNotInitialized, "Server not initialized");
+                return;
+            }
+            try self.handleDocumentHighlight(id, message);
+        } else if (std.mem.eql(u8, method, "textDocument/foldingRange")) {
+            if (!self.initialized) {
+                try self.handler.writeErrorResponse(id, json_rpc.ErrorCode.ServerNotInitialized, "Server not initialized");
+                return;
+            }
+            try self.handleFoldingRange(id, message);
         } else {
             try self.handler.writeErrorResponse(id, json_rpc.ErrorCode.MethodNotFound, "Method not found");
         }
@@ -110,7 +152,7 @@ pub const Server = struct {
         self.initialized = true;
 
         const response_json =
-            \\{"capabilities":{"textDocumentSync":{"openClose":true,"change":1},"semanticTokensProvider":{"legend":{"tokenTypes":["keyword","number","string","operator","variable","function","comment","namespace"],"tokenModifiers":[]},"full":true}},"serverInfo":{"name":"lazylang-lsp","version":"0.1.0"}}
+            \\{"capabilities":{"textDocumentSync":{"openClose":true,"change":1},"semanticTokensProvider":{"legend":{"tokenTypes":["keyword","number","string","operator","variable","function","comment","namespace"],"tokenModifiers":[]},"full":true},"completionProvider":{"triggerCharacters":["."," "]},"definitionProvider":true,"hoverProvider":true,"documentSymbolProvider":true,"referencesProvider":true,"documentHighlightProvider":true,"foldingRangeProvider":true},"serverInfo":{"name":"lazylang-lsp","version":"0.2.0"}}
         ;
 
         try self.handler.writeResponse(id, response_json);
@@ -144,6 +186,9 @@ pub const Server = struct {
         });
 
         std.log.info("Opened document: {s}", .{uri});
+
+        // Publish diagnostics for this document
+        try self.publishDiagnostics(uri, text);
     }
 
     /// Handle textDocument/didChange notification
@@ -165,6 +210,9 @@ pub const Server = struct {
                 doc.text = try self.allocator.dupe(u8, text);
                 doc.version = version;
                 std.log.info("Updated document: {s}", .{uri});
+
+                // Publish diagnostics for updated document
+                try self.publishDiagnostics(uri, text);
             }
         }
     }
@@ -288,6 +336,510 @@ pub const Server = struct {
             .eof => 0, // keyword (shouldn't happen)
         };
     }
+
+    /// Publish diagnostics for a document
+    fn publishDiagnostics(self: *Self, uri: []const u8, text: []const u8) !void {
+        const diagnostics = try self.computeDiagnostics(text);
+        defer {
+            for (diagnostics) |diag| {
+                self.allocator.free(diag.message);
+            }
+            self.allocator.free(diagnostics);
+        }
+
+        // Build the diagnostics notification
+        var notification_buf = std.ArrayList(u8){};
+        defer notification_buf.deinit(self.allocator);
+
+        const writer = notification_buf.writer(self.allocator);
+
+        // Start JSON object
+        try writer.writeAll("{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\",\"params\":{\"uri\":\"");
+        try writer.writeAll(uri);
+        try writer.writeAll("\",\"diagnostics\":[");
+
+        // Write diagnostics array
+        for (diagnostics, 0..) |diag, i| {
+            if (i > 0) try writer.writeAll(",");
+            try writer.writeAll("{\"range\":{\"start\":{\"line\":");
+            try writer.print("{d}", .{diag.start_line});
+            try writer.writeAll(",\"character\":");
+            try writer.print("{d}", .{diag.start_char});
+            try writer.writeAll("},\"end\":{\"line\":");
+            try writer.print("{d}", .{diag.end_line});
+            try writer.writeAll(",\"character\":");
+            try writer.print("{d}", .{diag.end_char});
+            try writer.writeAll("}},\"severity\":");
+            try writer.print("{d}", .{diag.severity});
+            try writer.writeAll(",\"message\":\"");
+            // Escape the message
+            for (diag.message) |c| {
+                if (c == '"' or c == '\\') try writer.writeByte('\\');
+                try writer.writeByte(c);
+            }
+            try writer.writeAll("\"}");
+        }
+
+        try writer.writeAll("]}}");
+
+        // Send notification with Content-Length header
+        const content = notification_buf.items;
+        const header = try std.fmt.allocPrint(self.allocator, "Content-Length: {d}\r\n\r\n", .{content.len});
+        defer self.allocator.free(header);
+
+        _ = try self.handler.stdout.write(header);
+        _ = try self.handler.stdout.write(content);
+
+        std.log.info("Published {d} diagnostics for: {s}", .{ diagnostics.len, uri });
+    }
+
+    /// Compute diagnostics for a document by attempting to parse it
+    fn computeDiagnostics(self: *Self, text: []const u8) ![]Diagnostic {
+        var diagnostics = std.ArrayList(Diagnostic){};
+        errdefer diagnostics.deinit(self.allocator);
+
+        // Try to parse the document
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+
+        // Set up error context to capture error locations
+        var err_ctx = evaluator.ErrorContext.init(self.allocator);
+        defer err_ctx.deinit();
+        err_ctx.setSource(text);
+
+        // Attempt parsing and catch errors
+        var parser = evaluator.Parser.init(arena.allocator(), text) catch |err| {
+            // Failed to initialize parser
+            const diag = try self.createDiagnosticFromError(err, &err_ctx);
+            try diagnostics.append(self.allocator, diag);
+            return try diagnostics.toOwnedSlice(self.allocator);
+        };
+
+        parser.setErrorContext(&err_ctx);
+
+        const result = parser.parse();
+        if (result) |_| {
+            // Parse successful, no diagnostics
+        } else |err| {
+            // Parse failed, create diagnostic
+            const diag = try self.createDiagnosticFromError(err, &err_ctx);
+            try diagnostics.append(self.allocator, diag);
+        }
+
+        return try diagnostics.toOwnedSlice(self.allocator);
+    }
+
+    /// Create a diagnostic from a parse error
+    fn createDiagnosticFromError(self: *Self, err: anyerror, err_ctx: *evaluator.ErrorContext) !Diagnostic {
+        // Default diagnostic at the start of the file
+        var diag = Diagnostic{
+            .start_line = 0,
+            .start_char = 0,
+            .end_line = 0,
+            .end_char = 1,
+            .severity = 1, // Error
+            .message = undefined,
+        };
+
+        // Use error location from context if available
+        if (err_ctx.last_error_location) |loc| {
+            // LSP uses 0-based line and column numbers
+            diag.start_line = @intCast(if (loc.line > 0) loc.line - 1 else 0);
+            diag.start_char = @intCast(if (loc.column > 0) loc.column - 1 else 0);
+            diag.end_line = diag.start_line;
+            diag.end_char = @intCast(diag.start_char + loc.length);
+        }
+
+        // Create error message based on error type
+        const message = switch (err) {
+            error.UnexpectedToken => blk: {
+                if (err_ctx.last_error_token_lexeme) |lexeme| {
+                    break :blk try std.fmt.allocPrint(self.allocator, "Unexpected token: '{s}'", .{lexeme});
+                }
+                break :blk try self.allocator.dupe(u8, "Unexpected token");
+            },
+            error.ExpectedExpression => try self.allocator.dupe(u8, "Expected expression"),
+            error.UnexpectedCharacter => try self.allocator.dupe(u8, "Unexpected character"),
+            error.UnterminatedString => try self.allocator.dupe(u8, "Unterminated string literal"),
+            error.InvalidNumber => try self.allocator.dupe(u8, "Invalid number format"),
+            error.Overflow => try self.allocator.dupe(u8, "Number too large"),
+            else => try std.fmt.allocPrint(self.allocator, "Syntax error: {s}", .{@errorName(err)}),
+        };
+
+        diag.message = message;
+        return diag;
+    }
+
+    /// Handle textDocument/completion request
+    fn handleCompletion(self: *Self, id: ?std.json.Value, message: std.json.Value) !void {
+        const params = message.object.get("params").?.object;
+        const text_document = params.get("textDocument").?.object;
+        const uri = text_document.get("uri").?.string;
+
+        const doc = self.documents.get(uri) orelse {
+            try self.handler.writeErrorResponse(id, json_rpc.ErrorCode.InvalidParams, "Document not found");
+            return;
+        };
+
+        // Get completion items
+        const items = try self.computeCompletions(doc.text);
+        defer {
+            for (items) |item| {
+                self.allocator.free(item.label);
+                if (item.detail) |detail| self.allocator.free(detail);
+            }
+            self.allocator.free(items);
+        }
+
+        // Build JSON response
+        var response_buf = std.ArrayList(u8){};
+        defer response_buf.deinit(self.allocator);
+
+        const writer = response_buf.writer(self.allocator);
+
+        try writer.writeAll("{\"items\":[");
+
+        for (items, 0..) |item, i| {
+            if (i > 0) try writer.writeAll(",");
+            try writer.writeAll("{\"label\":\"");
+            try writer.writeAll(item.label);
+            try writer.writeAll("\",\"kind\":");
+            try writer.print("{d}", .{item.kind});
+            if (item.detail) |detail| {
+                try writer.writeAll(",\"detail\":\"");
+                // Escape quotes in detail
+                for (detail) |c| {
+                    if (c == '"' or c == '\\') try writer.writeByte('\\');
+                    try writer.writeByte(c);
+                }
+                try writer.writeAll("\"");
+            }
+            try writer.writeAll("}");
+        }
+
+        try writer.writeAll("]}");
+
+        try self.handler.writeResponse(id, response_buf.items);
+        std.log.info("Sent {d} completion items for: {s}", .{ items.len, uri });
+    }
+
+    /// Compute completion items for a document
+    fn computeCompletions(self: *Self, text: []const u8) ![]CompletionItem {
+        _ = text;
+        var items = std.ArrayList(CompletionItem){};
+        errdefer items.deinit(self.allocator);
+
+        // Keywords
+        const keywords = [_][]const u8{
+            "let", "if",     "then",  "else",  "when", "matches",
+            "for", "in",     "import", "true", "false", "null",
+        };
+
+        for (keywords) |keyword| {
+            const label = try self.allocator.dupe(u8, keyword);
+            try items.append(self.allocator, .{
+                .label = label,
+                .kind = 14, // Keyword
+                .detail = null,
+            });
+        }
+
+        // Built-in functions (from stdlib)
+        const builtins = [_]struct { name: []const u8, detail: []const u8 }{
+            .{ .name = "Array", .detail = "Array utilities module" },
+            .{ .name = "String", .detail = "String utilities module" },
+            .{ .name = "Math", .detail = "Math utilities module" },
+            .{ .name = "Object", .detail = "Object utilities module" },
+            .{ .name = "JSON", .detail = "JSON utilities module" },
+            .{ .name = "YAML", .detail = "YAML utilities module" },
+        };
+
+        for (builtins) |builtin| {
+            const label = try self.allocator.dupe(u8, builtin.name);
+            const detail = try self.allocator.dupe(u8, builtin.detail);
+            try items.append(self.allocator, .{
+                .label = label,
+                .kind = 9, // Module
+                .detail = detail,
+            });
+        }
+
+        return try items.toOwnedSlice(self.allocator);
+    }
+
+    /// Handle textDocument/definition request
+    fn handleDefinition(self: *Self, id: ?std.json.Value, message: std.json.Value) !void {
+        _ = message;
+        // Return null for now (no definition found)
+        // TODO: Implement proper definition lookup
+        try self.handler.writeResponse(id, "null");
+        std.log.info("Definition request handled (not implemented)", .{});
+    }
+
+    /// Handle textDocument/hover request
+    fn handleHover(self: *Self, id: ?std.json.Value, message: std.json.Value) !void {
+        _ = message;
+        // Return null for now (no hover info)
+        // TODO: Implement hover information
+        try self.handler.writeResponse(id, "null");
+        std.log.info("Hover request handled (not implemented)", .{});
+    }
+
+    /// Handle textDocument/documentSymbol request
+    fn handleDocumentSymbol(self: *Self, id: ?std.json.Value, message: std.json.Value) !void {
+        _ = message;
+        // Return empty array for now
+        // TODO: Implement document symbol extraction
+        try self.handler.writeResponse(id, "[]");
+        std.log.info("Document symbol request handled (not implemented)", .{});
+    }
+
+    /// Handle textDocument/references request
+    fn handleReferences(self: *Self, id: ?std.json.Value, message: std.json.Value) !void {
+        _ = message;
+        // Return empty array for now (no references)
+        // TODO: Implement reference finding
+        try self.handler.writeResponse(id, "[]");
+        std.log.info("References request handled (not implemented)", .{});
+    }
+
+    /// Handle textDocument/documentHighlight request
+    fn handleDocumentHighlight(self: *Self, id: ?std.json.Value, message: std.json.Value) !void {
+        const params = message.object.get("params").?.object;
+        const text_document = params.get("textDocument").?.object;
+        const position = params.get("position").?.object;
+        const uri = text_document.get("uri").?.string;
+
+        const doc = self.documents.get(uri) orelse {
+            try self.handler.writeErrorResponse(id, json_rpc.ErrorCode.InvalidParams, "Document not found");
+            return;
+        };
+
+        const line = @as(u32, @intCast(position.get("line").?.integer));
+        const character = @as(u32, @intCast(position.get("character").?.integer));
+
+        // Find highlights for the identifier at the cursor position
+        const highlights = try self.computeDocumentHighlights(doc.text, line, character);
+        defer self.allocator.free(highlights);
+
+        // Build JSON response
+        var response_buf = std.ArrayList(u8){};
+        defer response_buf.deinit(self.allocator);
+
+        const writer = response_buf.writer(self.allocator);
+
+        try writer.writeAll("[");
+        for (highlights, 0..) |highlight, i| {
+            if (i > 0) try writer.writeAll(",");
+            try writer.writeAll("{\"range\":{\"start\":{\"line\":");
+            try writer.print("{d}", .{highlight.start_line});
+            try writer.writeAll(",\"character\":");
+            try writer.print("{d}", .{highlight.start_char});
+            try writer.writeAll("},\"end\":{\"line\":");
+            try writer.print("{d}", .{highlight.end_line});
+            try writer.writeAll(",\"character\":");
+            try writer.print("{d}", .{highlight.end_char});
+            try writer.writeAll("}},\"kind\":");
+            try writer.print("{d}", .{highlight.kind});
+            try writer.writeAll("}");
+        }
+        try writer.writeAll("]");
+
+        try self.handler.writeResponse(id, response_buf.items);
+        std.log.info("Sent {d} document highlights for: {s}", .{ highlights.len, uri });
+    }
+
+    /// Compute document highlights for an identifier at a given position
+    fn computeDocumentHighlights(self: *Self, text: []const u8, target_line: u32, target_char: u32) ![]DocumentHighlight {
+        var highlights = std.ArrayList(DocumentHighlight){};
+        errdefer highlights.deinit(self.allocator);
+
+        // Tokenize to find all identifiers
+        var tokenizer = evaluator.Tokenizer.init(text, self.allocator);
+        var target_identifier: ?[]const u8 = null;
+
+        // First pass: find the identifier at the cursor position
+        while (true) {
+            const token = tokenizer.next() catch break;
+            if (token.kind == .eof) break;
+
+            if (token.kind == .identifier) {
+                // Calculate position
+                const token_line: u32 = @intCast(if (token.line > 0) token.line - 1 else 0); // Convert to 0-based
+                const token_col: u32 = @intCast(if (token.column > 0) token.column - 1 else 0); // Convert to 0-based
+
+                if (token_line == target_line and target_char >= token_col and target_char < token_col + token.lexeme.len) {
+                    target_identifier = token.lexeme;
+                    break;
+                }
+            }
+        }
+
+        // If no identifier at cursor, return empty
+        const target = target_identifier orelse return try highlights.toOwnedSlice(self.allocator);
+
+        // Second pass: find all occurrences of this identifier
+        var tokenizer2 = evaluator.Tokenizer.init(text, self.allocator);
+        while (true) {
+            const token = tokenizer2.next() catch break;
+            if (token.kind == .eof) break;
+
+            if (token.kind == .identifier and std.mem.eql(u8, token.lexeme, target)) {
+                const token_line: u32 = @intCast(if (token.line > 0) token.line - 1 else 0); // Convert to 0-based
+                const token_col: u32 = @intCast(if (token.column > 0) token.column - 1 else 0); // Convert to 0-based
+
+                try highlights.append(self.allocator, .{
+                    .start_line = token_line,
+                    .start_char = token_col,
+                    .end_line = token_line,
+                    .end_char = @intCast(token_col + token.lexeme.len),
+                    .kind = 1, // Text (default)
+                });
+            }
+        }
+
+        return try highlights.toOwnedSlice(self.allocator);
+    }
+
+    /// Handle textDocument/foldingRange request
+    fn handleFoldingRange(self: *Self, id: ?std.json.Value, message: std.json.Value) !void {
+        const params = message.object.get("params").?.object;
+        const text_document = params.get("textDocument").?.object;
+        const uri = text_document.get("uri").?.string;
+
+        const doc = self.documents.get(uri) orelse {
+            try self.handler.writeErrorResponse(id, json_rpc.ErrorCode.InvalidParams, "Document not found");
+            return;
+        };
+
+        // Compute folding ranges
+        const ranges = try self.computeFoldingRanges(doc.text);
+        defer self.allocator.free(ranges);
+
+        // Build JSON response
+        var response_buf = std.ArrayList(u8){};
+        defer response_buf.deinit(self.allocator);
+
+        const writer = response_buf.writer(self.allocator);
+
+        try writer.writeAll("[");
+        for (ranges, 0..) |range, i| {
+            if (i > 0) try writer.writeAll(",");
+            try writer.writeAll("{\"startLine\":");
+            try writer.print("{d}", .{range.start_line});
+            try writer.writeAll(",\"endLine\":");
+            try writer.print("{d}", .{range.end_line});
+            if (range.kind) |kind| {
+                try writer.writeAll(",\"kind\":\"");
+                try writer.writeAll(kind);
+                try writer.writeAll("\"");
+            }
+            try writer.writeAll("}");
+        }
+        try writer.writeAll("]");
+
+        try self.handler.writeResponse(id, response_buf.items);
+        std.log.info("Sent {d} folding ranges for: {s}", .{ ranges.len, uri });
+    }
+
+    /// Compute folding ranges by matching brackets
+    fn computeFoldingRanges(self: *Self, text: []const u8) ![]FoldingRange {
+        var ranges = std.ArrayList(FoldingRange){};
+        errdefer ranges.deinit(self.allocator);
+
+        // Stack to track opening brackets with their line numbers
+        var bracket_stack = std.ArrayList(struct {
+            kind: TokenKind,
+            line: u32,
+            fold_kind: ?[]const u8,
+        }){};
+        defer bracket_stack.deinit(self.allocator);
+
+        var tokenizer = evaluator.Tokenizer.init(text, self.allocator);
+
+        while (true) {
+            const token = tokenizer.next() catch break;
+            if (token.kind == .eof) break;
+
+            const token_line: u32 = @intCast(if (token.line > 0) token.line - 1 else 0);
+
+            switch (token.kind) {
+                .l_brace => {
+                    try bracket_stack.append(self.allocator, .{
+                        .kind = .r_brace,
+                        .line = token_line,
+                        .fold_kind = "region",
+                    });
+                },
+                .l_bracket => {
+                    try bracket_stack.append(self.allocator, .{
+                        .kind = .r_bracket,
+                        .line = token_line,
+                        .fold_kind = "region",
+                    });
+                },
+                .l_paren => {
+                    try bracket_stack.append(self.allocator, .{
+                        .kind = .r_paren,
+                        .line = token_line,
+                        .fold_kind = null,
+                    });
+                },
+                .r_brace, .r_bracket, .r_paren => {
+                    if (bracket_stack.items.len > 0) {
+                        const top = bracket_stack.pop();
+                        // Check if matching bracket
+                        if (top.kind == token.kind) {
+                            // Only create fold if spans multiple lines
+                            if (token_line > top.line) {
+                                try ranges.append(self.allocator, .{
+                                    .start_line = top.line,
+                                    .end_line = token_line,
+                                    .kind = top.fold_kind,
+                                });
+                            }
+                        }
+                    }
+                },
+                else => {},
+            }
+        }
+
+        return try ranges.toOwnedSlice(self.allocator);
+    }
+};
+
+/// Diagnostic information for LSP
+const Diagnostic = struct {
+    start_line: u32,
+    start_char: u32,
+    end_line: u32,
+    end_char: u32,
+    severity: u32, // 1 = Error, 2 = Warning, 3 = Information, 4 = Hint
+    message: []const u8,
+};
+
+/// Completion item for LSP
+const CompletionItem = struct {
+    label: []const u8,
+    kind: u32, // LSP CompletionItemKind (1=Text, 3=Function, 9=Module, 14=Keyword, etc.)
+    detail: ?[]const u8,
+};
+
+/// Document highlight for LSP
+const DocumentHighlight = struct {
+    start_line: u32,
+    start_char: u32,
+    end_line: u32,
+    end_char: u32,
+    kind: u32, // 1 = Text, 2 = Read, 3 = Write
+};
+
+/// Folding range for LSP
+const FoldingRange = struct {
+    start_line: u32,
+    end_line: u32,
+    kind: ?[]const u8, // "comment", "imports", "region", etc.
 };
 
 /// Text document representation

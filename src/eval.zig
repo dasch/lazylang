@@ -2,6 +2,10 @@ const std = @import("std");
 const error_reporter = @import("error_reporter.zig");
 const error_context = @import("error_context.zig");
 
+// Re-export error_context for use by other modules
+pub const ErrorContext = error_context.ErrorContext;
+pub const ErrorData = error_context.ErrorData;
+
 /// Thread-local storage for user crash messages
 threadlocal var user_crash_message: ?[]const u8 = null;
 
@@ -794,7 +798,7 @@ pub const Parser = struct {
         };
     }
 
-    fn setErrorContext(self: *Parser, ctx: *error_context.ErrorContext) void {
+    pub fn setErrorContext(self: *Parser, ctx: *error_context.ErrorContext) void {
         self.error_ctx = ctx;
     }
 

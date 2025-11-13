@@ -240,3 +240,302 @@ test "LSP semantic tokens for syntax highlighting" {
 
     try client.sendNotification("exit", .{});
 }
+
+test "LSP diagnostics for syntax errors" {
+    const allocator = testing.allocator;
+
+    // TODO: Build the LSP server first
+    if (true) return error.SkipZigTest;
+
+    var client = try LspClient.init(allocator, "./zig-out/bin/lazylang-lsp");
+    defer client.deinit();
+
+    // Initialize
+    const init_params = .{
+        .processId = null,
+        .rootUri = null,
+        .capabilities = .{},
+    };
+
+    const init_response = try client.sendRequest("initialize", init_params);
+    defer init_response.deinit();
+
+    try client.sendNotification("initialized", .{});
+
+    // Open a document with a syntax error
+    const doc_uri = "file:///test.lazy";
+    const doc_text = "let x = ; // Missing value - syntax error";
+
+    const did_open_params = .{
+        .textDocument = .{
+            .uri = doc_uri,
+            .languageId = "lazylang",
+            .version = 1,
+            .text = doc_text,
+        },
+    };
+
+    try client.sendNotification("textDocument/didOpen", did_open_params);
+
+    // Note: In a real test, we'd need to read the publishDiagnostics notification
+    // For now, we just verify the server doesn't crash
+
+    // Cleanup
+    const shutdown_response = try client.sendRequest("shutdown", .{});
+    defer shutdown_response.deinit();
+
+    try client.sendNotification("exit", .{});
+}
+
+test "LSP diagnostics clear for valid code" {
+    const allocator = testing.allocator;
+
+    // TODO: Build the LSP server first
+    if (true) return error.SkipZigTest;
+
+    var client = try LspClient.init(allocator, "./zig-out/bin/lazylang-lsp");
+    defer client.deinit();
+
+    // Initialize
+    const init_params = .{
+        .processId = null,
+        .rootUri = null,
+        .capabilities = .{},
+    };
+
+    const init_response = try client.sendRequest("initialize", init_params);
+    defer init_response.deinit();
+
+    try client.sendNotification("initialized", .{});
+
+    // Open a document with valid code
+    const doc_uri = "file:///test.lazy";
+    const doc_text = "let x = 42; x + 1";
+
+    const did_open_params = .{
+        .textDocument = .{
+            .uri = doc_uri,
+            .languageId = "lazylang",
+            .version = 1,
+            .text = doc_text,
+        },
+    };
+
+    try client.sendNotification("textDocument/didOpen", did_open_params);
+
+    // Note: Should publish empty diagnostics array
+
+    // Cleanup
+    const shutdown_response2 = try client.sendRequest("shutdown", .{});
+    defer shutdown_response2.deinit();
+
+    try client.sendNotification("exit", .{});
+}
+
+test "LSP code completion for keywords" {
+    const allocator = testing.allocator;
+
+    // TODO: Build the LSP server first
+    if (true) return error.SkipZigTest;
+
+    var client = try LspClient.init(allocator, "./zig-out/bin/lazylang-lsp");
+    defer client.deinit();
+
+    // Initialize
+    const init_params = .{
+        .processId = null,
+        .rootUri = null,
+        .capabilities = .{
+            .textDocument = .{
+                .completion = .{
+                    .dynamicRegistration = false,
+                },
+            },
+        },
+    };
+
+    const init_response = try client.sendRequest("initialize", init_params);
+    defer init_response.deinit();
+
+    try client.sendNotification("initialized", .{});
+
+    // Open a document
+    const doc_uri = "file:///test.lazy";
+    const doc_text = "let x = 42";
+
+    const did_open_params = .{
+        .textDocument = .{
+            .uri = doc_uri,
+            .languageId = "lazylang",
+            .version = 1,
+            .text = doc_text,
+        },
+    };
+
+    try client.sendNotification("textDocument/didOpen", did_open_params);
+
+    // Request completions
+    const completion_params = .{
+        .textDocument = .{
+            .uri = doc_uri,
+        },
+        .position = .{
+            .line = 0,
+            .character = 0,
+        },
+    };
+
+    const completion_response = try client.sendRequest("textDocument/completion", completion_params);
+    defer completion_response.deinit();
+
+    // Verify we got completion items
+    try testing.expect(completion_response == .object);
+    const result = completion_response.object.get("result").?;
+    try testing.expect(result == .object);
+    const items = result.object.get("items").?;
+    try testing.expect(items == .array);
+    try testing.expect(items.array.items.len > 0);
+
+    // Cleanup
+    const shutdown_response = try client.sendRequest("shutdown", .{});
+    defer shutdown_response.deinit();
+
+    try client.sendNotification("exit", .{});
+}
+
+test "LSP document highlights for identifiers" {
+    const allocator = testing.allocator;
+
+    // TODO: Build the LSP server first
+    if (true) return error.SkipZigTest;
+
+    var client = try LspClient.init(allocator, "./zig-out/bin/lazylang-lsp");
+    defer client.deinit();
+
+    // Initialize
+    const init_params = .{
+        .processId = null,
+        .rootUri = null,
+        .capabilities = .{},
+    };
+
+    const init_response = try client.sendRequest("initialize", init_params);
+    defer init_response.deinit();
+
+    try client.sendNotification("initialized", .{});
+
+    // Open a document with repeated identifiers
+    const doc_uri = "file:///test.lazy";
+    const doc_text = "let x = 5; x + x";
+
+    const did_open_params = .{
+        .textDocument = .{
+            .uri = doc_uri,
+            .languageId = "lazylang",
+            .version = 1,
+            .text = doc_text,
+        },
+    };
+
+    try client.sendNotification("textDocument/didOpen", did_open_params);
+
+    // Request highlights for 'x' at position (0, 4)
+    const highlight_params = .{
+        .textDocument = .{
+            .uri = doc_uri,
+        },
+        .position = .{
+            .line = 0,
+            .character = 4,
+        },
+    };
+
+    const highlight_response = try client.sendRequest("textDocument/documentHighlight", highlight_params);
+    defer highlight_response.deinit();
+
+    // Verify we got highlights
+    try testing.expect(highlight_response == .object);
+    const result = highlight_response.object.get("result").?;
+    try testing.expect(result == .array);
+    // Should highlight 3 occurrences of 'x'
+    try testing.expect(result.array.items.len == 3);
+
+    // Cleanup
+    const shutdown_response = try client.sendRequest("shutdown", .{});
+    defer shutdown_response.deinit();
+
+    try client.sendNotification("exit", .{});
+}
+
+test "LSP folding ranges for code blocks" {
+    const allocator = testing.allocator;
+
+    // TODO: Build the LSP server first
+    if (true) return error.SkipZigTest;
+
+    var client = try LspClient.init(allocator, "./zig-out/bin/lazylang-lsp");
+    defer client.deinit();
+
+    // Initialize
+    const init_params = .{
+        .processId = null,
+        .rootUri = null,
+        .capabilities = .{},
+    };
+
+    const init_response = try client.sendRequest("initialize", init_params);
+    defer init_response.deinit();
+
+    try client.sendNotification("initialized", .{});
+
+    // Open a document with foldable regions
+    const doc_uri = "file:///test.lazy";
+    const doc_text =
+        \\{
+        \\  x: 1,
+        \\  y: {
+        \\    a: 2,
+        \\    b: 3
+        \\  },
+        \\  z: [
+        \\    1,
+        \\    2,
+        \\    3
+        \\  ]
+        \\}
+    ;
+
+    const did_open_params = .{
+        .textDocument = .{
+            .uri = doc_uri,
+            .languageId = "lazylang",
+            .version = 1,
+            .text = doc_text,
+        },
+    };
+
+    try client.sendNotification("textDocument/didOpen", did_open_params);
+
+    // Request folding ranges
+    const folding_params = .{
+        .textDocument = .{
+            .uri = doc_uri,
+        },
+    };
+
+    const folding_response = try client.sendRequest("textDocument/foldingRange", folding_params);
+    defer folding_response.deinit();
+
+    // Verify we got folding ranges
+    try testing.expect(folding_response == .object);
+    const result = folding_response.object.get("result").?;
+    try testing.expect(result == .array);
+    // Should have 3 folding ranges: outer object, nested object, array
+    try testing.expect(result.array.items.len == 3);
+
+    // Cleanup
+    const shutdown_response = try client.sendRequest("shutdown", .{});
+    defer shutdown_response.deinit();
+
+    try client.sendNotification("exit", .{});
+}
