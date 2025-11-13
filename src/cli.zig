@@ -1348,6 +1348,10 @@ fn writeIndexHtmlContent(allocator: std.mem.Allocator, file: anytype, modules: [
         \\    * { margin: 0; padding: 0; box-sizing: border-box; }
         \\    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; background: #f5f5f5; display: flex; }
         \\    .sidebar { width: 250px; background: #2c3e50; color: white; min-height: 100vh; position: fixed; top: 0; left: 0; overflow-y: auto; }
+        \\    .sidebar-search { padding: 15px; border-bottom: 1px solid #34495e; }
+        \\    .sidebar-search input { width: 100%; padding: 10px 12px; font-size: 14px; border: 1px solid #34495e; border-radius: 4px; background: #34495e; color: white; }
+        \\    .sidebar-search input::placeholder { color: #95a5a6; }
+        \\    .sidebar-search input:focus { outline: none; background: #3d5469; border-color: #3498db; }
         \\    .sidebar h2 { padding: 20px; font-size: 1.2em; border-bottom: 1px solid #34495e; }
         \\    .sidebar ul { list-style: none; }
         \\    .sidebar li { border-bottom: 1px solid #34495e; }
@@ -1373,6 +1377,9 @@ fn writeIndexHtmlContent(allocator: std.mem.Allocator, file: anytype, modules: [
 
     // Sidebar with module list
     try file.writeAll("  <div class=\"sidebar\">\n");
+    try file.writeAll("    <div class=\"sidebar-search\">\n");
+    try file.writeAll("      <input type=\"text\" id=\"sidebar-search\" placeholder=\"Search modules...\" />\n");
+    try file.writeAll("    </div>\n");
     try file.writeAll("    <h2>Modules</h2>\n");
     try file.writeAll("    <ul>\n");
     for (modules) |module| {
@@ -1445,6 +1452,24 @@ fn writeIndexHtmlContent(allocator: std.mem.Allocator, file: anytype, modules: [
     }
     try file.writeAll("    </div>\n");
     try file.writeAll("  </div>\n");
+
+    // Add search functionality
+    try file.writeAll("  <script>\n");
+    try file.writeAll(
+        \\    const searchInput = document.getElementById('sidebar-search');
+        \\    const modulesList = document.querySelector('.sidebar ul');
+        \\    const modules = Array.from(modulesList.querySelectorAll('li'));
+        \\
+        \\    searchInput.addEventListener('input', (e) => {
+        \\      const query = e.target.value.toLowerCase();
+        \\      modules.forEach(module => {
+        \\        const text = module.textContent.toLowerCase();
+        \\        module.style.display = text.includes(query) ? '' : 'none';
+        \\      });
+        \\    });
+        \\
+    );
+    try file.writeAll("  </script>\n");
     try file.writeAll("</body>\n");
     try file.writeAll("</html>\n");
 }
