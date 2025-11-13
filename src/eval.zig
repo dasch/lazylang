@@ -100,7 +100,17 @@ const UnaryOp = enum {
     logical_not,
 };
 
-pub const Expression = union(enum) {
+/// Source location for an expression (reusing error_reporter's type)
+pub const SourceLocation = error_reporter.SourceLocation;
+
+/// An expression with source location information
+pub const Expression = struct {
+    data: ExpressionData,
+    location: SourceLocation,
+};
+
+/// The actual expression data (what used to be Expression)
+pub const ExpressionData = union(enum) {
     integer: i64,
     float: f64,
     boolean: bool,
@@ -263,14 +273,7 @@ const FieldProjection = struct {
 
 pub const Pattern = struct {
     data: PatternData,
-    location: PatternLocation,
-};
-
-pub const PatternLocation = struct {
-    line: usize,
-    column: usize,
-    offset: usize,
-    length: usize,
+    location: SourceLocation, // Use same location type as Expression
 };
 
 pub const PatternData = union(enum) {
@@ -862,6 +865,7 @@ pub const Parser = struct {
 
         if (is_let_binding) {
             const doc = self.tokenizer.consumeDocComments();
+            const start_token = self.current; // Capture start for location
             const pattern = try self.parsePattern();
             try self.expect(.equals);
             const value = try self.parseLambda();
@@ -870,6 +874,7 @@ pub const Parser = struct {
             if (self.current.kind == .semicolon) {
                 try self.advance();
             } else if (!self.current.preceded_by_newline and self.current.kind != .eof) {
+                self.recordError();
                 return error.UnexpectedToken;
             }
 
@@ -879,9 +884,7 @@ pub const Parser = struct {
             }
 
             const body = try self.parseLambda();
-            const node = try self.allocateExpression();
-            node.* = .{ .let = .{ .pattern = pattern, .value = value, .body = body, .doc = doc } };
-            return node;
+            return try self.makeExpression(.{ .let = .{ .pattern = pattern, .value = value, .body = body, .doc = doc } }, start_token);
         }
 
         // Check for lambda: pattern -> expression
@@ -895,12 +898,11 @@ pub const Parser = struct {
         };
 
         if (is_lambda) {
+            const start_token = self.current; // Capture start for location
             const param = try self.parsePattern();
             try self.expect(.arrow);
             const body = try self.parseLambda();
-            const node = try self.allocateExpression();
-            node.* = .{ .lambda = .{ .param = param, .body = body } };
-            return node;
+            return try self.makeExpression(.{ .lambda = .{ .param = param, .body = body } }, start_token);
         }
 
         var expr = try self.parseBinary(0);
@@ -952,7 +954,11 @@ pub const Parser = struct {
                 i -= 1;
                 const binding = binding_slice[i];
                 const let_node = try self.allocateExpression();
-                let_node.* = .{ .let = .{ .pattern = binding.pattern, .value = binding.value, .body = expr, .doc = binding.doc } };
+                // Use location from the pattern for the let expression
+                let_node.* = .{
+                    .data = .{ .let = .{ .pattern = binding.pattern, .value = binding.value, .body = expr, .doc = binding.doc } },
+                    .location = binding.pattern.location,
+                };
                 expr = let_node;
             }
         }
@@ -1063,37 +1069,49 @@ pub const Parser = struct {
             // Check if the right side is a lambda pattern
             const right = if (op_token.kind == .backslash and self.isLambdaPattern())
                 blk: {
+                    const lambda_start = self.current; // Capture start for lambda location
                     const param = try self.parsePattern();
                     try self.expect(.arrow);
                     const body = try self.parseLambda();
                     const lambda_node = try self.allocateExpression();
-                    lambda_node.* = .{ .lambda = .{ .param = param, .body = body } };
+                    lambda_node.* = .{
+                        .data = .{ .lambda = .{ .param = param, .body = body } },
+                        .location = .{
+                            .line = lambda_start.line,
+                            .column = lambda_start.column,
+                            .offset = lambda_start.offset,
+                            .length = lambda_start.lexeme.len,
+                        },
+                    };
                     break :blk lambda_node;
                 }
             else
                 try self.parseBinary(precedence + 1);
 
             const node = try self.allocateExpression();
-            node.* = .{ .binary = .{
-                .op = switch (op_token.kind) {
-                    .plus => .add,
-                    .minus => .subtract,
-                    .star => .multiply,
-                    .ampersand => .merge,
-                    .ampersand_ampersand => .logical_and,
-                    .pipe_pipe => .logical_or,
-                    .backslash => .pipeline,
-                    .equals_equals => .equal,
-                    .bang_equals => .not_equal,
-                    .less => .less_than,
-                    .greater => .greater_than,
-                    .less_equals => .less_or_equal,
-                    .greater_equals => .greater_or_equal,
-                    else => unreachable,
-                },
-                .left = left,
-                .right = right,
-            } };
+            node.* = .{
+                .data = .{ .binary = .{
+                    .op = switch (op_token.kind) {
+                        .plus => .add,
+                        .minus => .subtract,
+                        .star => .multiply,
+                        .ampersand => .merge,
+                        .ampersand_ampersand => .logical_and,
+                        .pipe_pipe => .logical_or,
+                        .backslash => .pipeline,
+                        .equals_equals => .equal,
+                        .bang_equals => .not_equal,
+                        .less => .less_than,
+                        .greater => .greater_than,
+                        .less_equals => .less_or_equal,
+                        .greater_equals => .greater_or_equal,
+                        else => unreachable,
+                    },
+                    .left = left,
+                    .right = right,
+                } },
+                .location = left.location, // Use left expression's location for the binary operator
+            };
             left = node;
         }
 
@@ -1102,13 +1120,22 @@ pub const Parser = struct {
 
     fn parseUnary(self: *Parser) ParseError!*Expression {
         if (self.current.kind == .bang) {
+            const bang_token = self.current; // Capture for location
             try self.advance();
             const operand = try self.parseUnary();
             const node = try self.allocateExpression();
-            node.* = .{ .unary = .{
-                .op = .logical_not,
-                .operand = operand,
-            } };
+            node.* = .{
+                .data = .{ .unary = .{
+                    .op = .logical_not,
+                    .operand = operand,
+                } },
+                .location = .{
+                    .line = bang_token.line,
+                    .column = bang_token.column,
+                    .offset = bang_token.offset,
+                    .length = bang_token.lexeme.len,
+                },
+            };
             return node;
         }
         return self.parseApplication();
@@ -1128,7 +1155,10 @@ pub const Parser = struct {
                         // Parse the following expression(s) as a block
                         const argument = try self.parseLambda();
                         const node = try self.allocateExpression();
-                        node.* = .{ .application = .{ .function = expr, .argument = argument } };
+                        node.* = .{
+                            .data = .{ .application = .{ .function = expr, .argument = argument } },
+                            .location = expr.location, // Use function's location
+                        };
                         expr = node;
                         just_applied = true;
                         // After a 'do' block, stop looking for more arguments
@@ -1151,7 +1181,10 @@ pub const Parser = struct {
                     }
                     const argument = try self.parsePrimary();
                     const node = try self.allocateExpression();
-                    node.* = .{ .application = .{ .function = expr, .argument = argument } };
+                    node.* = .{
+                        .data = .{ .application = .{ .function = expr, .argument = argument } },
+                        .location = expr.location,
+                    };
                     expr = node;
                     just_applied = true;
                 },
@@ -1182,6 +1215,7 @@ pub const Parser = struct {
 
                         while (self.current.kind != .r_brace) {
                             if (self.current.kind != .identifier) {
+                                self.recordError();
                                 return error.UnexpectedToken;
                             }
                             try field_list.append(self.arena, self.current.lexeme);
@@ -1195,10 +1229,13 @@ pub const Parser = struct {
                         try self.expect(.r_brace);
 
                         const node = try self.allocateExpression();
-                        node.* = .{ .field_projection = .{
-                            .object = expr,
-                            .fields = try field_list.toOwnedSlice(self.arena),
-                        } };
+                        node.* = .{
+                            .data = .{ .field_projection = .{
+                                .object = expr,
+                                .fields = try field_list.toOwnedSlice(self.arena),
+                            } },
+                            .location = expr.location,
+                        };
                         expr = node;
                         just_applied = false;
                     } else if (self.current.kind == .identifier) {
@@ -1207,13 +1244,17 @@ pub const Parser = struct {
                         try self.advance();
 
                         const node = try self.allocateExpression();
-                        node.* = .{ .field_access = .{
-                            .object = expr,
-                            .field = field_name,
-                        } };
+                        node.* = .{
+                            .data = .{ .field_access = .{
+                                .object = expr,
+                                .field = field_name,
+                            } },
+                            .location = expr.location,
+                        };
                         expr = node;
                         just_applied = false;
                     } else {
+                        self.recordError();
                         return error.UnexpectedToken;
                     }
                 },
@@ -1222,13 +1263,19 @@ pub const Parser = struct {
                     const object_expr = try self.parseObject();
 
                     // Extract the fields from the parsed object
-                    const fields = switch (object_expr.*) {
+                    const fields = switch (object_expr.data) {
                         .object => |obj| obj.fields,
-                        else => return error.UnexpectedToken,
+                        else => {
+                            self.recordError();
+                            return error.UnexpectedToken;
+                        },
                     };
 
                     const node = try self.allocateExpression();
-                    node.* = .{ .object_extend = .{ .base = expr, .fields = fields } };
+                    node.* = .{
+                        .data = .{ .object_extend = .{ .base = expr, .fields = fields } },
+                        .location = expr.location,
+                    };
                     expr = node;
                     just_applied = false;
                 },
@@ -1249,6 +1296,7 @@ pub const Parser = struct {
     fn parsePrimary(self: *Parser) ParseError!*Expression {
         switch (self.current.kind) {
             .number => {
+                const num_token = self.current; // Capture for location
                 const lexeme = self.current.lexeme;
                 // Check if the number contains a decimal point
                 const has_decimal_point = std.mem.indexOfScalar(u8, lexeme, '.') != null;
@@ -1256,46 +1304,60 @@ pub const Parser = struct {
                 const node = try self.allocateExpression();
                 if (has_decimal_point) {
                     const value = try std.fmt.parseFloat(f64, lexeme);
-                    node.* = .{ .float = value };
+                    node.* = .{
+                        .data = .{ .float = value },
+                        .location = .{
+                            .line = num_token.line,
+                            .column = num_token.column,
+                            .offset = num_token.offset,
+                            .length = num_token.lexeme.len,
+                        },
+                    };
                 } else {
                     const value = try std.fmt.parseInt(i64, lexeme, 10);
-                    node.* = .{ .integer = value };
+                    node.* = .{
+                        .data = .{ .integer = value },
+                        .location = .{
+                            .line = num_token.line,
+                            .column = num_token.column,
+                            .offset = num_token.offset,
+                            .length = num_token.lexeme.len,
+                        },
+                    };
                 }
                 return node;
             },
             .identifier => {
                 if (std.mem.eql(u8, self.current.lexeme, "import")) {
+                    const import_token = self.current; // Capture for location
                     try self.advance();
                     if (self.current.kind != .string) return error.ExpectedExpression;
                     const path = self.current.lexeme;
                     try self.advance();
-                    const node = try self.allocateExpression();
-                    node.* = .{ .import_expr = .{ .path = path } };
-                    return node;
+                    return try self.makeExpression(.{ .import_expr = .{ .path = path } }, import_token);
                 }
                 if (std.mem.eql(u8, self.current.lexeme, "true")) {
+                    const token = self.current;
                     try self.advance();
-                    const node = try self.allocateExpression();
-                    node.* = .{ .boolean = true };
-                    return node;
+                    return try self.makeExpression(.{ .boolean = true }, token);
                 }
                 if (std.mem.eql(u8, self.current.lexeme, "false")) {
+                    const token = self.current;
                     try self.advance();
-                    const node = try self.allocateExpression();
-                    node.* = .{ .boolean = false };
-                    return node;
+                    return try self.makeExpression(.{ .boolean = false }, token);
                 }
                 if (std.mem.eql(u8, self.current.lexeme, "null")) {
+                    const token = self.current;
                     try self.advance();
-                    const node = try self.allocateExpression();
-                    node.* = .null_literal;
-                    return node;
+                    return try self.makeExpression(.null_literal, token);
                 }
                 if (std.mem.eql(u8, self.current.lexeme, "if")) {
+                    const if_token = self.current; // Capture for location
                     try self.advance();
                     const condition = try self.parseBinary(0);
 
                     if (self.current.kind != .identifier or !std.mem.eql(u8, self.current.lexeme, "then")) {
+                        self.recordError();
                         return error.UnexpectedToken;
                     }
                     try self.advance();
@@ -1308,19 +1370,18 @@ pub const Parser = struct {
                         else_expr = try self.parseBinary(0);
                     }
 
-                    const node = try self.allocateExpression();
-                    node.* = .{ .if_expr = .{
+                    return try self.makeExpression(.{ .if_expr = .{
                         .condition = condition,
                         .then_expr = then_expr,
                         .else_expr = else_expr,
-                    } };
-                    return node;
+                    } }, if_token);
                 }
                 if (std.mem.eql(u8, self.current.lexeme, "when")) {
                     try self.advance();
                     const value = try self.parseBinary(0);
 
                     if (self.current.kind != .identifier or !std.mem.eql(u8, self.current.lexeme, "matches")) {
+                        self.recordError();
                         return error.UnexpectedToken;
                     }
                     try self.advance();
@@ -1346,6 +1407,7 @@ pub const Parser = struct {
 
                         // Expect "then"
                         if (self.current.kind != .identifier or !std.mem.eql(u8, self.current.lexeme, "then")) {
+                            self.recordError();
                             return error.UnexpectedToken;
                         }
                         try self.advance();
@@ -1411,6 +1473,7 @@ pub const Parser = struct {
 
                 // First field is required
                 if (self.current.kind != .identifier) {
+                    self.recordError();
                     return error.UnexpectedToken;
                 }
                 try field_list.append(self.arena, self.current.lexeme);
@@ -1420,6 +1483,7 @@ pub const Parser = struct {
                 while (self.current.kind == .dot and !self.current.preceded_by_newline) {
                     try self.advance();
                     if (self.current.kind != .identifier) {
+                        self.recordError();
                         return error.UnexpectedToken;
                     }
                     try field_list.append(self.arena, self.current.lexeme);
@@ -1501,6 +1565,7 @@ pub const Parser = struct {
             } else if (self.current.preceded_by_newline) {
                 // Allow newline-separated elements
             } else {
+                self.recordError();
                 return error.UnexpectedToken;
             }
 
@@ -1593,14 +1658,13 @@ pub const Parser = struct {
         // and first field docs. We split at the --- separator.
         const module_doc = self.tokenizer.consumeModuleLevelDocComments();
 
+        const brace_token = self.current; // Capture opening brace for location
         try self.expect(.l_brace);
 
         // Empty object
         if (self.current.kind == .r_brace) {
             try self.advance();
-            const node = try self.allocateExpression();
-            node.* = .{ .object = .{ .fields = &[_]ObjectField{}, .module_doc = module_doc } };
-            return node;
+            return try self.makeExpression(.{ .object = .{ .fields = &[_]ObjectField{}, .module_doc = module_doc } }, brace_token);
         }
 
         // Check for object comprehension with dynamic field syntax: { [key]: value for ... }
@@ -1681,9 +1745,7 @@ pub const Parser = struct {
 
             try self.expect(.r_brace);
             const slice = try fields.toOwnedSlice(self.arena);
-            const node = try self.allocateExpression();
-            node.* = .{ .object = .{ .fields = slice, .module_doc = module_doc } };
-            return node;
+            return try self.makeExpression(.{ .object = .{ .fields = slice, .module_doc = module_doc } }, brace_token);
         }
 
         var fields = std.ArrayListUnmanaged(ObjectField){};
@@ -1692,6 +1754,7 @@ pub const Parser = struct {
             if (self.current.kind != .identifier) {
                 // Clear any pending doc comments if we don't find an identifier
                 self.tokenizer.clearDocComments();
+                self.recordError();
                 return error.UnexpectedToken;
             }
 
@@ -1734,15 +1797,14 @@ pub const Parser = struct {
                 continue;
             }
 
+            self.recordError();
             return error.UnexpectedToken;
         }
 
         try self.expect(.r_brace);
 
         const slice = try fields.toOwnedSlice(self.arena);
-        const node = try self.allocateExpression();
-        node.* = .{ .object = .{ .fields = slice, .module_doc = module_doc } };
-        return node;
+        return try self.makeExpression(.{ .object = .{ .fields = slice, .module_doc = module_doc } }, brace_token);
     }
 
     fn parseObjectComprehension(self: *Parser, key: *Expression, value: *Expression) ParseError!*Expression {
@@ -1942,6 +2004,7 @@ pub const Parser = struct {
             }
 
             if (self.current.kind == .r_paren) break;
+            self.recordError();
             return error.UnexpectedToken;
         }
 
@@ -1964,6 +2027,7 @@ pub const Parser = struct {
                 try self.advance();
                 // Expect an identifier after ...
                 if (self.current.kind != .identifier) {
+                    self.recordError();
                     return error.UnexpectedToken;
                 }
                 rest = self.current.lexeme;
@@ -1982,6 +2046,7 @@ pub const Parser = struct {
             }
 
             if (self.current.kind == .r_bracket) break;
+            self.recordError();
             return error.UnexpectedToken;
         }
 
@@ -1998,7 +2063,10 @@ pub const Parser = struct {
         var fields = std.ArrayListUnmanaged(ObjectPatternField){};
 
         while (self.current.kind != .r_brace) {
-            if (self.current.kind != .identifier) return error.UnexpectedToken;
+            if (self.current.kind != .identifier) {
+                self.recordError();
+                return error.UnexpectedToken;
+            }
             const field_token = self.current;
             const field_name = self.current.lexeme;
             try self.advance();
@@ -2028,6 +2096,7 @@ pub const Parser = struct {
             }
 
             if (self.current.kind == .r_brace) break;
+            self.recordError();
             return error.UnexpectedToken;
         }
 
@@ -2132,6 +2201,26 @@ pub const Parser = struct {
 
     fn allocateExpression(self: *Parser) ParseError!*Expression {
         return try self.arena.create(Expression);
+    }
+
+    /// Create an expression with location from a specific token
+    fn makeExpression(self: *Parser, data: ExpressionData, token: Token) ParseError!*Expression {
+        const expr = try self.allocateExpression();
+        expr.* = .{
+            .data = data,
+            .location = .{
+                .line = token.line,
+                .column = token.column,
+                .offset = token.offset,
+                .length = token.lexeme.len,
+            },
+        };
+        return expr;
+    }
+
+    /// Create an expression with location from the current token
+    fn makeExpressionHere(self: *Parser, data: ExpressionData) ParseError!*Expression {
+        return self.makeExpression(data, self.current);
     }
 };
 
@@ -2924,7 +3013,7 @@ pub fn evaluateExpression(
     current_dir: ?[]const u8,
     ctx: *const EvalContext,
 ) EvalError!Value {
-    return switch (expr.*) {
+    return switch (expr.data) {
         .integer => |value| .{ .integer = value },
         .float => |value| .{ .float = value },
         .boolean => |value| .{ .boolean = value },
@@ -3566,7 +3655,7 @@ pub fn evaluateExpression(
         .import_expr => |import_expr| try importModule(arena, import_expr.path, current_dir, ctx),
         .field_access => |field_access| blk: {
             const object_value = try evaluateExpression(arena, field_access.object, env, current_dir, ctx);
-            break :blk try accessField(arena, object_value, field_access.field);
+            break :blk try accessField(arena, object_value, field_access.field, ctx);
         },
         .field_accessor => |field_accessor| blk: {
             // Create a function that accesses the specified fields
@@ -3577,15 +3666,24 @@ pub fn evaluateExpression(
             };
 
             // Build the body expression: __obj.field1.field2...
+            // Use dummy location since these are runtime-generated expressions
+            const dummy_loc = SourceLocation{ .line = 0, .column = 0, .offset = 0, .length = 0 };
+
             var body_expr = try arena.create(Expression);
-            body_expr.* = .{ .identifier = "__obj" };
+            body_expr.* = .{
+                .data = .{ .identifier = "__obj" },
+                .location = dummy_loc,
+            };
 
             for (field_accessor.fields) |field_name| {
                 const field_access_expr = try arena.create(Expression);
-                field_access_expr.* = .{ .field_access = .{
-                    .object = body_expr,
-                    .field = field_name,
-                } };
+                field_access_expr.* = .{
+                    .data = .{ .field_access = .{
+                        .object = body_expr,
+                        .field = field_name,
+                    } },
+                    .location = dummy_loc,
+                };
                 body_expr = field_access_expr;
             }
 
@@ -3656,7 +3754,7 @@ pub fn evaluateExpression(
             // Create new object with only the specified fields
             const new_fields = try arena.alloc(ObjectFieldValue, field_projection.fields.len);
             for (field_projection.fields, 0..) |field_name, i| {
-                const field_value = try accessField(arena, object_value, field_name);
+                const field_value = try accessField(arena, object_value, field_name, ctx);
                 new_fields[i] = .{
                     .key = try arena.dupe(u8, field_name),
                     .value = field_value,
@@ -3668,7 +3766,7 @@ pub fn evaluateExpression(
     };
 }
 
-fn accessField(arena: std.mem.Allocator, object_value: Value, field_name: []const u8) EvalError!Value {
+fn accessField(arena: std.mem.Allocator, object_value: Value, field_name: []const u8, ctx: *const EvalContext) EvalError!Value {
     const object = switch (object_value) {
         .object => |obj| obj,
         else => return error.TypeMismatch,
@@ -3682,7 +3780,26 @@ fn accessField(arena: std.mem.Allocator, object_value: Value, field_name: []cons
         }
     }
 
-    // Field not found - provide "did you mean" suggestions (TODO: implement)
+    // Field not found - populate error context with available fields
+    if (ctx.error_ctx) |err_ctx| {
+        // Copy the field name using error context's allocator (not arena)
+        const field_name_copy = try err_ctx.allocator.dupe(u8, field_name);
+
+        // Collect available field names (limit to 10 for readability)
+        const max_fields = @min(object.fields.len, 10);
+        const available = try err_ctx.allocator.alloc([]const u8, max_fields);
+        for (object.fields[0..max_fields], 0..) |field, i| {
+            available[i] = try err_ctx.allocator.dupe(u8, field.key);
+        }
+
+        err_ctx.setErrorData(.{
+            .unknown_field = .{
+                .field_name = field_name_copy,
+                .available_fields = available,
+            },
+        });
+    }
+
     return error.UnknownField;
 }
 
@@ -3806,11 +3923,28 @@ fn importModule(
     const contents = try module_file.file.readToEndAlloc(arena, std.math.maxInt(usize));
 
     var parser = try Parser.init(arena, contents);
-    const expression = try parser.parse();
+    if (ctx.error_ctx) |err_ctx| {
+        err_ctx.setCurrentFile(module_file.path);
+        parser.setErrorContext(err_ctx);
+    }
+    const expression = parser.parse() catch |err| {
+        // Only register source on parse error
+        if (ctx.error_ctx) |err_ctx| {
+            err_ctx.registerSource(module_file.path, contents) catch {};
+        }
+        return err;
+    };
 
     const builtin_env = try createBuiltinEnvironment(arena);
     const module_dir = std.fs.path.dirname(module_file.path);
-    return evaluateExpression(arena, expression, builtin_env, module_dir, ctx);
+    const result = evaluateExpression(arena, expression, builtin_env, module_dir, ctx) catch |err| {
+        // Only register source on evaluation error
+        if (ctx.error_ctx) |err_ctx| {
+            err_ctx.registerSource(module_file.path, contents) catch {};
+        }
+        return err;
+    };
+    return result;
 }
 
 pub fn createBuiltinEnvironment(arena: std.mem.Allocator) !?*Environment {
@@ -4675,6 +4809,7 @@ fn evalSourceWithFormat(
 
     const lazy_paths = try collectLazyPaths(arena.allocator());
     var err_ctx = error_context.ErrorContext.init(allocator);
+    errdefer err_ctx.deinit();
     err_ctx.setSource(source);
 
     const context = EvalContext{
@@ -4766,7 +4901,17 @@ pub fn evalFileWithFormat(allocator: std.mem.Allocator, path: []const u8, format
     defer allocator.free(contents);
 
     const directory = std.fs.path.dirname(path);
-    return try evalSourceWithFormat(allocator, contents, directory, format);
+    var result = try evalSourceWithFormat(allocator, contents, directory, format);
+
+    // Register the main file for error reporting
+    if (result.err != null) {
+        result.error_ctx.registerSource(path, contents) catch {};
+        if (result.error_ctx.current_file.len == 0) {
+            result.error_ctx.setCurrentFile(path);
+        }
+    }
+
+    return result;
 }
 
 pub const EvalValueResult = struct {
@@ -4793,7 +4938,17 @@ pub fn evalFileWithValue(allocator: std.mem.Allocator, path: []const u8) EvalErr
     defer allocator.free(contents);
 
     const directory = std.fs.path.dirname(path);
-    return try evalSourceWithValue(allocator, contents, directory);
+    var result = try evalSourceWithValue(allocator, contents, directory);
+
+    // Register the main file for error reporting
+    if (result.err != null) {
+        result.error_ctx.registerSource(path, contents) catch {};
+        if (result.error_ctx.current_file.len == 0) {
+            result.error_ctx.setCurrentFile(path);
+        }
+    }
+
+    return result;
 }
 
 fn evalSourceWithValue(

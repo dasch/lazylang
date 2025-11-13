@@ -199,6 +199,13 @@ fn runEval(
     };
     defer result.deinit();
 
+    // Register the main file in the error context for error reporting
+    if (result.err == null and result.output != null) {
+        // No need to register if there's no error
+    } else {
+        result.error_ctx.registerSource(file_path.?, file_content) catch {};
+    }
+
     if (result.output) |output| {
         if (manifest_mode) {
             // Get the raw value for manifest mode
@@ -230,11 +237,18 @@ fn runEval(
         return .{ .exit_code = 0 };
     } else {
         // Error occurred during parsing/evaluation
-        // Use the file content we read, not the one from error context (which might be deallocated)
+        // Look up the correct source from the error context's source map
+        const error_filename = if (result.error_ctx.source_filename.len > 0)
+            result.error_ctx.source_filename
+        else
+            file_path.?;
+
+        const error_source = result.error_ctx.source_map.get(error_filename) orelse file_content;
+
         if (json_output) {
-            try json_error.reportErrorAsJson(stderr, file_path.?, &result.error_ctx, "ParseError", "An error occurred at this location.", null);
+            try json_error.reportErrorAsJson(stderr, error_filename, &result.error_ctx, "ParseError", "An error occurred at this location.", null);
         } else {
-            try reportErrorWithContext(allocator, stderr, file_path.?, file_content, &result.error_ctx, result.err);
+            try reportErrorWithContext(allocator, stderr, error_filename, error_source, &result.error_ctx, result.err);
         }
         return .{ .exit_code = 1 };
     }
@@ -357,11 +371,24 @@ fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const 
             .message = error_reporter.ErrorMessages.expectedExpression(),
             .suggestion = "Add an expression here.",
         },
-        error.UnexpectedToken => error_reporter.ErrorInfo{
-            .title = "Unexpected token",
-            .location = location,
-            .message = "Found an unexpected token.",
-            .suggestion = "Check the syntax at this location.",
+        error.UnexpectedToken => blk: {
+            if (err_ctx) |ctx| {
+                if (ctx.last_error_token_lexeme) |lexeme| {
+                    const message = try std.fmt.allocPrint(allocator, "Found unexpected token `\x1b[36m{s}\x1b[0m`.", .{lexeme});
+                    break :blk error_reporter.ErrorInfo{
+                        .title = "Unexpected token",
+                        .location = location,
+                        .message = message,
+                        .suggestion = "Check the syntax at this location.",
+                    };
+                }
+            }
+            break :blk error_reporter.ErrorInfo{
+                .title = "Unexpected token",
+                .location = location,
+                .message = "Found an unexpected token.",
+                .suggestion = "Check the syntax at this location.",
+            };
         },
         error.UnknownIdentifier => blk: {
             if (err_ctx) |ctx| {

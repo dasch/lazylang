@@ -99,8 +99,8 @@ fn buildSignature(allocator: std.mem.Allocator, field_name: []const u8, value: *
 
     // Extract parameter names if it's a lambda
     var current_expr = value;
-    while (current_expr.* == .lambda) {
-        const lambda = current_expr.lambda;
+    while (current_expr.data == .lambda) {
+        const lambda = current_expr.data.lambda;
 
         var param_names = std.ArrayList([]const u8){};
         defer param_names.deinit(allocator);
@@ -118,7 +118,7 @@ fn buildSignature(allocator: std.mem.Allocator, field_name: []const u8, value: *
 }
 
 fn extractDocs(expr: *const evaluator.Expression, items: *std.ArrayListUnmanaged(DocItem), allocator: std.mem.Allocator) !void {
-    switch (expr.*) {
+    switch (expr.data) {
         .let => |let_expr| {
             if (let_expr.doc) |doc| {
                 // Extract the name from the pattern

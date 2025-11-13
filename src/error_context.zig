@@ -25,18 +25,44 @@ pub const ErrorContext = struct {
     last_error_token_lexeme: ?[]const u8 = null,
     last_error_data: ErrorData = .none,
     source: []const u8 = "",
+    source_filename: []const u8 = "",
+    /// Maps filename -> source content for all files involved (main + imports)
+    source_map: std.StringHashMap([]const u8),
+    /// The currently active file being parsed/evaluated
+    current_file: []const u8 = "",
+    /// Whether current_file is an owned copy that needs to be freed
+    current_file_owned: bool = false,
     identifiers: std.ArrayList([]const u8),
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) ErrorContext {
         return .{
             .identifiers = std.ArrayList([]const u8){},
+            .source_map = std.StringHashMap([]const u8).init(allocator),
             .allocator = allocator,
         };
     }
 
     pub fn deinit(self: *ErrorContext) void {
         self.identifiers.deinit(self.allocator);
+
+        // Free source map entries
+        var it = self.source_map.iterator();
+        while (it.next()) |entry| {
+            self.allocator.free(entry.key_ptr.*);
+            self.allocator.free(entry.value_ptr.*);
+        }
+        self.source_map.deinit();
+
+        // Free current_file if it's an owned copy
+        if (self.current_file_owned and self.current_file.len > 0) {
+            self.allocator.free(self.current_file);
+        }
+
+        // Free error token lexeme
+        if (self.last_error_token_lexeme) |lexeme| {
+            self.allocator.free(lexeme);
+        }
 
         // Free ErrorData memory
         switch (self.last_error_data) {
@@ -61,6 +87,60 @@ pub const ErrorContext = struct {
         self.source = source;
     }
 
+    pub fn setSourceFile(self: *ErrorContext, source: []const u8, filename: []const u8) void {
+        self.source = source;
+        self.source_filename = filename;
+    }
+
+    /// Register a source file in the source map (for error reporting)
+    /// Makes copies of both filename and source
+    pub fn registerSource(self: *ErrorContext, filename: []const u8, source: []const u8) !void {
+        // Make owned copies
+        const owned_filename = try self.allocator.dupe(u8, filename);
+        errdefer self.allocator.free(owned_filename);
+        const owned_source = try self.allocator.dupe(u8, source);
+        errdefer self.allocator.free(owned_source);
+
+        // Store in map (will free old values if key exists)
+        if (self.source_map.get(owned_filename)) |old_source| {
+            self.allocator.free(old_source);
+        }
+        try self.source_map.put(owned_filename, owned_source);
+    }
+
+    /// Set the currently active file being parsed/evaluated
+    /// Makes a copy since the filename may be freed
+    pub fn setCurrentFile(self: *ErrorContext, filename: []const u8) void {
+        // Free previous owned copy if any
+        if (self.current_file_owned and self.current_file.len > 0) {
+            self.allocator.free(self.current_file);
+            self.current_file_owned = false;
+        }
+
+        // The current_file should point to a key in our source_map which we own
+        // So we don't need to copy it separately - just reference the map key
+        if (self.source_map.get(filename)) |_| {
+            // Find the key in the map (which is owned) and use that
+            var it = self.source_map.iterator();
+            while (it.next()) |entry| {
+                if (std.mem.eql(u8, entry.key_ptr.*, filename)) {
+                    self.current_file = entry.key_ptr.*;
+                    self.current_file_owned = false;
+                    return;
+                }
+            }
+        }
+        // If not in map yet, make a temporary copy
+        // This will be overwritten when registerSource is called on error
+        if (self.allocator.dupe(u8, filename)) |owned| {
+            self.current_file = owned;
+            self.current_file_owned = true;
+        } else |_| {
+            self.current_file = "";
+            self.current_file_owned = false;
+        }
+    }
+
     pub fn setErrorLocation(self: *ErrorContext, line: usize, column: usize, offset: usize, length: usize) void {
         self.last_error_location = .{
             .line = line,
@@ -68,10 +148,21 @@ pub const ErrorContext = struct {
             .offset = offset,
             .length = length,
         };
+        // Capture the current file when the error occurs
+        self.source_filename = self.current_file;
     }
 
     pub fn setErrorToken(self: *ErrorContext, lexeme: []const u8) void {
-        self.last_error_token_lexeme = lexeme;
+        // Make a copy of the lexeme since it may be a slice into source that gets freed
+        if (self.allocator.dupe(u8, lexeme)) |owned_lexeme| {
+            // Free the old lexeme if it exists
+            if (self.last_error_token_lexeme) |old| {
+                self.allocator.free(old);
+            }
+            self.last_error_token_lexeme = owned_lexeme;
+        } else |_| {
+            // If allocation fails, just don't set it
+        }
     }
 
     pub fn setErrorData(self: *ErrorContext, data: ErrorData) void {
