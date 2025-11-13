@@ -513,6 +513,7 @@ pub const Server = struct {
     fn handleCompletion(self: *Self, id: ?std.json.Value, message: std.json.Value) !void {
         const params = message.object.get("params").?.object;
         const text_document = params.get("textDocument").?.object;
+        const position = params.get("position").?.object;
         const uri = text_document.get("uri").?.string;
 
         const doc = self.documents.get(uri) orelse {
@@ -520,8 +521,11 @@ pub const Server = struct {
             return;
         };
 
+        const line = @as(u32, @intCast(position.get("line").?.integer));
+        const character = @as(u32, @intCast(position.get("character").?.integer));
+
         // Get completion items
-        const items = try self.computeCompletions(doc.text);
+        const items = try self.computeCompletions(doc.text, line, character);
         defer {
             for (items) |item| {
                 self.allocator.free(item.label);
@@ -563,10 +567,15 @@ pub const Server = struct {
     }
 
     /// Compute completion items for a document
-    fn computeCompletions(self: *Self, text: []const u8) ![]CompletionItem {
-        _ = text;
+    fn computeCompletions(self: *Self, text: []const u8, line: u32, character: u32) ![]CompletionItem {
         var items = std.ArrayList(CompletionItem){};
         errdefer items.deinit(self.allocator);
+
+        // Check if we're inside an import statement
+        if (try self.isInImportContext(text, line, character)) {
+            // Return available module paths
+            return try self.getModuleCompletions();
+        }
 
         // Keywords
         const keywords = [_][]const u8{
@@ -602,6 +611,88 @@ pub const Server = struct {
                 .detail = detail,
             });
         }
+
+        return try items.toOwnedSlice(self.allocator);
+    }
+
+    /// Check if the cursor is inside an import statement string
+    fn isInImportContext(self: *Self, text: []const u8, target_line: u32, target_char: u32) !bool {
+        _ = self;
+
+        // Find the line content
+        var current_line: u32 = 0;
+        var line_start: usize = 0;
+        var line_end: usize = 0;
+
+        for (text, 0..) |c, i| {
+            if (current_line == target_line) {
+                line_end = i;
+                if (c == '\n') break;
+            } else if (c == '\n') {
+                current_line += 1;
+                if (current_line == target_line) {
+                    line_start = i + 1;
+                }
+            }
+        }
+
+        if (current_line == target_line and line_end < line_start) {
+            line_end = text.len;
+        }
+
+        if (current_line != target_line) return false;
+
+        const line_text = text[line_start..line_end];
+
+        // Check if this line contains "import" followed by a string literal in progress
+        const import_pos = std.mem.indexOf(u8, line_text, "import") orelse return false;
+
+        // Check if cursor is after import and inside quotes
+        if (target_char > import_pos + 6) {
+            const after_import = line_text[import_pos + 6 ..];
+            // Look for opening quote
+            var in_string = false;
+            for (after_import, 0..) |c, i| {
+                if (c == '\'' or c == '"') {
+                    in_string = !in_string;
+                }
+                if (import_pos + 6 + i >= target_char) {
+                    return in_string;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// Get available module paths for completion
+    fn getModuleCompletions(self: *Self) ![]CompletionItem {
+        var items = std.ArrayList(CompletionItem){};
+        errdefer items.deinit(self.allocator);
+
+        // Add stdlib modules
+        const stdlib_modules = [_][]const u8{
+            "Array",
+            "String",
+            "Math",
+            "Object",
+            "JSON",
+            "YAML",
+            "Spec",
+        };
+
+        for (stdlib_modules) |module| {
+            const label = try self.allocator.dupe(u8, module);
+            const detail = try std.fmt.allocPrint(self.allocator, "Standard library module", .{});
+            try items.append(self.allocator, .{
+                .label = label,
+                .kind = 9, // Module
+                .detail = detail,
+            });
+        }
+
+        // TODO: Scan LAZYLANG_PATH directories for additional modules
+        // For now, just return stdlib modules
 
         return try items.toOwnedSlice(self.allocator);
     }
