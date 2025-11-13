@@ -21,7 +21,7 @@ describe "Assertion Functions" [
     it "passes when condition is true" do
       must true
 
-    it "passes when condition is truthy (non-zero)" do
+    it "passes when condition is _truthy_ (non-zero)" do
       must 42
 
     it "passes when condition is a comparison" do

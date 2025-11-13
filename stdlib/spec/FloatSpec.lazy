@@ -45,7 +45,7 @@ describe "Float" [
     it "returns absolute value of negative float" do
       mustEq 5.5 (Float.abs (0.0 - 5.5))
 
-    it "returns zero for zero" do
+    it "returns `0.0` for zero" do
       mustEq 0.0 (Float.abs 0.0)
   ]
 
@@ -53,7 +53,7 @@ describe "Float" [
     it "calculates square root of perfect square" do
       mustEq 4.0 (Float.sqrt 16.0)
 
-    it "calculates square root of zero" do
+    it "calculates square root of `0.0`" do
       mustEq 0.0 (Float.sqrt 0.0)
   ]
 
@@ -61,13 +61,13 @@ describe "Float" [
     it "raises to integer power" do
       mustEq 8.0 (Float.pow 2.0 3.0)
 
-    it "raises to zero power" do
+    it "raises to *zero* power" do
       mustEq 1.0 (Float.pow 5.0 0.0)
 
-    it "raises to negative power" do
+    it "raises to *negative* power" do
       mustEq 0.5 (Float.pow 2.0 (0.0 - 1.0))
 
-    it "raises zero to positive power" do
+    it "raises `0.0` to positive power" do
       mustEq 0.0 (Float.pow 0.0 2.0)
   ]
 
@@ -78,7 +78,7 @@ describe "Float" [
     it "calculates modulo of integers" do
       mustEq 1.0 (Float.mod 10.0 3.0)
 
-    it "handles zero remainder" do
+    it "handles *zero* remainder" do
       mustEq 0.0 (Float.mod 9.0 3.0)
   ]
 

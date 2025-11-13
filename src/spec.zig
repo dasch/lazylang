@@ -7,10 +7,70 @@ const Color = struct {
     const green = "\x1b[32m";
     const red = "\x1b[31m";
     const cyan = "\x1b[36m";
+    const blue = "\x1b[34m";
     const dim = "\x1b[2m";
     const bold = "\x1b[1m";
+    const italic = "\x1b[3m";
     const grey = "\x1b[90m";
 };
+
+// Format description with markdown-light syntax highlighting
+// - `code` -> blue color
+// - *emphasis* -> italic
+// - _emphasis_ -> italic
+fn formatDescription(allocator: std.mem.Allocator, text: []const u8) ![]const u8 {
+    var result = std.ArrayList(u8){};
+    errdefer result.deinit(allocator);
+
+    var i: usize = 0;
+    while (i < text.len) {
+        if (text[i] == '`') {
+            // Find closing backtick
+            if (std.mem.indexOfScalarPos(u8, text, i + 1, '`')) |end| {
+                // Add blue color code, content, and reset
+                try result.appendSlice(allocator, Color.blue);
+                try result.appendSlice(allocator, text[i + 1 .. end]);
+                try result.appendSlice(allocator, Color.reset);
+                i = end + 1;
+            } else {
+                // No closing backtick, just add the character
+                try result.append(allocator, text[i]);
+                i += 1;
+            }
+        } else if (text[i] == '*') {
+            // Find closing asterisk
+            if (std.mem.indexOfScalarPos(u8, text, i + 1, '*')) |end| {
+                // Add italic code, content, and reset
+                try result.appendSlice(allocator, Color.italic);
+                try result.appendSlice(allocator, text[i + 1 .. end]);
+                try result.appendSlice(allocator, Color.reset);
+                i = end + 1;
+            } else {
+                // No closing asterisk, just add the character
+                try result.append(allocator, text[i]);
+                i += 1;
+            }
+        } else if (text[i] == '_') {
+            // Find closing underscore
+            if (std.mem.indexOfScalarPos(u8, text, i + 1, '_')) |end| {
+                // Add italic code, content, and reset
+                try result.appendSlice(allocator, Color.italic);
+                try result.appendSlice(allocator, text[i + 1 .. end]);
+                try result.appendSlice(allocator, Color.reset);
+                i = end + 1;
+            } else {
+                // No closing underscore, just add the character
+                try result.append(allocator, text[i]);
+                i += 1;
+            }
+        } else {
+            try result.append(allocator, text[i]);
+            i += 1;
+        }
+    }
+
+    return result.toOwnedSlice(allocator);
+}
 
 pub const SpecResult = struct {
     passed: usize,
@@ -229,7 +289,9 @@ fn runDescribe(ctx: anytype, desc: eval_module.ObjectValue) anyerror!void {
         }
 
         try ctx.writeIndent();
-        try ctx.writer.print("{s}{s}{s}\n", .{ Color.cyan, description.?, Color.reset });
+        const formatted_desc = try formatDescription(ctx.allocator, description.?);
+        defer ctx.allocator.free(formatted_desc);
+        try ctx.writer.print("{s}{s}{s}\n", .{ Color.cyan, formatted_desc, Color.reset });
     }
 
     if (should_run_children) {
@@ -316,14 +378,18 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
     // If the test is ignored (xit), just display it and return
     if (is_ignored) {
         try ctx.writeIndent();
-        try ctx.writer.print("{s}○ {s}{s}\n", .{ Color.grey, description.?, Color.reset });
+        const formatted_desc = try formatDescription(ctx.allocator, description.?);
+        defer ctx.allocator.free(formatted_desc);
+        try ctx.writer.print("{s}○ {s}{s}\n", .{ Color.grey, formatted_desc, Color.reset });
         ctx.ignored += 1;
         return;
     }
 
     if (test_value == null) {
         try ctx.writeIndent();
-        try ctx.writer.print("{s}✗ {s}: missing test{s}\n", .{ Color.red, description.?, Color.reset });
+        const formatted_desc = try formatDescription(ctx.allocator, description.?);
+        defer ctx.allocator.free(formatted_desc);
+        try ctx.writer.print("{s}✗ {s}: missing test{s}\n", .{ Color.red, formatted_desc, Color.reset });
         ctx.failed += 1;
         return;
     }
@@ -333,7 +399,9 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
         .object => |obj| obj,
         else => {
             try ctx.writeIndent();
-            try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, description.? });
+            const formatted_desc = try formatDescription(ctx.allocator, description.?);
+            defer ctx.allocator.free(formatted_desc);
+            try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, formatted_desc });
             ctx.passed += 1;
             return;
         },
@@ -358,7 +426,9 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
     // Handle explicit pass
     if (test_type != null and std.mem.eql(u8, test_type.?, "pass")) {
         try ctx.writeIndent();
-        try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, description.? });
+        const formatted_desc = try formatDescription(ctx.allocator, description.?);
+        defer ctx.allocator.free(formatted_desc);
+        try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, formatted_desc });
         ctx.passed += 1;
         return;
     }
@@ -366,7 +436,9 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
     // Handle explicit fail
     if (test_type != null and std.mem.eql(u8, test_type.?, "fail")) {
         try ctx.writeIndent();
-        try ctx.writer.print("{s}✗ {s}{s}\n", .{ Color.red, description.?, Color.reset });
+        const formatted_desc = try formatDescription(ctx.allocator, description.?);
+        defer ctx.allocator.free(formatted_desc);
+        try ctx.writer.print("{s}✗ {s}{s}\n", .{ Color.red, formatted_desc, Color.reset });
 
         // Handle fail details (can be a string or an object with structured info)
         if (fail_details) |details| {
@@ -444,7 +516,9 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
 
     // Not a recognized test type (pass or fail), treat as truthy success
     try ctx.writeIndent();
-    try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, description.? });
+    const formatted_desc = try formatDescription(ctx.allocator, description.?);
+    defer ctx.allocator.free(formatted_desc);
+    try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, formatted_desc });
     ctx.passed += 1;
 }
 

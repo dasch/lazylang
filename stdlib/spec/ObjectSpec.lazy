@@ -3,19 +3,19 @@
 
 describe "Object" [
   describe "get" [
-    it "returns (#ok, value) when the key exists" do
+    it "returns `(#ok, value)` when the key exists" do
       obj = { name: "Alice", age: 30 }
       mustEq (#ok, "Alice") (get "name" obj)
 
-    it "returns (#ok, value) for another key" do
+    it "returns `(#ok, value)` for another key" do
       obj = { name: "Alice", age: 30 }
       mustEq (#ok, 30) (get "age" obj)
 
-    it "returns #noSuchKey when the key does not exist" do
+    it "returns `#noSuchKey` when the key does *not* exist" do
       obj = { name: "Alice", age: 30 }
       mustEq #noSuchKey (get "email" obj)
 
-    it "returns (#ok, value) for nested object values" do
+    it "returns `(#ok, value)` for nested object values" do
       obj = { user: { name: "Bob" } }
       mustEq (#ok, { name: "Bob" }) (get "user" obj)
   ]

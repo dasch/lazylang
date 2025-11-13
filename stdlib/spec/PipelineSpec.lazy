@@ -8,16 +8,16 @@ describe "Pipeline Operator" [
   it "applies a function to a value" do
     mustEq 10 (5 \ double)
 
-  it "chains multiple functions" do
+  it "chains *multiple* functions" do
     mustEq 11 (5 \ double \ addOne)
 
-  it "evaluates left-to-right" do
+  it "evaluates _left-to-right_" do
     mustEq 12 (5 \ addOne \ double)
 
-  it "has lower precedence than arithmetic" do
+  it "has *lower* precedence than arithmetic" do
     mustEq 14 (5 + 2 \ double)
 
-  it "chains three functions" do
+  it "chains *three* functions" do
     mustEq 121 (5 \ double \ addOne \ square)
 
   it "works with multi-line pipelines" do

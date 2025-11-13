@@ -3,23 +3,23 @@ Array = import 'Array'
 
 describe "Array" [
   describe "get" [
-    it "returns (#ok, value) when the index is in-bounds" do
+    it "returns `(#ok, value)` when the index is _in-bounds_" do
       arr = [10, 20, 30]
       mustEq (#ok, 20) (Array.get 1 arr)
 
-    it "returns (#ok, value) for the first element" do
+    it "returns `(#ok, value)` for the *first* element" do
       arr = [10, 20, 30]
       mustEq (#ok, 10) (Array.get 0 arr)
 
-    it "returns (#ok, value) for the last element" do
+    it "returns `(#ok, value)` for the *last* element" do
       arr = [10, 20, 30]
       mustEq (#ok, 30) (Array.get 2 arr)
 
-    it "returns #outOfBounds when index equals array length" do
+    it "returns `#outOfBounds` when index _equals_ array length" do
       arr = [10, 20, 30]
       mustEq #outOfBounds (Array.get 3 arr)
 
-    it "returns #outOfBounds when index exceeds array length" do
+    it "returns `#outOfBounds` when index _exceeds_ array length" do
       arr = [10, 20, 30]
       mustEq #outOfBounds (Array.get 10 arr)
   ]
@@ -30,10 +30,10 @@ describe "Array" [
   ]
 
   describe "isEmpty" [
-    it "returns true for empty array" do
+    it "returns `true` for *empty* array" do
       mustEq true (Array.isEmpty [])
 
-    it "returns false for non-empty array" do
+    it "returns `false` for *non-empty* array" do
       mustEq false (Array.isEmpty [1, 2, 3])
   ]
 
@@ -47,7 +47,7 @@ describe "Array" [
     it "extracts to end" do
       mustEq [3, 4] (Array.slice 3 5 [0, 1, 2, 3, 4])
 
-    it "returns empty array when start equals end" do
+    it "returns *empty* array when start _equals_ end" do
       mustEq [] (Array.slice 2 2 [0, 1, 2, 3])
 
     it "handles negative indices" do
@@ -93,35 +93,35 @@ describe "Array" [
   ]
 
   describe "all" [
-    it "returns true when all elements satisfy predicate" do
+    it "returns `true` when *all* elements satisfy predicate" do
       mustEq true (Array.all (x -> x > 0) [1, 2, 3])
 
-    it "returns false when some element fails predicate" do
+    it "returns `false` when _some_ element fails predicate" do
       mustEq false (Array.all (x -> x > 0) [1, (0 - 2), 3])
 
-    it "returns true for empty array" do
+    it "returns `true` for *empty* array" do
       mustEq true (Array.all (x -> x > 0) [])
   ]
 
   describe "any" [
-    it "returns true when some element satisfies predicate" do
+    it "returns `true` when _some_ element satisfies predicate" do
       mustEq true (Array.any (x -> x > 2) [1, 2, 3])
 
-    it "returns false when no element satisfies predicate" do
+    it "returns `false` when _no_ element satisfies predicate" do
       mustEq false (Array.any (x -> x > 5) [1, 2, 3])
 
-    it "returns false for empty array" do
+    it "returns `false` for *empty* array" do
       mustEq false (Array.any (x -> x > 0) [])
   ]
 
   describe "none" [
-    it "returns true when no element satisfies predicate" do
+    it "returns `true` when _no_ element satisfies predicate" do
       mustEq true (Array.none (x -> x > 5) [1, 2, 3])
 
-    it "returns false when some element satisfies predicate" do
+    it "returns `false` when _some_ element satisfies predicate" do
       mustEq false (Array.none (x -> x > 2) [1, 2, 3])
 
-    it "returns true for empty array" do
+    it "returns `true` for *empty* array" do
       mustEq true (Array.none (x -> x > 0) [])
   ]
 
