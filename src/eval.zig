@@ -121,6 +121,7 @@ pub const Expression = union(enum) {
     field_access: FieldAccess,
     field_accessor: FieldAccessor,
     field_projection: FieldProjection,
+    operator_function: BinaryOp,
 };
 
 const Lambda = struct {
@@ -1748,6 +1749,32 @@ pub const Parser = struct {
             try self.advance();
             const node = try self.allocateExpression();
             node.* = .{ .tuple = .{ .elements = &[_]*Expression{} } };
+            return node;
+        }
+
+        // Check for operator function: (+), (-), (*), etc.
+        const op: ?BinaryOp = switch (self.current.kind) {
+            .plus => .add,
+            .minus => .subtract,
+            .star => .multiply,
+            .ampersand => .merge,
+            .ampersand_ampersand => .logical_and,
+            .pipe_pipe => .logical_or,
+            .backslash => .pipeline,
+            .equals_equals => .equal,
+            .bang_equals => .not_equal,
+            .less => .less_than,
+            .greater => .greater_than,
+            .less_equals => .less_or_equal,
+            .greater_equals => .greater_or_equal,
+            else => null,
+        };
+
+        if (op) |operator| {
+            try self.advance();
+            try self.expect(.r_paren);
+            const node = try self.allocateExpression();
+            node.* = .{ .operator_function = operator };
             return node;
         }
 
@@ -3524,6 +3551,52 @@ pub fn evaluateExpression(
             };
 
             break :blk Value{ .function = func_value };
+        },
+        .operator_function => |op| blk: {
+            // Create a curried binary function: x -> y -> x op y
+            // First, create the parameters
+            const param_x = try arena.create(Pattern);
+            param_x.* = .{
+                .data = .{ .identifier = "__x" },
+                .location = .{ .line = 0, .column = 0, .offset = 0, .length = 0 },
+            };
+
+            const param_y = try arena.create(Pattern);
+            param_y.* = .{
+                .data = .{ .identifier = "__y" },
+                .location = .{ .line = 0, .column = 0, .offset = 0, .length = 0 },
+            };
+
+            // Create the binary operation expression: __x op __y
+            const left_expr = try arena.create(Expression);
+            left_expr.* = .{ .identifier = "__x" };
+
+            const right_expr = try arena.create(Expression);
+            right_expr.* = .{ .identifier = "__y" };
+
+            const binary_expr = try arena.create(Expression);
+            binary_expr.* = .{ .binary = .{
+                .op = op,
+                .left = left_expr,
+                .right = right_expr,
+            } };
+
+            // Create the inner lambda: y -> __x op __y
+            const inner_lambda_expr = try arena.create(Expression);
+            inner_lambda_expr.* = .{ .lambda = .{
+                .param = param_y,
+                .body = binary_expr,
+            } };
+
+            // Create the outer function: x -> (y -> __x op __y)
+            const outer_func = try arena.create(FunctionValue);
+            outer_func.* = .{
+                .param = param_x,
+                .body = inner_lambda_expr,
+                .env = env,
+            };
+
+            break :blk Value{ .function = outer_func };
         },
         .field_projection => |field_projection| blk: {
             const object_value = try evaluateExpression(arena, field_projection.object, env, current_dir, ctx);
