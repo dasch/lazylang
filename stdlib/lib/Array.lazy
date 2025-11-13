@@ -189,7 +189,7 @@
   ///
   /// **Example:**
   /// ```
-  /// Array.sortBy (.age) [{name: "Alice", age: 30}, {name: "Bob", age: 25}]
+  /// Array.sortBy .age [{name: "Alice", age: 30}, {name: "Bob", age: 25}]
   /// // Returns [{name: "Bob", age: 25}, {name: "Alice", age: 30}]
   /// ```
   sortBy: keyFn -> arr ->

@@ -67,3 +67,43 @@ test "field projection can be assigned" {
         \\subset
     , "{ name: \"Alice\", age: 30 }");
 }
+
+test "field accessor as function argument with space" {
+    try expectEvaluates(
+        \\map = f -> xs -> [f x for x in xs]
+        \\people = [{ name: "Alice" }, { name: "Bob" }]
+        \\map .name people
+    , "[\"Alice\", \"Bob\"]");
+}
+
+test "field accessor with Array.map" {
+    try expectEvaluates(
+        \\Array = import 'Array'
+        \\people = [{ name: "Alice" }, { name: "Bob" }]
+        \\Array.map .name people
+    , "[\"Alice\", \"Bob\"]");
+}
+
+test "field accessor with parentheses still works" {
+    try expectEvaluates(
+        \\Array = import 'Array'
+        \\people = [{ name: "Alice" }, { name: "Bob" }]
+        \\Array.map (.name) people
+    , "[\"Alice\", \"Bob\"]");
+}
+
+test "whitespace disambiguates field access vs field accessor" {
+    // No space before dot = field access chain
+    try expectEvaluates(
+        \\obj = { nested: { field: "value" } }
+        \\obj.nested.field
+    , "\"value\"");
+
+    // Space before dot = field accessor as function argument
+    try expectEvaluates(
+        \\map = f -> xs -> [f x for x in xs]
+        \\objs = [{ field: 1 }, { field: 2 }]
+        \\map .field objs
+    , "[1, 2]");
+}
+

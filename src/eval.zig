@@ -63,6 +63,7 @@ pub const Token = struct {
     kind: TokenKind,
     lexeme: []const u8,
     preceded_by_newline: bool,
+    preceded_by_whitespace: bool, // True if any whitespace (space, tab, or newline) precedes this token
     line: usize, // 1-indexed line number
     column: usize, // 1-indexed column number
     offset: usize, // byte offset in source
@@ -307,6 +308,7 @@ pub const Tokenizer = struct {
     source: []const u8,
     index: usize,
     last_whitespace_had_newline: bool,
+    last_had_whitespace: bool,
     line: usize, // current line number (1-indexed)
     column: usize, // current column number (1-indexed)
     line_start: usize, // byte offset of the current line start
@@ -318,6 +320,7 @@ pub const Tokenizer = struct {
             .source = source,
             .index = 0,
             .last_whitespace_had_newline = false,
+            .last_had_whitespace = false,
             .line = 1,
             .column = 1,
             .line_start = 0,
@@ -327,14 +330,16 @@ pub const Tokenizer = struct {
     }
 
     pub fn next(self: *Tokenizer) TokenizerError!Token {
-        const saw_newline = self.skipWhitespace();
-        self.last_whitespace_had_newline = saw_newline;
+        const ws_info = self.skipWhitespace();
+        self.last_whitespace_had_newline = ws_info.saw_newline;
+        self.last_had_whitespace = ws_info.had_whitespace;
 
         if (self.index >= self.source.len) {
             return .{
                 .kind = .eof,
                 .lexeme = self.source[self.source.len..self.source.len],
-                .preceded_by_newline = saw_newline,
+                .preceded_by_newline = ws_info.saw_newline,
+                .preceded_by_whitespace = ws_info.had_whitespace,
                 .line = self.line,
                 .column = self.column,
                 .offset = self.index,
@@ -575,6 +580,7 @@ pub const Tokenizer = struct {
                     .kind = .string,
                     .lexeme = self.source[start_content..self.index],
                     .preceded_by_newline = self.last_whitespace_had_newline,
+                    .preceded_by_whitespace = self.last_had_whitespace,
                     .line = start_line,
                     .column = start_column,
                     .offset = start_content - 1, // include the opening quote
@@ -601,15 +607,24 @@ pub const Tokenizer = struct {
         }
     }
 
-    fn skipWhitespace(self: *Tokenizer) bool {
+    const WhitespaceInfo = struct {
+        had_whitespace: bool,
+        saw_newline: bool,
+    };
+
+    fn skipWhitespace(self: *Tokenizer) WhitespaceInfo {
         var saw_newline = false;
+        var had_whitespace = false;
+
         while (self.index < self.source.len) {
             const c = self.source[self.index];
             switch (c) {
                 ' ', '\t' => {
+                    had_whitespace = true;
                     self.advance();
                 },
                 '\r' => {
+                    had_whitespace = true;
                     saw_newline = true;
                     self.advance();
                     if (self.index < self.source.len and self.source[self.index] == '\n') {
@@ -617,6 +632,7 @@ pub const Tokenizer = struct {
                     }
                 },
                 '\n' => {
+                    had_whitespace = true;
                     saw_newline = true;
                     self.advance();
                 },
@@ -626,6 +642,7 @@ pub const Tokenizer = struct {
                         // Check if it's a doc comment (///)
                         if (self.index + 2 < self.source.len and self.source[self.index + 2] == '/') {
                             // Documentation comment
+                            had_whitespace = true;
                             self.index += 3; // skip '///'
 
                             // Skip exactly one space if present (common prefix)
@@ -647,6 +664,7 @@ pub const Tokenizer = struct {
                             continue;
                         } else {
                             // Regular comment - skip to end of line
+                            had_whitespace = true;
                             self.index += 2; // skip '//'
                             while (self.index < self.source.len and self.source[self.index] != '\n' and self.source[self.index] != '\r') {
                                 self.index += 1;
@@ -655,12 +673,12 @@ pub const Tokenizer = struct {
                             continue;
                         }
                     }
-                    return saw_newline;
+                    return .{ .had_whitespace = had_whitespace, .saw_newline = saw_newline };
                 },
-                else => return saw_newline,
+                else => return .{ .had_whitespace = had_whitespace, .saw_newline = saw_newline },
             }
         }
-        return saw_newline;
+        return .{ .had_whitespace = had_whitespace, .saw_newline = saw_newline };
     }
 
     fn makeToken(self: *Tokenizer, kind: TokenKind, start: usize, start_line: usize, start_column: usize) Token {
@@ -668,6 +686,7 @@ pub const Tokenizer = struct {
             .kind = kind,
             .lexeme = self.source[start..self.index],
             .preceded_by_newline = self.last_whitespace_had_newline,
+            .preceded_by_whitespace = self.last_had_whitespace,
             .line = start_line,
             .column = start_column,
             .offset = start,
@@ -1097,6 +1116,7 @@ pub const Parser = struct {
 
     fn parseApplication(self: *Parser) ParseError!*Expression {
         var expr = try self.parsePrimary();
+        var just_applied = false; // Track if we just parsed a function application
 
         while (true) {
             if (self.current.preceded_by_newline) break;
@@ -1110,6 +1130,7 @@ pub const Parser = struct {
                         const node = try self.allocateExpression();
                         node.* = .{ .application = .{ .function = expr, .argument = argument } };
                         expr = node;
+                        just_applied = true;
                         // After a 'do' block, stop looking for more arguments
                         break;
                     }
@@ -1132,8 +1153,25 @@ pub const Parser = struct {
                     const node = try self.allocateExpression();
                     node.* = .{ .application = .{ .function = expr, .argument = argument } };
                     expr = node;
+                    just_applied = true;
                 },
                 .dot => {
+                    // Disambiguate between field access chains and field accessor arguments using whitespace:
+                    // - `obj.field` (no space before dot) = field access chain
+                    // - `map .field people` (space before dot) = field accessor as argument
+                    const dot_preceded_by_space = self.current.preceded_by_whitespace;
+
+                    if (dot_preceded_by_space and self.lookahead.kind == .identifier) {
+                        // Parse as field accessor function argument
+                        const argument = try self.parsePrimary();
+                        const node = try self.allocateExpression();
+                        node.* = .{ .application = .{ .function = expr, .argument = argument } };
+                        expr = node;
+                        just_applied = true;
+                        continue;
+                    }
+
+                    // Otherwise, handle field access and field projection
                     try self.advance();
 
                     // Check for field projection: .{ field1, field2 }
@@ -1162,6 +1200,7 @@ pub const Parser = struct {
                             .fields = try field_list.toOwnedSlice(self.arena),
                         } };
                         expr = node;
+                        just_applied = false;
                     } else if (self.current.kind == .identifier) {
                         // Regular field access: expr.field
                         const field_name = self.current.lexeme;
@@ -1173,6 +1212,7 @@ pub const Parser = struct {
                             .field = field_name,
                         } };
                         expr = node;
+                        just_applied = false;
                     } else {
                         return error.UnexpectedToken;
                     }
@@ -1190,12 +1230,14 @@ pub const Parser = struct {
                     const node = try self.allocateExpression();
                     node.* = .{ .object_extend = .{ .base = expr, .fields = fields } };
                     expr = node;
+                    just_applied = false;
                 },
                 .number, .string, .symbol, .l_paren, .l_bracket => {
                     const argument = try self.parsePrimary();
                     const node = try self.allocateExpression();
                     node.* = .{ .application = .{ .function = expr, .argument = argument } };
                     expr = node;
+                    just_applied = true;
                 },
                 else => break,
             }
