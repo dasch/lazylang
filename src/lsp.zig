@@ -710,11 +710,48 @@ pub const Server = struct {
 
     /// Handle textDocument/references request
     fn handleReferences(self: *Self, id: ?std.json.Value, message: std.json.Value) !void {
-        _ = message;
-        // Return empty array for now (no references)
-        // TODO: Implement reference finding
-        try self.handler.writeResponse(id, "[]");
-        std.log.info("References request handled (not implemented)", .{});
+        const params = message.object.get("params").?.object;
+        const text_document = params.get("textDocument").?.object;
+        const position = params.get("position").?.object;
+        const uri = text_document.get("uri").?.string;
+
+        const doc = self.documents.get(uri) orelse {
+            try self.handler.writeErrorResponse(id, json_rpc.ErrorCode.InvalidParams, "Document not found");
+            return;
+        };
+
+        const line = @as(u32, @intCast(position.get("line").?.integer));
+        const character = @as(u32, @intCast(position.get("character").?.integer));
+
+        // Find references for the identifier at the cursor position
+        const references = try self.computeReferences(doc.text, line, character);
+        defer self.allocator.free(references);
+
+        // Build JSON response
+        var response_buf = std.ArrayList(u8){};
+        defer response_buf.deinit(self.allocator);
+
+        const writer = response_buf.writer(self.allocator);
+
+        try writer.writeAll("[");
+        for (references, 0..) |ref, i| {
+            if (i > 0) try writer.writeAll(",");
+            try writer.writeAll("{\"uri\":\"");
+            try writer.writeAll(uri);
+            try writer.writeAll("\",\"range\":{\"start\":{\"line\":");
+            try writer.print("{d}", .{ref.start_line});
+            try writer.writeAll(",\"character\":");
+            try writer.print("{d}", .{ref.start_char});
+            try writer.writeAll("},\"end\":{\"line\":");
+            try writer.print("{d}", .{ref.end_line});
+            try writer.writeAll(",\"character\":");
+            try writer.print("{d}", .{ref.end_char});
+            try writer.writeAll("}}}");
+        }
+        try writer.writeAll("]");
+
+        try self.handler.writeResponse(id, response_buf.items);
+        std.log.info("Sent {d} references for: {s}", .{ references.len, uri });
     }
 
     /// Handle textDocument/documentHighlight request
@@ -1021,6 +1058,57 @@ pub const Server = struct {
         const def_location = try self.findDefinitionLocationInAST(ast.*, identifier);
 
         return def_location;
+    }
+
+    /// Compute references for an identifier at a given position
+    fn computeReferences(self: *Self, text: []const u8, target_line: u32, target_char: u32) ![]DefinitionLocation {
+        var references = std.ArrayList(DefinitionLocation){};
+        errdefer references.deinit(self.allocator);
+
+        // Tokenize to find all identifiers
+        var tokenizer = evaluator.Tokenizer.init(text, self.allocator);
+        var target_identifier: ?[]const u8 = null;
+
+        // First pass: find the identifier at the cursor position
+        while (true) {
+            const token = tokenizer.next() catch break;
+            if (token.kind == .eof) break;
+
+            if (token.kind == .identifier) {
+                // Calculate position (tokens use 1-based, LSP uses 0-based)
+                const token_line: u32 = @intCast(if (token.line > 0) token.line - 1 else 0);
+                const token_col: u32 = @intCast(if (token.column > 0) token.column - 1 else 0);
+
+                if (token_line == target_line and target_char >= token_col and target_char < token_col + token.lexeme.len) {
+                    target_identifier = token.lexeme;
+                    break;
+                }
+            }
+        }
+
+        // If no identifier at cursor, return empty
+        const target = target_identifier orelse return try references.toOwnedSlice(self.allocator);
+
+        // Second pass: find all occurrences of this identifier
+        var tokenizer2 = evaluator.Tokenizer.init(text, self.allocator);
+        while (true) {
+            const token = tokenizer2.next() catch break;
+            if (token.kind == .eof) break;
+
+            if (token.kind == .identifier and std.mem.eql(u8, token.lexeme, target)) {
+                const token_line: u32 = @intCast(if (token.line > 0) token.line - 1 else 0);
+                const token_col: u32 = @intCast(if (token.column > 0) token.column - 1 else 0);
+
+                try references.append(self.allocator, .{
+                    .start_line = token_line,
+                    .start_char = token_col,
+                    .end_line = token_line,
+                    .end_char = @intCast(token_col + token.lexeme.len),
+                });
+            }
+        }
+
+        return try references.toOwnedSlice(self.allocator);
     }
 
     /// Definition information found in AST
