@@ -3021,7 +3021,19 @@ pub fn evaluateExpression(
         .null_literal => .null_value,
         .symbol => |value| .{ .symbol = try arena.dupe(u8, value) },
         .identifier => |name| blk: {
-            const resolved = lookup(env, name) orelse return error.UnknownIdentifier;
+            const resolved = lookup(env, name) orelse {
+                // Set error location and data for unknown identifier
+                if (ctx.error_ctx) |err_ctx| {
+                    err_ctx.setErrorLocation(expr.location.line, expr.location.column, expr.location.offset, expr.location.length);
+
+                    // Copy the identifier name using error context's allocator
+                    const name_copy = try err_ctx.allocator.dupe(u8, name);
+                    err_ctx.setErrorData(.{
+                        .unknown_identifier = .{ .name = name_copy },
+                    });
+                }
+                return error.UnknownIdentifier;
+            };
             break :blk resolved;
         },
         .string_literal => |value| .{ .string = try arena.dupe(u8, value) },
