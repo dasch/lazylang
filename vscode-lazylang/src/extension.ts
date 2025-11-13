@@ -245,9 +245,11 @@ function registerCommands(context: ExtensionContext) {
         }
 
         const filePath = document.uri.fsPath;
+        const workspaceFolder = workspace.workspaceFolders?.[0]?.uri.fsPath;
+
         const terminal = window.createTerminal({
             name: 'Lazylang Eval',
-            cwd: workspace.workspaceFolders?.[0].uri.fsPath
+            cwd: workspaceFolder || path.dirname(filePath)
         });
         terminal.show();
         terminal.sendText(`"${lazyLangPath}" eval "${filePath}"`);
@@ -268,9 +270,11 @@ function registerCommands(context: ExtensionContext) {
         }
 
         const filePath = document.uri.fsPath;
+        const workspaceFolder = workspace.workspaceFolders?.[0]?.uri.fsPath;
+
         const terminal = window.createTerminal({
             name: 'Lazylang Run',
-            cwd: workspace.workspaceFolders?.[0].uri.fsPath
+            cwd: workspaceFolder || path.dirname(filePath)
         });
         terminal.show();
         terminal.sendText(`"${lazyLangPath}" run "${filePath}"`);
@@ -291,9 +295,11 @@ function registerCommands(context: ExtensionContext) {
         }
 
         const filePath = document.uri.fsPath;
+        const workspaceFolder = workspace.workspaceFolders?.[0]?.uri.fsPath;
+
         const terminal = window.createTerminal({
             name: 'Lazylang Spec',
-            cwd: workspace.workspaceFolders?.[0].uri.fsPath
+            cwd: workspaceFolder || path.dirname(filePath)
         });
         terminal.show();
         terminal.sendText(`"${lazyLangPath}" spec "${filePath}"`);

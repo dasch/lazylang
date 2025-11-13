@@ -63,60 +63,93 @@ pub const Server = struct {
     fn handleRequest(self: *Self, message: std.json.Value) !void {
         const obj = message.object;
         const id = obj.get("id");
-        const method = obj.get("method").?.string;
+        const method_opt = obj.get("method");
+        if (method_opt == null) return;
+        const method = method_opt.?.string;
 
+        // Catch all errors to prevent LSP crashes
         if (std.mem.eql(u8, method, "initialize")) {
-            try self.handleInitialize(id);
+            self.handleInitialize(id) catch |err| {
+                std.log.err("Error in initialize: {}", .{err});
+                return;
+            };
         } else if (std.mem.eql(u8, method, "shutdown")) {
-            try self.handleShutdown(id);
+            self.handleShutdown(id) catch |err| {
+                std.log.err("Error in shutdown: {}", .{err});
+                return;
+            };
         } else if (std.mem.eql(u8, method, "textDocument/semanticTokens/full")) {
             if (!self.initialized) {
                 try self.handler.writeErrorResponse(id, json_rpc.ErrorCode.ServerNotInitialized, "Server not initialized");
                 return;
             }
-            try self.handleSemanticTokensFull(id, message);
+            self.handleSemanticTokensFull(id, message) catch |err| {
+                std.log.err("Error in semanticTokens: {}", .{err});
+                self.handler.writeErrorResponse(id, json_rpc.ErrorCode.InternalError, "Internal error") catch {};
+            };
         } else if (std.mem.eql(u8, method, "textDocument/completion")) {
             if (!self.initialized) {
                 try self.handler.writeErrorResponse(id, json_rpc.ErrorCode.ServerNotInitialized, "Server not initialized");
                 return;
             }
-            try self.handleCompletion(id, message);
+            self.handleCompletion(id, message) catch |err| {
+                std.log.err("Error in completion: {}", .{err});
+                self.handler.writeErrorResponse(id, json_rpc.ErrorCode.InternalError, "Internal error") catch {};
+            };
         } else if (std.mem.eql(u8, method, "textDocument/definition")) {
             if (!self.initialized) {
                 try self.handler.writeErrorResponse(id, json_rpc.ErrorCode.ServerNotInitialized, "Server not initialized");
                 return;
             }
-            try self.handleDefinition(id, message);
+            self.handleDefinition(id, message) catch |err| {
+                std.log.err("Error in definition: {}", .{err});
+                self.handler.writeErrorResponse(id, json_rpc.ErrorCode.InternalError, "Internal error") catch {};
+            };
         } else if (std.mem.eql(u8, method, "textDocument/hover")) {
             if (!self.initialized) {
                 try self.handler.writeErrorResponse(id, json_rpc.ErrorCode.ServerNotInitialized, "Server not initialized");
                 return;
             }
-            try self.handleHover(id, message);
+            self.handleHover(id, message) catch |err| {
+                std.log.err("Error in hover: {}", .{err});
+                self.handler.writeErrorResponse(id, json_rpc.ErrorCode.InternalError, "Internal error") catch {};
+            };
         } else if (std.mem.eql(u8, method, "textDocument/documentSymbol")) {
             if (!self.initialized) {
                 try self.handler.writeErrorResponse(id, json_rpc.ErrorCode.ServerNotInitialized, "Server not initialized");
                 return;
             }
-            try self.handleDocumentSymbol(id, message);
+            self.handleDocumentSymbol(id, message) catch |err| {
+                std.log.err("Error in documentSymbol: {}", .{err});
+                self.handler.writeErrorResponse(id, json_rpc.ErrorCode.InternalError, "Internal error") catch {};
+            };
         } else if (std.mem.eql(u8, method, "textDocument/references")) {
             if (!self.initialized) {
                 try self.handler.writeErrorResponse(id, json_rpc.ErrorCode.ServerNotInitialized, "Server not initialized");
                 return;
             }
-            try self.handleReferences(id, message);
+            self.handleReferences(id, message) catch |err| {
+                std.log.err("Error in references: {}", .{err});
+                self.handler.writeErrorResponse(id, json_rpc.ErrorCode.InternalError, "Internal error") catch {};
+            };
         } else if (std.mem.eql(u8, method, "textDocument/documentHighlight")) {
             if (!self.initialized) {
                 try self.handler.writeErrorResponse(id, json_rpc.ErrorCode.ServerNotInitialized, "Server not initialized");
                 return;
             }
-            try self.handleDocumentHighlight(id, message);
+            self.handleDocumentHighlight(id, message) catch |err| {
+                std.log.err("Error in documentHighlight: {}", .{err});
+                self.handler.writeErrorResponse(id, json_rpc.ErrorCode.InternalError, "Internal error") catch {};
+            };
         } else if (std.mem.eql(u8, method, "textDocument/foldingRange")) {
             if (!self.initialized) {
                 try self.handler.writeErrorResponse(id, json_rpc.ErrorCode.ServerNotInitialized, "Server not initialized");
                 return;
             }
-            try self.handleFoldingRange(id, message);
+            self.handleFoldingRange(id, message) catch |err| {
+                std.log.err("Error in foldingRange: {}", .{err});
+                self.handler.writeErrorResponse(id, json_rpc.ErrorCode.InternalError, "Internal error") catch {};
+            };
         } else {
             try self.handler.writeErrorResponse(id, json_rpc.ErrorCode.MethodNotFound, "Method not found");
         }
@@ -187,8 +220,11 @@ pub const Server = struct {
 
         std.log.info("Opened document: {s}", .{uri});
 
-        // Publish diagnostics for this document
-        try self.publishDiagnostics(uri, text);
+        // Publish diagnostics for this document (use the stored copy, not the JSON slice)
+        // Wrapped in catch to prevent crashes from diagnostic errors
+        self.publishDiagnostics(uri_copy, text_copy) catch |err| {
+            std.log.err("Failed to publish diagnostics: {}", .{err});
+        };
     }
 
     /// Handle textDocument/didChange notification
@@ -211,8 +247,11 @@ pub const Server = struct {
                 doc.version = version;
                 std.log.info("Updated document: {s}", .{uri});
 
-                // Publish diagnostics for updated document
-                try self.publishDiagnostics(uri, text);
+                // Publish diagnostics for updated document (use the stored copy, not the JSON slice)
+                // Wrapped in catch to prevent crashes from diagnostic errors
+                self.publishDiagnostics(doc.uri, doc.text) catch |err| {
+                    std.log.err("Failed to publish diagnostics on change: {}", .{err});
+                };
             }
         }
     }
@@ -749,7 +788,7 @@ pub const Server = struct {
 
         // Stack to track opening brackets with their line numbers
         var bracket_stack = std.ArrayList(struct {
-            kind: TokenKind,
+            kind: evaluator.TokenKind,
             line: u32,
             fold_kind: ?[]const u8,
         }){};
@@ -787,7 +826,8 @@ pub const Server = struct {
                 },
                 .r_brace, .r_bracket, .r_paren => {
                     if (bracket_stack.items.len > 0) {
-                        const top = bracket_stack.pop();
+                        const top = bracket_stack.items[bracket_stack.items.len - 1];
+                        _ = bracket_stack.pop();
                         // Check if matching bracket
                         if (top.kind == token.kind) {
                             // Only create fold if spans multiple lines
