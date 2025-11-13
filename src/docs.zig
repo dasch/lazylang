@@ -297,6 +297,23 @@ fn renderInlineMarkdown(allocator: std.mem.Allocator, result: *std.ArrayListUnma
             }
         }
 
+        // Check for function references [functionname]
+        if (text[i] == '[') {
+            const start = i + 1;
+            i += 1;
+            while (i < text.len and text[i] != ']') : (i += 1) {}
+            if (i < text.len) {
+                const func_name = text[start..i];
+                try result.appendSlice(allocator, "<a href=\"#");
+                try result.appendSlice(allocator, func_name);
+                try result.appendSlice(allocator, "\">");
+                try result.appendSlice(allocator, func_name);
+                try result.appendSlice(allocator, "</a>");
+                i += 1;
+                continue;
+            }
+        }
+
         // Check for bold (**)
         if (i + 1 < text.len and text[i] == '*' and text[i + 1] == '*') {
             const start = i + 2;
@@ -473,11 +490,6 @@ pub fn writeIndexHtmlContent(allocator: std.mem.Allocator, file: anytype, module
 
     // Index-specific CSS
     try file.writeAll(
-        \\    .sidebar .module-link { font-weight: 500; }
-        \\    .sidebar .nested { list-style: none; }
-        \\    .sidebar .nested li { border-bottom: none; }
-        \\    .sidebar .nested a { padding: 8px 20px 8px 35px; font-size: 0.9em; color: #bdc3c7; }
-        \\    .sidebar .nested a:hover { background: #3d5469; color: #ecf0f1; }
         \\    .module-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
         \\    .module-card { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         \\    .module-card h2 { color: #2c3e50; margin-bottom: 15px; font-size: 1.5em; }
@@ -502,29 +514,11 @@ pub fn writeIndexHtmlContent(allocator: std.mem.Allocator, file: anytype, module
     try file.writeAll("    <h2>Modules</h2>\n");
     try file.writeAll("    <ul>\n");
     for (modules) |module| {
-        try file.writeAll("      <li>\n");
-        try file.writeAll("        <a href=\"");
+        try file.writeAll("      <li><a href=\"");
         try file.writeAll(module.name);
         try file.writeAll(".html\" class=\"module-link\">");
         try file.writeAll(module.name);
-        try file.writeAll("</a>\n");
-
-        // Show nested function list for each module
-        if (module.items.len > 0) {
-            try file.writeAll("        <ul class=\"nested\">\n");
-            for (module.items) |item| {
-                try file.writeAll("          <li><a href=\"");
-                try file.writeAll(module.name);
-                try file.writeAll(".html#");
-                try file.writeAll(item.name);
-                try file.writeAll("\">");
-                try file.writeAll(item.name);
-                try file.writeAll("</a></li>\n");
-            }
-            try file.writeAll("        </ul>\n");
-        }
-
-        try file.writeAll("      </li>\n");
+        try file.writeAll("</a></li>\n");
     }
     try file.writeAll("    </ul>\n");
     try file.writeAll("  </div>\n");
