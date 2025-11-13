@@ -104,6 +104,7 @@ pub fn build(b: *std.Build) void {
         "tests/eval/do_test.zig",
         "tests/eval/symbols_test.zig",
         "tests/eval/comprehensions_test.zig",
+        "tests/eval/array_comp_objects_test.zig",
         "tests/eval/accessors_test.zig",
         "tests/eval/yaml_test.zig",
         "tests/eval/float_test.zig",

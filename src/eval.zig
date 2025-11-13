@@ -4028,6 +4028,19 @@ fn evaluateArrayComprehension(
                 try evaluateArrayComprehension(arena, result, comp, clause_index + 1, new_env, current_dir, ctx);
             }
         },
+        .object => |obj| {
+            for (obj.fields) |field| {
+                // Create a tuple (key, value) for object iteration
+                const tuple_elements = try arena.alloc(Value, 2);
+                tuple_elements[0] = .{ .string = try arena.dupe(u8, field.key) };
+                // Force the thunk if the value is a thunk
+                tuple_elements[1] = try force(arena, field.value);
+                const tuple_value = Value{ .tuple = .{ .elements = tuple_elements } };
+
+                const new_env = try matchPattern(arena, clause.pattern, tuple_value, env, ctx);
+                try evaluateArrayComprehension(arena, result, comp, clause_index + 1, new_env, current_dir, ctx);
+            }
+        },
         else => return error.TypeMismatch,
     }
 }
