@@ -778,9 +778,9 @@ fn runDocs(
         input_path = arg;
     }
 
+    // Default to "lib" directory if no input path specified
     if (input_path == null) {
-        try stderr.print("error: missing input path\n", .{});
-        return .{ .exit_code = 1 };
+        input_path = "lib";
     }
 
     // Create output directory if it doesn't exist
@@ -918,7 +918,14 @@ fn generateIndexHtml(
     var html_file = try std.fs.cwd().createFile(html_filename, .{});
     defer html_file.close();
 
-    try writeIndexHtmlContent(html_file, modules);
+    // Try to read README.md from current directory
+    const readme_content = std.fs.cwd().readFileAlloc(allocator, "README.md", 1024 * 1024) catch |err| switch (err) {
+        error.FileNotFound => null,
+        else => return err,
+    };
+    defer if (readme_content) |content| allocator.free(content);
+
+    try writeIndexHtmlContent(allocator, html_file, modules, readme_content);
 }
 
 const DocItem = struct {
@@ -1024,42 +1031,162 @@ fn extractDocs(expr: *const evaluator.Expression, items: *std.ArrayListUnmanaged
     }
 }
 
+fn syntaxHighlightCode(allocator: std.mem.Allocator, code: []const u8) ![]const u8 {
+    var result = std.ArrayListUnmanaged(u8){};
+    errdefer result.deinit(allocator);
+
+    const keywords = [_][]const u8{ "let", "if", "then", "else", "when", "matches", "import", "true", "false", "null" };
+
+    var i: usize = 0;
+    while (i < code.len) {
+        // Comments (// and #)
+        if (code[i] == '#' or (code[i] == '/' and i + 1 < code.len and code[i + 1] == '/')) {
+            try result.appendSlice(allocator, "<span style=\"color: #6a9955;\">");
+            while (i < code.len and code[i] != '\n') {
+                if (code[i] == '<') {
+                    try result.appendSlice(allocator, "&lt;");
+                } else if (code[i] == '>') {
+                    try result.appendSlice(allocator, "&gt;");
+                } else if (code[i] == '&') {
+                    try result.appendSlice(allocator, "&amp;");
+                } else {
+                    try result.append(allocator, code[i]);
+                }
+                i += 1;
+            }
+            try result.appendSlice(allocator, "</span>");
+            continue;
+        }
+
+        // Strings
+        if (code[i] == '"' or code[i] == '\'') {
+            const quote = code[i];
+            try result.appendSlice(allocator, "<span style=\"color: #a31515;\">");
+            try result.append(allocator, quote);
+            i += 1;
+            while (i < code.len and code[i] != quote) {
+                if (code[i] == '\\' and i + 1 < code.len) {
+                    try result.append(allocator, code[i]);
+                    i += 1;
+                    try result.append(allocator, code[i]);
+                    i += 1;
+                } else {
+                    if (code[i] == '<') {
+                        try result.appendSlice(allocator, "&lt;");
+                    } else if (code[i] == '>') {
+                        try result.appendSlice(allocator, "&gt;");
+                    } else if (code[i] == '&') {
+                        try result.appendSlice(allocator, "&amp;");
+                    } else {
+                        try result.append(allocator, code[i]);
+                    }
+                    i += 1;
+                }
+            }
+            if (i < code.len) {
+                try result.append(allocator, code[i]);
+                i += 1;
+            }
+            try result.appendSlice(allocator, "</span>");
+            continue;
+        }
+
+        // Numbers
+        if (i < code.len and (code[i] >= '0' and code[i] <= '9')) {
+            try result.appendSlice(allocator, "<span style=\"color: #098658;\">");
+            while (i < code.len and ((code[i] >= '0' and code[i] <= '9') or code[i] == '.')) {
+                try result.append(allocator, code[i]);
+                i += 1;
+            }
+            try result.appendSlice(allocator, "</span>");
+            continue;
+        }
+
+        // Identifiers and keywords
+        if (i < code.len and ((code[i] >= 'a' and code[i] <= 'z') or (code[i] >= 'A' and code[i] <= 'Z') or code[i] == '_')) {
+            const start = i;
+            while (i < code.len and ((code[i] >= 'a' and code[i] <= 'z') or (code[i] >= 'A' and code[i] <= 'Z') or (code[i] >= '0' and code[i] <= '9') or code[i] == '_')) {
+                i += 1;
+            }
+            const word = code[start..i];
+
+            // Check if it's a keyword
+            var is_keyword = false;
+            for (keywords) |kw| {
+                if (std.mem.eql(u8, word, kw)) {
+                    is_keyword = true;
+                    break;
+                }
+            }
+
+            if (is_keyword) {
+                try result.appendSlice(allocator, "<span style=\"color: #0000ff;\">");
+                try result.appendSlice(allocator, word);
+                try result.appendSlice(allocator, "</span>");
+            } else {
+                try result.appendSlice(allocator, word);
+            }
+            continue;
+        }
+
+        // Operators and symbols
+        if (code[i] == '<') {
+            try result.appendSlice(allocator, "&lt;");
+        } else if (code[i] == '>') {
+            try result.appendSlice(allocator, "&gt;");
+        } else if (code[i] == '&') {
+            try result.appendSlice(allocator, "&amp;");
+        } else if (code[i] == '-' and i + 1 < code.len and code[i + 1] == '>') {
+            try result.appendSlice(allocator, "<span style=\"color: #0000ff;\">-&gt;</span>");
+            i += 2;
+            continue;
+        } else {
+            try result.append(allocator, code[i]);
+        }
+        i += 1;
+    }
+
+    return result.toOwnedSlice(allocator);
+}
+
 fn renderMarkdownToHtml(allocator: std.mem.Allocator, markdown: []const u8) ![]const u8 {
     var result = std.ArrayListUnmanaged(u8){};
     errdefer result.deinit(allocator);
 
     var i: usize = 0;
     var in_code_block = false;
+    var code_block_start: usize = 0;
     var line_start: usize = 0;
 
     while (i < markdown.len) {
         // Check for code blocks (```)
         if (i + 2 < markdown.len and markdown[i] == '`' and markdown[i + 1] == '`' and markdown[i + 2] == '`') {
             if (in_code_block) {
+                // End of code block - highlight and append
+                const code = markdown[code_block_start..i];
+                const highlighted = try syntaxHighlightCode(allocator, code);
+                defer allocator.free(highlighted);
+
+                try result.appendSlice(allocator, "<pre><code>");
+                try result.appendSlice(allocator, highlighted);
                 try result.appendSlice(allocator, "</code></pre>\n");
                 in_code_block = false;
             } else {
-                try result.appendSlice(allocator, "<pre><code>");
+                // Start of code block
                 in_code_block = true;
             }
             i += 3;
             // Skip to end of line
             while (i < markdown.len and markdown[i] != '\n') : (i += 1) {}
             if (i < markdown.len) i += 1; // skip newline
+            if (in_code_block) {
+                code_block_start = i;
+            }
             line_start = i;
             continue;
         }
 
         if (in_code_block) {
-            if (markdown[i] == '<') {
-                try result.appendSlice(allocator, "&lt;");
-            } else if (markdown[i] == '>') {
-                try result.appendSlice(allocator, "&gt;");
-            } else if (markdown[i] == '&') {
-                try result.appendSlice(allocator, "&amp;");
-            } else {
-                try result.append(allocator, markdown[i]);
-            }
             i += 1;
             continue;
         }
@@ -1067,16 +1194,47 @@ fn renderMarkdownToHtml(allocator: std.mem.Allocator, markdown: []const u8) ![]c
         // Check for line breaks
         if (markdown[i] == '\n') {
             const line = markdown[line_start..i];
+            const trimmed = std.mem.trimLeft(u8, line, " \t");
+
+            // Check if it's a heading
+            if (std.mem.startsWith(u8, trimmed, "#")) {
+                var level: usize = 0;
+                var j: usize = 0;
+                while (j < trimmed.len and trimmed[j] == '#') : (j += 1) {
+                    level += 1;
+                }
+                if (j < trimmed.len and trimmed[j] == ' ') {
+                    const heading_text = std.mem.trim(u8, trimmed[j + 1 ..], " \t");
+                    const tag = switch (level) {
+                        1 => "h1",
+                        2 => "h2",
+                        3 => "h3",
+                        4 => "h4",
+                        5 => "h5",
+                        else => "h6",
+                    };
+                    try result.appendSlice(allocator, "<");
+                    try result.appendSlice(allocator, tag);
+                    try result.appendSlice(allocator, " style=\"margin-top: 1.5em; margin-bottom: 0.5em;\">");
+                    try renderInlineMarkdown(allocator, &result, heading_text);
+                    try result.appendSlice(allocator, "</");
+                    try result.appendSlice(allocator, tag);
+                    try result.appendSlice(allocator, ">\n");
+                    i += 1;
+                    line_start = i;
+                    continue;
+                }
+            }
 
             // Check if it's a list item
-            if (std.mem.startsWith(u8, std.mem.trimLeft(u8, line, " \t"), "- ")) {
-                const trimmed = std.mem.trimLeft(u8, line, " \t");
+            if (std.mem.startsWith(u8, trimmed, "- ")) {
                 try result.appendSlice(allocator, "<li>");
                 try renderInlineMarkdown(allocator, &result, trimmed[2..]);
                 try result.appendSlice(allocator, "</li>\n");
             } else if (line.len > 0) {
+                try result.appendSlice(allocator, "<p>");
                 try renderInlineMarkdown(allocator, &result, line);
-                try result.appendSlice(allocator, "<br>\n");
+                try result.appendSlice(allocator, "</p>\n");
             } else {
                 try result.appendSlice(allocator, "\n");
             }
@@ -1092,13 +1250,41 @@ fn renderMarkdownToHtml(allocator: std.mem.Allocator, markdown: []const u8) ![]c
     // Handle remaining text
     if (line_start < markdown.len) {
         const line = markdown[line_start..];
-        if (std.mem.startsWith(u8, std.mem.trimLeft(u8, line, " \t"), "- ")) {
-            const trimmed = std.mem.trimLeft(u8, line, " \t");
+        const trimmed = std.mem.trimLeft(u8, line, " \t");
+
+        // Check if it's a heading
+        if (std.mem.startsWith(u8, trimmed, "#")) {
+            var level: usize = 0;
+            var j: usize = 0;
+            while (j < trimmed.len and trimmed[j] == '#') : (j += 1) {
+                level += 1;
+            }
+            if (j < trimmed.len and trimmed[j] == ' ') {
+                const heading_text = std.mem.trim(u8, trimmed[j + 1 ..], " \t");
+                const tag = switch (level) {
+                    1 => "h1",
+                    2 => "h2",
+                    3 => "h3",
+                    4 => "h4",
+                    5 => "h5",
+                    else => "h6",
+                };
+                try result.appendSlice(allocator, "<");
+                try result.appendSlice(allocator, tag);
+                try result.appendSlice(allocator, " style=\"margin-top: 1.5em; margin-bottom: 0.5em;\">");
+                try renderInlineMarkdown(allocator, &result, heading_text);
+                try result.appendSlice(allocator, "</");
+                try result.appendSlice(allocator, tag);
+                try result.appendSlice(allocator, ">");
+            }
+        } else if (std.mem.startsWith(u8, trimmed, "- ")) {
             try result.appendSlice(allocator, "<li>");
             try renderInlineMarkdown(allocator, &result, trimmed[2..]);
             try result.appendSlice(allocator, "</li>");
         } else if (line.len > 0) {
+            try result.appendSlice(allocator, "<p>");
             try renderInlineMarkdown(allocator, &result, line);
+            try result.appendSlice(allocator, "</p>");
         }
     }
 
@@ -1150,7 +1336,7 @@ fn renderInlineMarkdown(allocator: std.mem.Allocator, result: *std.ArrayListUnma
     }
 }
 
-fn writeIndexHtmlContent(file: anytype, modules: []const ModuleInfo) !void {
+fn writeIndexHtmlContent(allocator: std.mem.Allocator, file: anytype, modules: []const ModuleInfo, readme_content: ?[]const u8) !void {
     try file.writeAll("<!DOCTYPE html>\n");
     try file.writeAll("<html lang=\"en\">\n");
     try file.writeAll("<head>\n");
@@ -1207,33 +1393,56 @@ fn writeIndexHtmlContent(file: anytype, modules: []const ModuleInfo) !void {
     try file.writeAll("      </div>\n");
     try file.writeAll("    </header>\n");
     try file.writeAll("    <div class=\"container\">\n");
-    try file.writeAll("      <div class=\"module-list\">\n");
 
-    // Module cards
-    for (modules) |module| {
-        try file.writeAll("        <div class=\"module-card\">\n");
-        try file.writeAll("          <h2><a href=\"");
-        try file.writeAll(module.name);
-        try file.writeAll(".html\">");
-        try file.writeAll(module.name);
-        try file.writeAll("</a></h2>\n");
-        try file.writeAll("          <div class=\"item-count\">");
+    // Render README content if available
+    if (readme_content) |readme| {
+        try file.writeAll("      <div class=\"readme-content\" style=\"background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); line-height: 1.8; color: #333;\">\n");
+        try file.writeAll("      <style>\n");
+        try file.writeAll("        .readme-content h1 { font-size: 2.5em; color: #2c3e50; margin-top: 0 !important; margin-bottom: 0.5em; font-weight: 300; }\n");
+        try file.writeAll("        .readme-content h2 { font-size: 1.8em; color: #2c3e50; margin-top: 1.5em; margin-bottom: 0.5em; font-weight: 400; }\n");
+        try file.writeAll("        .readme-content h3 { font-size: 1.4em; color: #2c3e50; margin-top: 1.2em; margin-bottom: 0.4em; }\n");
+        try file.writeAll("        .readme-content p { margin-bottom: 1em; color: #555; }\n");
+        try file.writeAll("        .readme-content li { margin-left: 1.5em; margin-bottom: 0.5em; color: #555; }\n");
+        try file.writeAll("        .readme-content code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Monaco', 'Menlo', 'Courier New', monospace; font-size: 0.9em; color: #c7254e; }\n");
+        try file.writeAll("        .readme-content pre { background: #f8f8f8; border: 1px solid #e1e4e8; border-radius: 6px; padding: 16px; overflow-x: auto; margin: 1em 0; }\n");
+        try file.writeAll("        .readme-content pre code { background: none; padding: 0; color: #333; font-size: 0.95em; }\n");
+        try file.writeAll("      </style>\n");
 
-        // Count items
-        var buffer: [32]u8 = undefined;
-        const count_str = try std.fmt.bufPrint(&buffer, "{d}", .{module.items.len});
-        try file.writeAll(count_str);
-        try file.writeAll(" ");
-        if (module.items.len == 1) {
-            try file.writeAll("item");
-        } else {
-            try file.writeAll("items");
+        const html_content = try renderMarkdownToHtml(allocator, readme);
+        defer allocator.free(html_content);
+
+        try file.writeAll(html_content);
+        try file.writeAll("      </div>\n");
+    } else {
+        // Fallback to module list if no README
+        try file.writeAll("      <div class=\"module-list\">\n");
+
+        // Module cards
+        for (modules) |module| {
+            try file.writeAll("        <div class=\"module-card\">\n");
+            try file.writeAll("          <h2><a href=\"");
+            try file.writeAll(module.name);
+            try file.writeAll(".html\">");
+            try file.writeAll(module.name);
+            try file.writeAll("</a></h2>\n");
+            try file.writeAll("          <div class=\"item-count\">");
+
+            // Count items
+            var buffer: [32]u8 = undefined;
+            const count_str = try std.fmt.bufPrint(&buffer, "{d}", .{module.items.len});
+            try file.writeAll(count_str);
+            try file.writeAll(" ");
+            if (module.items.len == 1) {
+                try file.writeAll("item");
+            } else {
+                try file.writeAll("items");
+            }
+            try file.writeAll("</div>\n");
+            try file.writeAll("        </div>\n");
         }
-        try file.writeAll("</div>\n");
-        try file.writeAll("        </div>\n");
-    }
 
-    try file.writeAll("      </div>\n");
+        try file.writeAll("      </div>\n");
+    }
     try file.writeAll("    </div>\n");
     try file.writeAll("  </div>\n");
     try file.writeAll("</body>\n");
