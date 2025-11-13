@@ -726,7 +726,10 @@ describe "Array" [
 ### Lazylang Style (stdlib)
 
 - **Indentation**: 2 spaces
-- **Naming**: camelCase for functions, PascalCase for modules
+- **Naming**:
+  - Variables and functions: `camelCase` (e.g., `jsonString`, `toUpper`, `myValue`)
+  - Modules: `PascalCase` (e.g., `Array`, `String`, `JSON`)
+  - **Always use camelCase, never snake_case**
 - **Operators**: Space around binary operators
 - **Line length**: Prefer 80 characters, max 100
 - **If-expressions**: For multiline if-then-else expressions assigned to variables, place the `if` keyword on a new line after the `=`, with `then` on the same line as the condition. Indent branches one additional level:
