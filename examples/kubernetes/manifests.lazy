@@ -1,4 +1,4 @@
-config = import "config"
+envConfig = import "config"
 targets = ["development", "staging", "production"]
 
 {
@@ -50,6 +50,8 @@ targets = ["development", "staging", "production"]
       component: config.name
       team: config.team
     }
+
+    config = envConfig[target]
 
   for target in targets
 }

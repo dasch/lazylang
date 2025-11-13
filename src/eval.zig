@@ -1198,7 +1198,10 @@ pub const Parser = struct {
                         // Parse as field accessor function argument
                         const argument = try self.parsePrimary();
                         const node = try self.allocateExpression();
-                        node.* = .{ .application = .{ .function = expr, .argument = argument } };
+                        node.* = .{
+                            .data = .{ .application = .{ .function = expr, .argument = argument } },
+                            .location = expr.location,
+                        };
                         expr = node;
                         just_applied = true;
                         continue;
@@ -1879,9 +1882,7 @@ pub const Parser = struct {
         if (op) |operator| {
             try self.advance();
             try self.expect(.r_paren);
-            const node = try self.allocateExpression();
-            node.* = .{ .operator_function = operator };
-            return node;
+            return try self.makeExpression(.{ .operator_function = operator }, paren_token);
         }
 
         // Parse first element
@@ -3713,24 +3714,36 @@ pub fn evaluateExpression(
 
             // Create the binary operation expression: __x op __y
             const left_expr = try arena.create(Expression);
-            left_expr.* = .{ .identifier = "__x" };
+            left_expr.* = .{
+                .data = .{ .identifier = "__x" },
+                .location = .{ .line = 0, .column = 0, .offset = 0, .length = 0 },
+            };
 
             const right_expr = try arena.create(Expression);
-            right_expr.* = .{ .identifier = "__y" };
+            right_expr.* = .{
+                .data = .{ .identifier = "__y" },
+                .location = .{ .line = 0, .column = 0, .offset = 0, .length = 0 },
+            };
 
             const binary_expr = try arena.create(Expression);
-            binary_expr.* = .{ .binary = .{
-                .op = op,
-                .left = left_expr,
-                .right = right_expr,
-            } };
+            binary_expr.* = .{
+                .data = .{ .binary = .{
+                    .op = op,
+                    .left = left_expr,
+                    .right = right_expr,
+                } },
+                .location = .{ .line = 0, .column = 0, .offset = 0, .length = 0 },
+            };
 
             // Create the inner lambda: y -> __x op __y
             const inner_lambda_expr = try arena.create(Expression);
-            inner_lambda_expr.* = .{ .lambda = .{
-                .param = param_y,
-                .body = binary_expr,
-            } };
+            inner_lambda_expr.* = .{
+                .data = .{ .lambda = .{
+                    .param = param_y,
+                    .body = binary_expr,
+                } },
+                .location = .{ .line = 0, .column = 0, .offset = 0, .length = 0 },
+            };
 
             // Create the outer function: x -> (y -> __x op __y)
             const outer_func = try arena.create(FunctionValue);
