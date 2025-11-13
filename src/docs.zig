@@ -607,6 +607,7 @@ pub fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocI
         \\    .sidebar .nested li { border-bottom: none; }
         \\    .sidebar .nested a { padding: 8px 20px 8px 35px; font-size: 0.9em; color: #bdc3c7; }
         \\    .sidebar .nested a:hover { background: #3d5469; color: #ecf0f1; }
+        \\    .sidebar .nested a.active { background: #2c3e50; color: #3498db; border-left: 3px solid #3498db; padding-left: 32px; }
         \\    .doc-item { background: white; padding: 25px; margin-bottom: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
         \\    .doc-item h2 { color: #2c3e50; margin-bottom: 10px; font-size: 1.5em; }
         \\    .doc-item .kind { display: inline-block; padding: 4px 10px; background: #3498db; color: white; border-radius: 4px; font-size: 0.85em; margin-bottom: 10px; }
@@ -829,6 +830,43 @@ pub fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocI
         \\
         \\      modulesList.innerHTML = html;
         \\    });
+        \\
+        \\    // Highlight current section in sidebar on scroll
+        \\    const docItems = Array.from(document.querySelectorAll('.doc-item'));
+        \\    const sidebarLinks = Array.from(document.querySelectorAll('.sidebar .nested a'));
+        \\
+        \\    function updateActiveLink() {
+        \\      // Find the doc item that's currently most visible
+        \\      let currentItem = null;
+        \\      const scrollPos = window.scrollY + 100; // Offset for header
+        \\
+        \\      for (let i = docItems.length - 1; i >= 0; i--) {
+        \\        const item = docItems[i];
+        \\        if (item.offsetTop <= scrollPos) {
+        \\          currentItem = item;
+        \\          break;
+        \\        }
+        \\      }
+        \\
+        \\      // Remove active class from all links
+        \\      sidebarLinks.forEach(link => link.classList.remove('active'));
+        \\
+        \\      // Add active class to current link
+        \\      if (currentItem) {
+        \\        const itemName = currentItem.getAttribute('data-name');
+        \\        const activeLink = sidebarLinks.find(link =>
+        \\          link.getAttribute('data-item') === itemName
+        \\        );
+        \\        if (activeLink) {
+        \\          activeLink.classList.add('active');
+        \\        }
+        \\      }
+        \\    }
+        \\
+        \\    // Update on scroll and load
+        \\    window.addEventListener('scroll', updateActiveLink);
+        \\    window.addEventListener('load', updateActiveLink);
+        \\    updateActiveLink();
         \\
     );
     try file.writeAll("  </script>\n");
