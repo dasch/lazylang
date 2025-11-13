@@ -720,8 +720,8 @@ pub const Tokenizer = struct {
             }
         }
 
-        // If no separator found, consume all comments as module docs
-        const end_index = split_at orelse self.pending_doc_comments.items.len;
+        // If no separator found, don't consume any comments - they belong to the first field
+        const end_index = split_at orelse return null;
         if (end_index == 0) {
             return null;
         }
