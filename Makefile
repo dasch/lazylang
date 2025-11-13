@@ -26,7 +26,7 @@ repl: build
 
 # Generate stdlib documentation
 docs: build
-	cd stdlib && ../zig-out/bin/lazylang docs lib
+	cd stdlib && $(MAKE) docs
 
 # Clean build artifacts
 clean:
