@@ -95,6 +95,7 @@ pub fn build(b: *std.Build) void {
         "tests/eval/booleans_test.zig",
         "tests/eval/null_test.zig",
         "tests/eval/conditionals_test.zig",
+        "tests/eval/conditional_array_elements_test.zig",
         "tests/eval/variables_test.zig",
         "tests/eval/destructuring_test.zig",
         "tests/eval/pattern_matching_test.zig",

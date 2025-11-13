@@ -218,6 +218,42 @@ arr2 = [
 ]
 ```
 
+### Conditional array elements
+
+Array elements can be conditionally included using trailing `if` or `unless` modifiers:
+
+```
+filters = [
+  rename if renamingFilterEnabled
+  reverse if reverseFilterEnabled
+  commit unless env == 'development'
+]
+```
+
+When the condition is false, the element is **omitted from the array** entirely:
+- `x if condition` - includes `x` only when `condition` is true
+- `x unless condition` - includes `x` only when `condition` is false
+
+This is different from using `if-then-else` expressions, which would include `null` values:
+
+```
+// With conditional elements (recommended):
+filters = [
+  rename if enabled
+  reverse
+]
+// When enabled=false, result is: [reverse]
+
+// With if-then (not recommended for this use case):
+filters = [
+  if enabled then rename
+  reverse
+]
+// When enabled=false, result is: [null, reverse]
+```
+
+This syntax only works inside array literals and provides a clean way to build arrays with optional elements based on runtime conditions.
+
 ### Array comprehensions
 
 ```

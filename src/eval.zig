@@ -168,9 +168,16 @@ const MatchBranch = struct {
     expression: *Expression,
 };
 
+const ConditionalElement = struct {
+    expr: *Expression,
+    condition: *Expression,
+};
+
 const ArrayElement = union(enum) {
     normal: *Expression,
     spread: *Expression,
+    conditional_if: ConditionalElement,
+    conditional_unless: ConditionalElement,
 };
 
 const ArrayLiteral = struct {
@@ -1098,7 +1105,9 @@ pub const Parser = struct {
                         std.mem.eql(u8, self.current.lexeme, "where") or
                         std.mem.eql(u8, self.current.lexeme, "for") or
                         std.mem.eql(u8, self.current.lexeme, "in") or
-                        std.mem.eql(u8, self.current.lexeme, "when"))
+                        std.mem.eql(u8, self.current.lexeme, "when") or
+                        std.mem.eql(u8, self.current.lexeme, "if") or
+                        std.mem.eql(u8, self.current.lexeme, "unless"))
                     {
                         break;
                     }
@@ -1400,7 +1409,27 @@ pub const Parser = struct {
 
         // Regular array: continue parsing elements
         var elements = std.ArrayListUnmanaged(ArrayElement){};
-        if (is_first_spread) {
+
+        // Check for trailing if/unless on first element
+        if (!is_first_spread and self.current.kind == .identifier) {
+            if (std.mem.eql(u8, self.current.lexeme, "if")) {
+                try self.advance(); // consume 'if'
+                const condition = try self.parseBinary(0);
+                try elements.append(self.arena, .{ .conditional_if = .{
+                    .expr = first_element,
+                    .condition = condition,
+                } });
+            } else if (std.mem.eql(u8, self.current.lexeme, "unless")) {
+                try self.advance(); // consume 'unless'
+                const condition = try self.parseBinary(0);
+                try elements.append(self.arena, .{ .conditional_unless = .{
+                    .expr = first_element,
+                    .condition = condition,
+                } });
+            } else {
+                try elements.append(self.arena, .{ .normal = first_element });
+            }
+        } else if (is_first_spread) {
             try elements.append(self.arena, .{ .spread = first_element });
         } else {
             try elements.append(self.arena, .{ .normal = first_element });
@@ -1423,7 +1452,27 @@ pub const Parser = struct {
             }
 
             const element = try self.parseLambda();
-            if (is_spread) {
+
+            // Check for trailing if/unless
+            if (!is_spread and self.current.kind == .identifier) {
+                if (std.mem.eql(u8, self.current.lexeme, "if")) {
+                    try self.advance(); // consume 'if'
+                    const condition = try self.parseBinary(0);
+                    try elements.append(self.arena, .{ .conditional_if = .{
+                        .expr = element,
+                        .condition = condition,
+                    } });
+                } else if (std.mem.eql(u8, self.current.lexeme, "unless")) {
+                    try self.advance(); // consume 'unless'
+                    const condition = try self.parseBinary(0);
+                    try elements.append(self.arena, .{ .conditional_unless = .{
+                        .expr = element,
+                        .condition = condition,
+                    } });
+                } else {
+                    try elements.append(self.arena, .{ .normal = element });
+                }
+            } else if (is_spread) {
                 try elements.append(self.arena, .{ .spread = element });
             } else {
                 try elements.append(self.arena, .{ .normal = element });
@@ -2910,6 +2959,28 @@ pub fn evaluateExpression(
                         };
                         for (spread_array.elements) |spread_elem| {
                             try temp_values.append(arena, spread_elem);
+                        }
+                    },
+                    .conditional_if => |cond_elem| {
+                        const condition = try evaluateExpression(arena, cond_elem.condition, env, current_dir, ctx);
+                        const is_true = switch (condition) {
+                            .boolean => |b| b,
+                            else => return error.TypeMismatch,
+                        };
+                        if (is_true) {
+                            const value = try evaluateExpression(arena, cond_elem.expr, env, current_dir, ctx);
+                            try temp_values.append(arena, value);
+                        }
+                    },
+                    .conditional_unless => |cond_elem| {
+                        const condition = try evaluateExpression(arena, cond_elem.condition, env, current_dir, ctx);
+                        const is_true = switch (condition) {
+                            .boolean => |b| b,
+                            else => return error.TypeMismatch,
+                        };
+                        if (!is_true) {
+                            const value = try evaluateExpression(arena, cond_elem.expr, env, current_dir, ctx);
+                            try temp_values.append(arena, value);
                         }
                     },
                 }
