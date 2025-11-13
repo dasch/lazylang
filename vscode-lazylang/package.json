@@ -56,7 +56,7 @@
       },
       {
         "command": "lazylang.runTests",
-        "title": "Lazylang: Run Tests",
+        "title": "Lazylang: Run Spec",
         "category": "Lazylang"
       }
     ],

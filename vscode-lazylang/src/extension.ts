@@ -244,22 +244,13 @@ function registerCommands(context: ExtensionContext) {
             return;
         }
 
-        try {
-            const filePath = document.uri.fsPath;
-            const { stdout, stderr } = await execFilePromise(lazyLangPath, ['eval', filePath]);
-
-            if (stderr) {
-                window.showErrorMessage(`Lazylang Error:\n${stderr}`);
-            } else {
-                const outputChannel = window.createOutputChannel('Lazylang');
-                outputChannel.clear();
-                outputChannel.appendLine('=== Lazylang Eval Output ===');
-                outputChannel.appendLine(stdout);
-                outputChannel.show();
-            }
-        } catch (error: any) {
-            window.showErrorMessage(`Failed to eval file: ${error.message}`);
-        }
+        const filePath = document.uri.fsPath;
+        const terminal = window.createTerminal({
+            name: 'Lazylang Eval',
+            cwd: workspace.workspaceFolders?.[0].uri.fsPath
+        });
+        terminal.show();
+        terminal.sendText(`"${lazyLangPath}" eval "${filePath}"`);
     });
 
     // Command: Lazylang: Run File
@@ -276,58 +267,36 @@ function registerCommands(context: ExtensionContext) {
             return;
         }
 
-        try {
-            const filePath = document.uri.fsPath;
-            const { stdout, stderr } = await execFilePromise(lazyLangPath, ['run', filePath]);
-
-            if (stderr) {
-                window.showErrorMessage(`Lazylang Error:\n${stderr}`);
-            } else {
-                const outputChannel = window.createOutputChannel('Lazylang');
-                outputChannel.clear();
-                outputChannel.appendLine('=== Lazylang Run Output ===');
-                outputChannel.appendLine(stdout);
-                outputChannel.show();
-            }
-        } catch (error: any) {
-            window.showErrorMessage(`Failed to run file: ${error.message}`);
-        }
+        const filePath = document.uri.fsPath;
+        const terminal = window.createTerminal({
+            name: 'Lazylang Run',
+            cwd: workspace.workspaceFolders?.[0].uri.fsPath
+        });
+        terminal.show();
+        terminal.sendText(`"${lazyLangPath}" run "${filePath}"`);
     });
 
-    // Command: Lazylang: Run Tests
-    const testCommand = commands.registerCommand('lazylang.runTests', async () => {
+    // Command: Lazylang: Run Spec
+    const testCommand = commands.registerTextEditorCommand('lazylang.runTests', async (editor: TextEditor) => {
+        const document = editor.document;
+        if (document.languageId !== 'lazylang') {
+            window.showErrorMessage('This command only works with Lazylang files');
+            return;
+        }
+
         const lazyLangPath = findLazyLangExecutable();
         if (!lazyLangPath) {
             window.showErrorMessage('Lazylang executable not found. Please build the project.');
             return;
         }
 
-        const workspaceFolders = workspace.workspaceFolders;
-        if (!workspaceFolders || workspaceFolders.length === 0) {
-            window.showErrorMessage('No workspace folder open');
-            return;
-        }
-
-        const workspaceRoot = workspaceFolders[0].uri.fsPath;
-        const testPath = path.join(workspaceRoot, 'stdlib', 'tests');
-
-        try {
-            const { stdout, stderr } = await execFilePromise(lazyLangPath, ['test', testPath], {
-                cwd: workspaceRoot
-            });
-
-            const outputChannel = window.createOutputChannel('Lazylang Tests');
-            outputChannel.clear();
-            outputChannel.appendLine('=== Lazylang Test Output ===');
-            outputChannel.appendLine(stdout);
-            if (stderr) {
-                outputChannel.appendLine('\n=== Errors ===');
-                outputChannel.appendLine(stderr);
-            }
-            outputChannel.show();
-        } catch (error: any) {
-            window.showErrorMessage(`Failed to run tests: ${error.message}`);
-        }
+        const filePath = document.uri.fsPath;
+        const terminal = window.createTerminal({
+            name: 'Lazylang Spec',
+            cwd: workspace.workspaceFolders?.[0].uri.fsPath
+        });
+        terminal.show();
+        terminal.sendText(`"${lazyLangPath}" spec "${filePath}"`);
     });
 
     context.subscriptions.push(evalCommand, runCommand, testCommand);

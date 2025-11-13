@@ -2,8 +2,7 @@
   "Let binding": {
     "prefix": "let",
     "body": [
-      "let ${1:name} = ${2:value}",
-      "$0"
+      "let ${1:name} = ${2:value} in ${3:body}"
     ],
     "description": "Create a let binding"
   },
@@ -35,8 +34,8 @@
     "prefix": "when",
     "body": [
       "when ${1:value} matches",
-      "  ${2:pattern} -> ${3:expression}",
-      "  _ -> ${4:default}"
+      "  ${2:pattern} then ${3:expression}",
+      "  otherwise ${4:default}"
     ],
     "description": "Create a when-matches expression"
   },
