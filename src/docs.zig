@@ -31,6 +31,9 @@ fn writeCommonCss(file: anytype, sidebar_width: []const u8) !void {
         \\    .sidebar-search input { width: 100%; padding: 10px 12px; font-size: 14px; border: 1px solid #34495e; border-radius: 4px; background: #34495e; color: white; }
         \\    .sidebar-search input::placeholder { color: #95a5a6; }
         \\    .sidebar-search input:focus { outline: none; background: #3d5469; border-color: #3498db; }
+        \\    .sidebar-nav { list-style: none; border-bottom: 1px solid #34495e; }
+        \\    .sidebar-nav li { border-bottom: none; }
+        \\    .sidebar-nav .readme-link { font-weight: 500; font-size: 0.95em; }
         \\    .sidebar h2 { padding: 15px; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.5px; color: #95a5a6; border-bottom: 1px solid #34495e; }
         \\    .sidebar ul { list-style: none; }
         \\    .sidebar > ul > li { border-bottom: 1px solid #34495e; }
@@ -487,6 +490,9 @@ pub fn writeIndexHtmlContent(allocator: std.mem.Allocator, file: anytype, module
     try file.writeAll("    <div class=\"sidebar-search\">\n");
     try file.writeAll("      <input type=\"text\" id=\"sidebar-search\" placeholder=\"Search modules...\" />\n");
     try file.writeAll("    </div>\n");
+    try file.writeAll("    <ul class=\"sidebar-nav\">\n");
+    try file.writeAll("      <li><a href=\"index.html\" class=\"readme-link\">README</a></li>\n");
+    try file.writeAll("    </ul>\n");
     try file.writeAll("    <h2>Modules</h2>\n");
     try file.writeAll("    <ul>\n");
     for (modules) |module| {
@@ -626,6 +632,11 @@ pub fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocI
     try file.writeAll("    <div class=\"sidebar-search\">\n");
     try file.writeAll("      <input type=\"text\" id=\"sidebar-search\" placeholder=\"Search (Cmd+K)...\" />\n");
     try file.writeAll("    </div>\n");
+
+    // README link
+    try file.writeAll("    <ul class=\"sidebar-nav\">\n");
+    try file.writeAll("      <li><a href=\"index.html\" class=\"readme-link\">README</a></li>\n");
+    try file.writeAll("    </ul>\n");
 
     // Modules section
     try file.writeAll("    <h2>Modules</h2>\n");
