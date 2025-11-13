@@ -1282,7 +1282,10 @@ pub const Parser = struct {
                 .number, .string, .symbol, .l_paren, .l_bracket => {
                     const argument = try self.parsePrimary();
                     const node = try self.allocateExpression();
-                    node.* = .{ .application = .{ .function = expr, .argument = argument } };
+                    node.* = .{
+                        .data = .{ .application = .{ .function = expr, .argument = argument } },
+                        .location = expr.location,
+                    };
                     expr = node;
                     just_applied = true;
                 },
@@ -1377,6 +1380,7 @@ pub const Parser = struct {
                     } }, if_token);
                 }
                 if (std.mem.eql(u8, self.current.lexeme, "when")) {
+                    const when_token = self.current; // Capture for location
                     try self.advance();
                     const value = try self.parseBinary(0);
 
@@ -1421,21 +1425,19 @@ pub const Parser = struct {
                         });
                     }
 
-                    const node = try self.allocateExpression();
-                    node.* = .{ .when_matches = .{
+                    return try self.makeExpression(.{ .when_matches = .{
                         .value = value,
                         .branches = try branches.toOwnedSlice(self.arena),
                         .otherwise = otherwise_expr,
-                    } };
-                    return node;
+                    } }, when_token);
                 }
+                const ident_token = self.current; // Capture for location
                 const name = self.current.lexeme;
                 try self.advance();
-                const node = try self.allocateExpression();
-                node.* = .{ .identifier = name };
-                return node;
+                return try self.makeExpression(.{ .identifier = name }, ident_token);
             },
             .string => {
+                const string_token = self.current; // Capture for location
                 const value = self.current.lexeme;
                 try self.advance();
 
@@ -1444,28 +1446,24 @@ pub const Parser = struct {
 
                 if (parts.len == 1 and parts[0] == .literal) {
                     // Simple string with no interpolation
-                    const node = try self.allocateExpression();
-                    node.* = .{ .string_literal = parts[0].literal };
-                    return node;
+                    return try self.makeExpression(.{ .string_literal = parts[0].literal }, string_token);
                 } else {
                     // String with interpolation
-                    const node = try self.allocateExpression();
-                    node.* = .{ .string_interpolation = .{ .parts = parts } };
-                    return node;
+                    return try self.makeExpression(.{ .string_interpolation = .{ .parts = parts } }, string_token);
                 }
             },
             .symbol => {
+                const symbol_token = self.current; // Capture for location
                 const value = self.current.lexeme;
                 try self.advance();
-                const node = try self.allocateExpression();
-                node.* = .{ .symbol = value };
-                return node;
+                return try self.makeExpression(.{ .symbol = value }, symbol_token);
             },
             .l_paren => return self.parseTupleOrParenthesized(),
             .l_bracket => return self.parseArray(),
             .l_brace => return self.parseObject(),
             .dot => {
                 // Field accessor function: .field or .field1.field2
+                const dot_token = self.current; // Capture for location
                 try self.advance();
 
                 var field_list = std.ArrayList([]const u8){};
@@ -1490,11 +1488,9 @@ pub const Parser = struct {
                     try self.advance();
                 }
 
-                const node = try self.allocateExpression();
-                node.* = .{ .field_accessor = .{
+                return try self.makeExpression(.{ .field_accessor = .{
                     .fields = try field_list.toOwnedSlice(self.arena),
-                } };
-                return node;
+                } }, dot_token);
             },
             else => {
                 self.recordError();
@@ -1504,14 +1500,13 @@ pub const Parser = struct {
     }
 
     fn parseArray(self: *Parser) ParseError!*Expression {
+        const bracket_token = self.current; // Capture opening bracket for location
         try self.expect(.l_bracket);
 
         // Empty array
         if (self.current.kind == .r_bracket) {
             try self.advance();
-            const node = try self.allocateExpression();
-            node.* = .{ .array = .{ .elements = &[_]ArrayElement{} } };
-            return node;
+            return try self.makeExpression(.{ .array = .{ .elements = &[_]ArrayElement{} } }, bracket_token);
         }
 
         // Check if first element is a spread
@@ -1606,9 +1601,7 @@ pub const Parser = struct {
         try self.expect(.r_bracket);
 
         const slice = try elements.toOwnedSlice(self.arena);
-        const node = try self.allocateExpression();
-        node.* = .{ .array = .{ .elements = slice } };
-        return node;
+        return try self.makeExpression(.{ .array = .{ .elements = slice } }, bracket_token);
     }
 
     fn parseArrayComprehension(self: *Parser, body: *Expression) ParseError!*Expression {
@@ -1643,12 +1636,16 @@ pub const Parser = struct {
 
         try self.expect(.r_bracket);
 
+        // Use the body expression's location as the start of the comprehension
         const node = try self.allocateExpression();
-        node.* = .{ .array_comprehension = .{
-            .body = body,
-            .clauses = try clauses.toOwnedSlice(self.arena),
-            .filter = filter,
-        } };
+        node.* = .{
+            .data = .{ .array_comprehension = .{
+                .body = body,
+                .clauses = try clauses.toOwnedSlice(self.arena),
+                .filter = filter,
+            } },
+            .location = body.location,
+        };
         return node;
     }
 
@@ -1716,6 +1713,7 @@ pub const Parser = struct {
                 } else if (self.current.kind == .identifier) {
                     // Static field
                     const doc = self.tokenizer.consumeDocComments();
+                    const field_token = self.current; // Capture for location
                     const static_key = self.current.lexeme;
                     try self.advance();
 
@@ -1727,9 +1725,7 @@ pub const Parser = struct {
                         is_patch = true;
                         break :blk try self.parseObject();
                     } else blk: {
-                        const node = try self.allocateExpression();
-                        node.* = .{ .identifier = static_key };
-                        break :blk node;
+                        break :blk try self.makeExpression(.{ .identifier = static_key }, field_token);
                     };
 
                     try fields.append(self.arena, .{
@@ -1761,6 +1757,7 @@ pub const Parser = struct {
             // Consume doc comments for this field
             const doc = self.tokenizer.consumeDocComments();
 
+            const key_token = self.current; // Capture for location
             const key = self.current.lexeme;
             try self.advance();
 
@@ -1778,9 +1775,7 @@ pub const Parser = struct {
                 break :blk try self.parseObject();
             } else blk: {
                 // Short form: create an identifier reference with the same name as the key
-                const node = try self.allocateExpression();
-                node.* = .{ .identifier = key };
-                break :blk node;
+                break :blk try self.makeExpression(.{ .identifier = key }, key_token);
             };
 
             try fields.append(self.arena, .{ .key = .{ .static = key }, .value = value_expr, .is_patch = is_patch, .doc = doc });
@@ -1839,25 +1834,28 @@ pub const Parser = struct {
 
         try self.expect(.r_brace);
 
+        // Use the key expression's location as the start of the comprehension
         const node = try self.allocateExpression();
-        node.* = .{ .object_comprehension = .{
-            .key = key,
-            .value = value,
-            .clauses = try clauses.toOwnedSlice(self.arena),
-            .filter = filter,
-        } };
+        node.* = .{
+            .data = .{ .object_comprehension = .{
+                .key = key,
+                .value = value,
+                .clauses = try clauses.toOwnedSlice(self.arena),
+                .filter = filter,
+            } },
+            .location = key.location,
+        };
         return node;
     }
 
     fn parseTupleOrParenthesized(self: *Parser) ParseError!*Expression {
+        const paren_token = self.current; // Capture opening paren for location
         try self.expect(.l_paren);
 
         // Empty tuple: ()
         if (self.current.kind == .r_paren) {
             try self.advance();
-            const node = try self.allocateExpression();
-            node.* = .{ .tuple = .{ .elements = &[_]*Expression{} } };
-            return node;
+            return try self.makeExpression(.{ .tuple = .{ .elements = &[_]*Expression{} } }, paren_token);
         }
 
         // Check for operator function: (+), (-), (*), etc.
@@ -1911,9 +1909,7 @@ pub const Parser = struct {
         try self.expect(.r_paren);
 
         const slice = try elements.toOwnedSlice(self.arena);
-        const node = try self.allocateExpression();
-        node.* = .{ .tuple = .{ .elements = slice } };
-        return node;
+        return try self.makeExpression(.{ .tuple = .{ .elements = slice } }, paren_token);
     }
 
     fn createPattern(self: *Parser, data: PatternData, token: Token) !*Pattern {
@@ -2175,7 +2171,11 @@ pub const Parser = struct {
                     } else {
                         const ident = string_content[ident_start..i];
                         const expr = try self.allocateExpression();
-                        expr.* = .{ .identifier = ident };
+                        // Use dummy location for synthetic interpolation identifier
+                        expr.* = .{
+                            .data = .{ .identifier = ident },
+                            .location = .{ .line = 0, .column = 0, .offset = 0, .length = 0 },
+                        };
                         try parts.append(self.arena, .{ .interpolation = expr });
                     }
 
@@ -3655,7 +3655,7 @@ pub fn evaluateExpression(
         .import_expr => |import_expr| try importModule(arena, import_expr.path, current_dir, ctx),
         .field_access => |field_access| blk: {
             const object_value = try evaluateExpression(arena, field_access.object, env, current_dir, ctx);
-            break :blk try accessField(arena, object_value, field_access.field, ctx);
+            break :blk try accessField(arena, object_value, field_access.field, expr.location, ctx);
         },
         .field_accessor => |field_accessor| blk: {
             // Create a function that accesses the specified fields
@@ -3754,7 +3754,7 @@ pub fn evaluateExpression(
             // Create new object with only the specified fields
             const new_fields = try arena.alloc(ObjectFieldValue, field_projection.fields.len);
             for (field_projection.fields, 0..) |field_name, i| {
-                const field_value = try accessField(arena, object_value, field_name, ctx);
+                const field_value = try accessField(arena, object_value, field_name, expr.location, ctx);
                 new_fields[i] = .{
                     .key = try arena.dupe(u8, field_name),
                     .value = field_value,
@@ -3766,7 +3766,7 @@ pub fn evaluateExpression(
     };
 }
 
-fn accessField(arena: std.mem.Allocator, object_value: Value, field_name: []const u8, ctx: *const EvalContext) EvalError!Value {
+fn accessField(arena: std.mem.Allocator, object_value: Value, field_name: []const u8, location: SourceLocation, ctx: *const EvalContext) EvalError!Value {
     const object = switch (object_value) {
         .object => |obj| obj,
         else => return error.TypeMismatch,
@@ -3780,8 +3780,11 @@ fn accessField(arena: std.mem.Allocator, object_value: Value, field_name: []cons
         }
     }
 
-    // Field not found - populate error context with available fields
+    // Field not found - populate error context with available fields and location
     if (ctx.error_ctx) |err_ctx| {
+        // Set the error location
+        err_ctx.setErrorLocation(location.line, location.column, location.offset, location.length);
+
         // Copy the field name using error context's allocator (not arena)
         const field_name_copy = try err_ctx.allocator.dupe(u8, field_name);
 
@@ -3922,6 +3925,9 @@ fn importModule(
 
     const contents = try module_file.file.readToEndAlloc(arena, std.math.maxInt(usize));
 
+    // Save the current file so we can restore it after import
+    const saved_file = if (ctx.error_ctx) |err_ctx| err_ctx.current_file else "";
+
     var parser = try Parser.init(arena, contents);
     if (ctx.error_ctx) |err_ctx| {
         err_ctx.setCurrentFile(module_file.path);
@@ -3944,6 +3950,12 @@ fn importModule(
         }
         return err;
     };
+
+    // Restore the previous file
+    if (ctx.error_ctx) |err_ctx| {
+        err_ctx.setCurrentFile(saved_file);
+    }
+
     return result;
 }
 

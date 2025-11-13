@@ -992,7 +992,7 @@ pub fn extractModuleInfo(
     try extractDocs(expression, &doc_items, allocator);
 
     // Extract module-level documentation if available
-    const module_doc: ?[]const u8 = switch (expression.*) {
+    const module_doc: ?[]const u8 = switch (expression.data) {
         .object => |obj| if (obj.module_doc) |doc| try allocator.dupe(u8, doc) else null,
         else => null,
     };

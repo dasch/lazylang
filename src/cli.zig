@@ -162,7 +162,7 @@ fn runEval(
             if (json_output) {
                 try json_error.reportErrorAsJson(stderr, "<inline>", &result.error_ctx, "ParseError", "An error occurred at this location.", null);
             } else {
-                try reportErrorWithContext(allocator, stderr, "<inline>", inline_expr.?, &result.error_ctx, null);
+                try reportErrorWithContext(allocator, stderr, "<inline>", inline_expr.?, &result.error_ctx, result.err);
             }
             return .{ .exit_code = 1 };
         }
