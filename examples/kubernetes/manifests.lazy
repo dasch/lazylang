@@ -1,4 +1,5 @@
 envConfig = import "config"
+Object = import "Object"
 targets = ["development", "staging", "production"]
 
 {
@@ -19,7 +20,7 @@ targets = ["development", "staging", "production"]
         }
       }
       spec {
-        [if config.hpa.enabled then replicas]: config.hpa.minReplicas
+        [if config.hpa.enabled then "replicas"]: config.hpa.minReplicas
         selector {
           matchLabels: Object.slice ["app", "component", "track"] labels
         }
