@@ -729,6 +729,17 @@ describe "Array" [
 - **Naming**: camelCase for functions, PascalCase for modules
 - **Operators**: Space around binary operators
 - **Line length**: Prefer 80 characters, max 100
+- **If-expressions**: For multiline if-then-else expressions assigned to variables, place the `if` keyword on a new line after the `=`, with `then` on the same line as the condition. Indent branches one additional level:
+  ```
+  result =
+    if condition then
+      value1
+    else if condition2 then
+      value2
+    else
+      value3
+  ```
+  Single-line if-expressions can remain on one line: `x = if cond then a else b`
 
 ### Error Messages
 

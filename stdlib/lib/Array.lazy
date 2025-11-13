@@ -113,9 +113,10 @@
   /// ```
   fold: fn -> init -> arr ->
     foldHelper = f -> acc -> xs -> idx ->
-      if idx >= __array_length xs
-        then acc
-        else when __array_get (xs, idx) matches
+      if idx >= __array_length xs then
+        acc
+      else
+        when __array_get (xs, idx) matches
           (#ok, x) then foldHelper f (f acc x) xs (idx + 1)
           otherwise acc
     foldHelper fn init arr 0

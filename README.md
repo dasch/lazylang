@@ -255,12 +255,13 @@ Conditional expressions use the `if-then-else` syntax:
 ```
 status = if isActive then "online" else "offline"
 
-result = if score > 90 then
-  "excellent"
-else if score > 70 then
-  "good"
-else
-  "needs improvement"
+result =
+  if score > 90 then
+    "excellent"
+  else if score > 70 then
+    "good"
+  else
+    "needs improvement"
 ```
 
 The condition must evaluate to a boolean value; a runtime error occurs if it doesn't.
