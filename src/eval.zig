@@ -121,6 +121,7 @@ pub const ExpressionData = union(enum) {
     string_interpolation: StringInterpolation,
     lambda: Lambda,
     let: Let,
+    where_expr: WhereExpr,
     unary: Unary,
     binary: Binary,
     application: Application,
@@ -149,6 +150,17 @@ const Let = struct {
     value: *Expression,
     body: *Expression,
     doc: ?[]const u8, // Combined documentation comments
+};
+
+const WhereBinding = struct {
+    pattern: *Pattern,
+    value: *Expression,
+    doc: ?[]const u8,
+};
+
+const WhereExpr = struct {
+    expr: *Expression,
+    bindings: []WhereBinding,
 };
 
 const Unary = struct {
@@ -909,10 +921,11 @@ pub const Parser = struct {
 
         // Check for 'where' clause
         if (self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "where")) {
+            const where_token = self.current; // Capture for location
             try self.advance();
 
             // Parse bindings: collect them into a list
-            var bindings = std.ArrayListUnmanaged(struct { pattern: *Pattern, value: *Expression, doc: ?[]const u8 }){};
+            var bindings = std.ArrayListUnmanaged(WhereBinding){};
 
             while (true) {
                 // Check if we're done
@@ -947,20 +960,19 @@ pub const Parser = struct {
                 }
             }
 
-            // Wrap expr in nested let expressions (in reverse order to maintain dependency order)
+            // Create a WhereExpr with all bindings
             const binding_slice = try bindings.toOwnedSlice(self.arena);
-            var i = binding_slice.len;
-            while (i > 0) {
-                i -= 1;
-                const binding = binding_slice[i];
-                const let_node = try self.allocateExpression();
-                // Use location from the pattern for the let expression
-                let_node.* = .{
-                    .data = .{ .let = .{ .pattern = binding.pattern, .value = binding.value, .body = expr, .doc = binding.doc } },
-                    .location = binding.pattern.location,
-                };
-                expr = let_node;
-            }
+            const where_node = try self.allocateExpression();
+            where_node.* = .{
+                .data = .{ .where_expr = .{ .expr = expr, .bindings = binding_slice } },
+                .location = .{
+                    .line = where_token.line,
+                    .column = where_token.column,
+                    .offset = where_token.offset,
+                    .length = where_token.lexeme.len,
+                },
+            };
+            expr = where_node;
         }
 
         return expr;
@@ -3079,6 +3091,58 @@ pub fn evaluateExpression(
                 break :blk try evaluateExpression(arena, let_expr.body, new_env, current_dir, ctx);
             }
         },
+        .where_expr => |where_expr| blk: {
+            // For where clauses, all bindings should be mutually recursive
+            // We achieve this by wrapping values in thunks (similar to object fields)
+            // 1. Create environment entries for all bindings with thunk placeholders
+            // 2. Create thunks for all values
+            // 3. Bind thunks to environment entries
+            // 4. Evaluate the main expression
+
+            // Build the environment chain with all bindings as thunk placeholders
+            var current_env = env;
+            const thunks = try arena.alloc(*Thunk, where_expr.bindings.len);
+
+            // First pass: create thunks and environment entries for identifier patterns
+            for (where_expr.bindings, 0..) |binding, i| {
+                // Create thunk for this binding's value
+                const thunk = try arena.create(Thunk);
+                thunk.* = .{
+                    .expr = binding.value,
+                    .env = undefined, // Will be set after full env is built
+                    .current_dir = current_dir,
+                    .ctx = ctx,
+                    .state = .unevaluated,
+                };
+                thunks[i] = thunk;
+
+                switch (binding.pattern.data) {
+                    .identifier => |name| {
+                        // Create environment entry with thunk as value
+                        const new_env = try arena.create(Environment);
+                        new_env.* = .{
+                            .parent = current_env,
+                            .name = name,
+                            .value = .{ .thunk = thunk },
+                        };
+                        current_env = new_env;
+                    },
+                    else => {
+                        // Complex patterns not yet supported in where clauses
+                        // This would require pattern matching after thunk evaluation
+                        return error.TypeMismatch;
+                    },
+                }
+            }
+
+            // Second pass: update all thunks with the full environment
+            for (thunks) |thunk| {
+                thunk.env = current_env;
+            }
+
+            // Finally, evaluate the main expression with the full environment
+            break :blk try evaluateExpression(arena, where_expr.expr, current_env, current_dir, ctx);
+        },
         .unary => |unary| blk: {
             const operand_value = try evaluateExpression(arena, unary.operand, env, current_dir, ctx);
             const result = switch (unary.op) {
@@ -3450,7 +3514,8 @@ pub fn evaluateExpression(
                         }
                     },
                     .conditional_if => |cond_elem| {
-                        const condition = try evaluateExpression(arena, cond_elem.condition, env, current_dir, ctx);
+                        const condition_value = try evaluateExpression(arena, cond_elem.condition, env, current_dir, ctx);
+                        const condition = try force(arena, condition_value);
                         const is_true = switch (condition) {
                             .boolean => |b| b,
                             else => return error.TypeMismatch,
@@ -3461,7 +3526,8 @@ pub fn evaluateExpression(
                         }
                     },
                     .conditional_unless => |cond_elem| {
-                        const condition = try evaluateExpression(arena, cond_elem.condition, env, current_dir, ctx);
+                        const condition_value = try evaluateExpression(arena, cond_elem.condition, env, current_dir, ctx);
+                        const condition = try force(arena, condition_value);
                         const is_true = switch (condition) {
                             .boolean => |b| b,
                             else => return error.TypeMismatch,
