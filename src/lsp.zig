@@ -577,6 +577,13 @@ pub const Server = struct {
             return try self.getModuleCompletions();
         }
 
+        // Check if we're completing a field access (e.g., Array.ma -> Array.map)
+        if (try self.getFieldAccessContext(text, line, character)) |field_context| {
+            defer self.allocator.free(field_context.object_name);
+            defer self.allocator.free(field_context.partial_field);
+            return try self.getFieldCompletions(text, field_context);
+        }
+
         // Keywords
         const keywords = [_][]const u8{
             "let", "if",     "then",  "else",  "when", "matches",
@@ -613,6 +620,301 @@ pub const Server = struct {
         }
 
         return try items.toOwnedSlice(self.allocator);
+    }
+
+    /// Field access context for completion
+    const FieldAccessContext = struct {
+        object_name: []const u8,    // e.g., "Array"
+        partial_field: []const u8,  // e.g., "ma" from "Array.ma"
+    };
+
+    /// Check if we're in a field access context and return the context
+    fn getFieldAccessContext(self: *Self, text: []const u8, target_line: u32, target_char: u32) !?FieldAccessContext {
+        // Find the line content
+        var current_line: u32 = 0;
+        var line_start: usize = 0;
+        var line_end: usize = 0;
+
+        for (text, 0..) |c, i| {
+            if (current_line == target_line) {
+                line_end = i;
+                if (c == '\n') break;
+            } else if (c == '\n') {
+                current_line += 1;
+                if (current_line == target_line) {
+                    line_start = i + 1;
+                }
+            }
+        }
+
+        if (current_line == target_line and line_end < line_start) {
+            line_end = text.len;
+        }
+
+        if (current_line != target_line) return null;
+
+        const line_text = text[line_start..line_end];
+        if (target_char == 0) return null;
+
+        // Get text before cursor on this line
+        const before_cursor = if (target_char <= line_text.len)
+            line_text[0..@min(target_char, line_text.len)]
+        else
+            line_text;
+
+        // Look for pattern: identifier.partial_identifier
+        // Work backwards from cursor to find the dot and identifier
+        var dot_pos: ?usize = null;
+        var i: usize = before_cursor.len;
+        while (i > 0) {
+            i -= 1;
+            if (before_cursor[i] == '.') {
+                dot_pos = i;
+                break;
+            }
+            // Stop if we hit whitespace or other non-identifier chars
+            if (!std.ascii.isAlphanumeric(before_cursor[i]) and before_cursor[i] != '_') {
+                return null;
+            }
+        }
+
+        if (dot_pos == null) return null;
+        const dot_idx = dot_pos.?;
+
+        // Extract partial field name after dot
+        const partial_field = before_cursor[dot_idx + 1..];
+
+        // Find identifier before dot
+        if (dot_idx == 0) return null;
+        var ident_start = dot_idx;
+        while (ident_start > 0) {
+            const c = before_cursor[ident_start - 1];
+            if (!std.ascii.isAlphanumeric(c) and c != '_') break;
+            ident_start -= 1;
+        }
+
+        if (ident_start == dot_idx) return null;
+        const object_name = before_cursor[ident_start..dot_idx];
+
+        return FieldAccessContext{
+            .object_name = try self.allocator.dupe(u8, object_name),
+            .partial_field = try self.allocator.dupe(u8, partial_field),
+        };
+    }
+
+    /// Get fields from a stdlib module
+    fn getStdlibModuleFields(self: *Self, module_name: []const u8) !?[]ObjectFieldInfo {
+        const arena = self.allocator;
+
+        if (std.mem.eql(u8, module_name, "Array")) {
+            const fields = try arena.alloc(ObjectFieldInfo, 18);
+            fields[0] = .{ .name = try arena.dupe(u8, "length"), .doc = try arena.dupe(u8, "Returns the number of elements in an array") };
+            fields[1] = .{ .name = try arena.dupe(u8, "get"), .doc = try arena.dupe(u8, "Retrieves the element at the specified index") };
+            fields[2] = .{ .name = try arena.dupe(u8, "map"), .doc = try arena.dupe(u8, "Applies a function to each element") };
+            fields[3] = .{ .name = try arena.dupe(u8, "flatMap"), .doc = try arena.dupe(u8, "Applies a function and flattens results") };
+            fields[4] = .{ .name = try arena.dupe(u8, "filter"), .doc = try arena.dupe(u8, "Keeps only elements that satisfy the predicate") };
+            fields[5] = .{ .name = try arena.dupe(u8, "skip"), .doc = try arena.dupe(u8, "Removes elements that satisfy the predicate") };
+            fields[6] = .{ .name = try arena.dupe(u8, "fold"), .doc = try arena.dupe(u8, "Folds an array from the left using an accumulator") };
+            fields[7] = .{ .name = try arena.dupe(u8, "reverse"), .doc = try arena.dupe(u8, "Reverses an array") };
+            fields[8] = .{ .name = try arena.dupe(u8, "empty"), .doc = try arena.dupe(u8, "Returns an empty array") };
+            fields[9] = .{ .name = try arena.dupe(u8, "isEmpty"), .doc = try arena.dupe(u8, "Checks if an array is empty") };
+            fields[10] = .{ .name = try arena.dupe(u8, "slice"), .doc = try arena.dupe(u8, "Extracts a slice from start to end") };
+            fields[11] = .{ .name = try arena.dupe(u8, "sort"), .doc = try arena.dupe(u8, "Sorts an array in ascending order") };
+            fields[12] = .{ .name = try arena.dupe(u8, "sortBy"), .doc = try arena.dupe(u8, "Sorts an array by a computed key function") };
+            fields[13] = .{ .name = try arena.dupe(u8, "uniq"), .doc = try arena.dupe(u8, "Returns array with duplicates removed") };
+            fields[14] = .{ .name = try arena.dupe(u8, "all"), .doc = try arena.dupe(u8, "Tests whether all elements satisfy a predicate") };
+            fields[15] = .{ .name = try arena.dupe(u8, "any"), .doc = try arena.dupe(u8, "Tests whether any element satisfies a predicate") };
+            fields[16] = .{ .name = try arena.dupe(u8, "none"), .doc = try arena.dupe(u8, "Tests whether no elements satisfy a predicate") };
+            fields[17] = .{ .name = try arena.dupe(u8, "groupBy"), .doc = try arena.dupe(u8, "Groups elements by a computed key function") };
+            return fields;
+        } else if (std.mem.eql(u8, module_name, "String")) {
+            const fields = try arena.alloc(ObjectFieldInfo, 19);
+            fields[0] = .{ .name = try arena.dupe(u8, "length"), .doc = try arena.dupe(u8, "Returns the number of characters in a string") };
+            fields[1] = .{ .name = try arena.dupe(u8, "append"), .doc = try arena.dupe(u8, "Appends one string to another") };
+            fields[2] = .{ .name = try arena.dupe(u8, "concat"), .doc = try arena.dupe(u8, "Concatenates an array of strings") };
+            fields[3] = .{ .name = try arena.dupe(u8, "split"), .doc = try arena.dupe(u8, "Splits a string using a delimiter") };
+            fields[4] = .{ .name = try arena.dupe(u8, "toUpperCase"), .doc = try arena.dupe(u8, "Converts a string to uppercase") };
+            fields[5] = .{ .name = try arena.dupe(u8, "toLowerCase"), .doc = try arena.dupe(u8, "Converts a string to lowercase") };
+            fields[6] = .{ .name = try arena.dupe(u8, "chars"), .doc = try arena.dupe(u8, "Converts string into array of characters") };
+            fields[7] = .{ .name = try arena.dupe(u8, "isEmpty"), .doc = try arena.dupe(u8, "Checks if a string is empty") };
+            fields[8] = .{ .name = try arena.dupe(u8, "trim"), .doc = try arena.dupe(u8, "Removes whitespace from both ends") };
+            fields[9] = .{ .name = try arena.dupe(u8, "startsWith"), .doc = try arena.dupe(u8, "Checks if string starts with a prefix") };
+            fields[10] = .{ .name = try arena.dupe(u8, "endsWith"), .doc = try arena.dupe(u8, "Checks if string ends with a suffix") };
+            fields[11] = .{ .name = try arena.dupe(u8, "contains"), .doc = try arena.dupe(u8, "Checks if string contains a substring") };
+            fields[12] = .{ .name = try arena.dupe(u8, "repeat"), .doc = try arena.dupe(u8, "Repeats a string n times") };
+            fields[13] = .{ .name = try arena.dupe(u8, "replace"), .doc = try arena.dupe(u8, "Replaces all occurrences of a substring") };
+            fields[14] = .{ .name = try arena.dupe(u8, "join"), .doc = try arena.dupe(u8, "Joins an array of strings with separator") };
+            fields[15] = .{ .name = try arena.dupe(u8, "slice"), .doc = try arena.dupe(u8, "Extracts a substring from start to end") };
+            fields[16] = .{ .name = try arena.dupe(u8, "left"), .doc = try arena.dupe(u8, "Keeps the first n characters") };
+            fields[17] = .{ .name = try arena.dupe(u8, "right"), .doc = try arena.dupe(u8, "Keeps the last n characters") };
+            fields[18] = .{ .name = try arena.dupe(u8, "dropLeft"), .doc = try arena.dupe(u8, "Drops the first n characters") };
+            return fields;
+        } else if (std.mem.eql(u8, module_name, "Math")) {
+            const fields = try arena.alloc(ObjectFieldInfo, 10);
+            fields[0] = .{ .name = try arena.dupe(u8, "max"), .doc = try arena.dupe(u8, "Returns the maximum of two numbers") };
+            fields[1] = .{ .name = try arena.dupe(u8, "min"), .doc = try arena.dupe(u8, "Returns the minimum of two numbers") };
+            fields[2] = .{ .name = try arena.dupe(u8, "abs"), .doc = try arena.dupe(u8, "Returns the absolute value") };
+            fields[3] = .{ .name = try arena.dupe(u8, "pow"), .doc = try arena.dupe(u8, "Returns base raised to exponent") };
+            fields[4] = .{ .name = try arena.dupe(u8, "sqrt"), .doc = try arena.dupe(u8, "Returns the square root") };
+            fields[5] = .{ .name = try arena.dupe(u8, "floor"), .doc = try arena.dupe(u8, "Rounds down to nearest integer") };
+            fields[6] = .{ .name = try arena.dupe(u8, "ceil"), .doc = try arena.dupe(u8, "Rounds up to nearest integer") };
+            fields[7] = .{ .name = try arena.dupe(u8, "round"), .doc = try arena.dupe(u8, "Rounds to nearest integer") };
+            fields[8] = .{ .name = try arena.dupe(u8, "log"), .doc = try arena.dupe(u8, "Returns natural logarithm (base e)") };
+            fields[9] = .{ .name = try arena.dupe(u8, "exp"), .doc = try arena.dupe(u8, "Returns e raised to the power of n") };
+            return fields;
+        } else if (std.mem.eql(u8, module_name, "Object")) {
+            const fields = try arena.alloc(ObjectFieldInfo, 6);
+            fields[0] = .{ .name = try arena.dupe(u8, "keys"), .doc = try arena.dupe(u8, "Returns an array of all keys") };
+            fields[1] = .{ .name = try arena.dupe(u8, "values"), .doc = try arena.dupe(u8, "Returns an array of all values") };
+            fields[2] = .{ .name = try arena.dupe(u8, "get"), .doc = try arena.dupe(u8, "Retrieves value for a key") };
+            fields[3] = .{ .name = try arena.dupe(u8, "merge"), .doc = try arena.dupe(u8, "Merges two objects together") };
+            fields[4] = .{ .name = try arena.dupe(u8, "mapValues"), .doc = try arena.dupe(u8, "Applies function to each value") };
+            fields[5] = .{ .name = try arena.dupe(u8, "slice"), .doc = try arena.dupe(u8, "Returns object with only specified keys") };
+            return fields;
+        } else if (std.mem.eql(u8, module_name, "JSON")) {
+            const fields = try arena.alloc(ObjectFieldInfo, 2);
+            fields[0] = .{ .name = try arena.dupe(u8, "parse"), .doc = try arena.dupe(u8, "Parses a JSON string into a Lazylang value") };
+            fields[1] = .{ .name = try arena.dupe(u8, "encode"), .doc = try arena.dupe(u8, "Encodes a Lazylang value into JSON string") };
+            return fields;
+        } else if (std.mem.eql(u8, module_name, "YAML")) {
+            const fields = try arena.alloc(ObjectFieldInfo, 2);
+            fields[0] = .{ .name = try arena.dupe(u8, "parse"), .doc = try arena.dupe(u8, "Parses a YAML string into a Lazylang value") };
+            fields[1] = .{ .name = try arena.dupe(u8, "encode"), .doc = try arena.dupe(u8, "Encodes a Lazylang value into YAML string") };
+            return fields;
+        }
+
+        return null;
+    }
+
+    /// Get field completions for an object
+    fn getFieldCompletions(self: *Self, text: []const u8, context: FieldAccessContext) ![]CompletionItem {
+        var items = std.ArrayList(CompletionItem){};
+        errdefer items.deinit(self.allocator);
+
+        // First check if it's a known stdlib module and load its exports
+        const stdlib_module = try self.getStdlibModuleFields(context.object_name);
+        if (stdlib_module) |fields| {
+            defer self.allocator.free(fields);
+            for (fields) |field| {
+                if (context.partial_field.len == 0 or
+                    std.mem.startsWith(u8, field.name, context.partial_field)) {
+                    const label = try self.allocator.dupe(u8, field.name);
+                    const detail = if (field.doc) |doc|
+                        try self.allocator.dupe(u8, doc)
+                    else
+                        null;
+
+                    try items.append(self.allocator, .{
+                        .label = label,
+                        .kind = 3, // Function
+                        .detail = detail,
+                    });
+                }
+                // Free the field doc if allocated
+                if (field.doc) |doc| self.allocator.free(doc);
+                self.allocator.free(field.name);
+            }
+            return try items.toOwnedSlice(self.allocator);
+        }
+
+        // Try to resolve the object by parsing and evaluating
+        var arena = std.heap.ArenaAllocator.init(self.allocator);
+        defer arena.deinit();
+
+        var parser = evaluator.Parser.init(arena.allocator(), text) catch {
+            // If parsing fails, return empty
+            return try items.toOwnedSlice(self.allocator);
+        };
+        const ast = parser.parse() catch {
+            // If parsing fails, return empty
+            return try items.toOwnedSlice(self.allocator);
+        };
+
+        // Search for the identifier in the AST to get its value
+        const obj_info = try self.findObjectFields(ast.*, context.object_name, arena.allocator());
+
+        if (obj_info) |fields| {
+            // Filter fields by partial name and add to completions
+            for (fields) |field| {
+                // Check if field name starts with partial_field
+                if (context.partial_field.len == 0 or
+                    std.mem.startsWith(u8, field.name, context.partial_field)) {
+                    const label = try self.allocator.dupe(u8, field.name);
+                    const detail = if (field.doc) |doc|
+                        try self.allocator.dupe(u8, doc)
+                    else
+                        null;
+
+                    try items.append(self.allocator, .{
+                        .label = label,
+                        .kind = 5, // Field
+                        .detail = detail,
+                    });
+                }
+            }
+        }
+
+        return try items.toOwnedSlice(self.allocator);
+    }
+
+    /// Object field info
+    const ObjectFieldInfo = struct {
+        name: []const u8,
+        doc: ?[]const u8,
+    };
+
+    /// Find object fields in the AST
+    fn findObjectFields(self: *Self, expr: evaluator.Expression, identifier: []const u8, arena: std.mem.Allocator) !?[]ObjectFieldInfo {
+        return switch (expr.data) {
+            .let => |let| blk: {
+                // Check if this let binding defines the identifier
+                if (let.pattern.data == .identifier) {
+                    const pat_id = let.pattern.data.identifier;
+                    if (std.mem.eql(u8, pat_id, identifier)) {
+                        // Found it! Check if value is an object
+                        if (let.value.data == .object) {
+                            const obj = let.value.data.object;
+                            var fields = std.ArrayList(ObjectFieldInfo){};
+
+                            for (obj.fields) |field| {
+                                const field_name = switch (field.key) {
+                                    .static => |s| s,
+                                    .dynamic => continue,
+                                };
+
+                                try fields.append(arena, .{
+                                    .name = field_name,
+                                    .doc = field.doc,
+                                });
+                            }
+
+                            break :blk try fields.toOwnedSlice(arena);
+                        }
+                    }
+                }
+                // Recursively search the body
+                break :blk try self.findObjectFields(let.body.*, identifier, arena);
+            },
+            .object => |obj| blk: {
+                // Top-level object - return its fields
+                var fields = std.ArrayList(ObjectFieldInfo){};
+
+                for (obj.fields) |field| {
+                    const field_name = switch (field.key) {
+                        .static => |s| s,
+                        .dynamic => continue,
+                    };
+
+                    try fields.append(arena, .{
+                        .name = field_name,
+                        .doc = field.doc,
+                    });
+                }
+
+                break :blk try fields.toOwnedSlice(arena);
+            },
+            else => null,
+        };
     }
 
     /// Check if the cursor is inside an import statement string
