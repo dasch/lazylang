@@ -18,7 +18,7 @@
   /// `(#error, message)` on failure.
   ///
   /// **Parameter:**
-  /// - `json_str`: The JSON string to parse
+  /// - `jsonStr`: The JSON string to parse
   ///
   /// **Returns:**
   /// - `(#ok, value)`: When parsing succeeds, where `value` is the parsed Lazylang value
@@ -36,7 +36,7 @@
   ///
   /// **Usage with pattern matching:**
   /// ```
-  /// result = JSON.parse user_input
+  /// result = JSON.parse userInput
   /// config = when result matches
   ///   (#ok, data) then data
   ///   (#error, msg) then { error: msg }
@@ -44,7 +44,7 @@
   ///
   /// **Note:** For static JSON files, prefer using `import "file.json"` which
   /// provides compile-time validation and better error messages.
-  parse: json_str -> __json_parse json_str,
+  parse: jsonStr -> __json_parse jsonStr,
 
   /// Encodes a Lazylang value into a JSON string.
   ///

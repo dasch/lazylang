@@ -16,7 +16,7 @@
   /// `(#error, message)` on failure.
   ///
   /// **Parameter:**
-  /// - `yaml_str`: The YAML string to parse
+  /// - `yamlStr`: The YAML string to parse
   ///
   /// **Returns:**
   /// - `(#ok, value)`: When parsing succeeds, where `value` is the parsed Lazylang value
@@ -37,7 +37,7 @@
   ///   (#ok, config) then config.port
   ///   (#error, _) then 3000
   /// ```
-  parse: yaml_str -> __yaml_parse yaml_str,
+  parse: yamlStr -> __yaml_parse yamlStr,
 
   /// Encodes a Lazylang value into a YAML string.
   ///
