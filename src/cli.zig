@@ -882,7 +882,29 @@ fn extractModuleInfo(
     // Extract documentation from the expression
     var doc_items = std.ArrayListUnmanaged(DocItem){};
 
-    try extractDocs(expression, &doc_items, allocator);
+    // For objects, extract ALL fields with docs
+    // Use manual doc comment extraction from source to work around parser limitations
+    if (expression.* == .object) {
+        const obj = expression.object;
+
+        // Build a map of field names to their AST nodes for signature extraction
+        var field_map = std.StringHashMap(*const evaluator.Expression).init(allocator);
+        defer field_map.deinit();
+
+        for (obj.fields) |field| {
+            const static_key = switch (field.key) {
+                .static => |k| k,
+                .dynamic => continue,
+            };
+            try field_map.put(static_key, field.value);
+        }
+
+        // Extract doc comments directly from source
+        try extractDocsFromSource(source, &doc_items, field_map, allocator);
+    } else {
+        // Fall back to old approach for non-object modules
+        try extractDocs(expression, &doc_items, allocator);
+    }
 
     const module_name = try allocator.dupe(u8, std.fs.path.stem(input_path));
 
@@ -956,6 +978,82 @@ fn extractParamNames(pattern: *const evaluator.Pattern, names: *std.ArrayList([]
             }
         },
         else => {},
+    }
+}
+
+fn extractDocsFromSource(
+    source: []const u8,
+    items: *std.ArrayListUnmanaged(DocItem),
+    field_map: std.StringHashMap(*const evaluator.Expression),
+    allocator: std.mem.Allocator,
+) !void {
+    var i: usize = 0;
+    while (i < source.len) {
+        // Look for doc comment start: "///"
+        if (i + 2 < source.len and source[i] == '/' and source[i + 1] == '/' and source[i + 2] == '/') {
+            // Collect all consecutive doc comment lines
+            var doc_lines = std.ArrayListUnmanaged([]const u8){};
+            defer doc_lines.deinit(allocator);
+
+            while (i < source.len) {
+                // Check if this line starts with ///
+                if (i + 2 < source.len and source[i] == '/' and source[i + 1] == '/' and source[i + 2] == '/') {
+                    i += 3;
+                    // Skip space after ///
+                    if (i < source.len and source[i] == ' ') i += 1;
+
+                    const line_start = i;
+                    // Find end of line
+                    while (i < source.len and source[i] != '\n') : (i += 1) {}
+                    try doc_lines.append(allocator, source[line_start..i]);
+
+                    // Skip newline
+                    if (i < source.len) i += 1;
+
+                    // Skip whitespace on next line
+                    while (i < source.len and (source[i] == ' ' or source[i] == '\t')) : (i += 1) {}
+                } else {
+                    break;
+                }
+            }
+
+            // Now look for a field name after the doc comment
+            // Skip whitespace
+            while (i < source.len and (source[i] == ' ' or source[i] == '\t' or source[i] == '\n')) : (i += 1) {}
+
+            // Extract field name (identifier before ':')
+            const field_name_start = i;
+            while (i < source.len and (std.ascii.isAlphanumeric(source[i]) or source[i] == '_')) : (i += 1) {}
+            const field_name = source[field_name_start..i];
+
+            // Check if there's a ':' after the field name
+            while (i < source.len and (source[i] == ' ' or source[i] == '\t')) : (i += 1) {}
+            if (i < source.len and source[i] == ':' and field_name.len > 0) {
+                // This is a field! Check if we have it in our map
+                if (field_map.get(field_name)) |field_value| {
+                    // Join doc lines
+                    var doc_text = std.ArrayListUnmanaged(u8){};
+                    defer doc_text.deinit(allocator);
+
+                    for (doc_lines.items, 0..) |line, idx| {
+                        try doc_text.appendSlice(allocator, line);
+                        if (idx < doc_lines.items.len - 1) {
+                            try doc_text.append(allocator, '\n');
+                        }
+                    }
+
+                    const signature = try buildSignature(allocator, field_name, field_value);
+                    try items.append(allocator, .{
+                        .name = try allocator.dupe(u8, field_name),
+                        .signature = signature,
+                        .doc = try doc_text.toOwnedSlice(allocator),
+                        .kind = .field,
+                    });
+                }
+            }
+        } else {
+            i += 1;
+        }
     }
 }
 
