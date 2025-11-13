@@ -125,5 +125,22 @@ describe "Array" [
       mustEq true (Array.none (x -> x > 0) [])
   ]
 
-  // TODO: Add groupBy tests when computed field names are supported
+  describe "groupBy" [
+    it "groups elements by computed key" do
+      arr = [
+        {category: "fruit", name: "apple"},
+        {category: "fruit", name: "banana"},
+        {category: "vegetable", name: "carrot"}
+      ]
+      result = Array.groupBy (x -> x.category) arr
+      mustEq (2, 1) ((Array.length (result.fruit)), (Array.length (result.vegetable)))
+
+    it "handles empty array" do
+      result = Array.groupBy (x -> x) []
+      mustEq {} result
+
+    it "groups integers by comparison" do
+      result = Array.groupBy (x -> if x > 3 then "big" else "small") [1, 2, 3, 4, 5, 6]
+      mustEq ([1, 2, 3], [4, 5, 6]) (result.small, result.big)
+  ]
 ]

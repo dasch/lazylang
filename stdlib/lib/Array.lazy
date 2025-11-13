@@ -2,9 +2,8 @@
 ///
 /// This module includes functions for common array operations such as:
 /// - **Querying**: [length], [get], [isEmpty]
-/// - **Transforming**: [map], [flatMap], [filter], [skip], [reverse], [slice], [sort], [sortBy], [uniq]
+/// - **Transforming**: [map], [flatMap], [filter], [skip], [reverse], [slice], [sort], [sortBy], [uniq], [groupBy]
 /// - **Reducing**: [fold], [all], [any], [none]
-/// - **Note**: groupBy is not yet implemented (requires computed field names)
 ///
 /// ## Examples
 ///
@@ -256,7 +255,27 @@
   /// ```
   none: pred -> arr -> __array_fold ((acc -> x -> acc && !(pred x)), true, arr)
 
-  // TODO: groupBy is not yet implemented because Lazylang doesn't support
-  // computed field names in object literals { [expr]: value }
-  // groupBy: keyFn -> arr -> ...
+  /// Groups array elements by a computed key function.
+  /// Returns an object where keys are the unique results of the key function,
+  /// and values are arrays of elements that produced that key.
+  ///
+  /// **Parameters:**
+  /// - `keyFn`: Function that computes the grouping key for each element
+  /// - `arr`: The array to group
+  ///
+  /// **Example:**
+  /// ```
+  /// Array.groupBy .type [
+  ///   {type: "fruit", name: "apple"},
+  ///   {type: "fruit", name: "banana"},
+  ///   {type: "vegetable", name: "carrot"}
+  /// ]
+  /// // Returns {
+  /// //   fruit: [{type: "fruit", name: "apple"}, {type: "fruit", name: "banana"}],
+  /// //   vegetable: [{type: "vegetable", name: "carrot"}]
+  /// // }
+  /// ```
+  groupBy: keyFn -> arr ->
+    keys = __array_uniq [keyFn x for x in arr]
+    { [k]: [x for x in arr when keyFn x == k] for k in keys }
 }
