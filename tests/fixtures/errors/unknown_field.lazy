@@ -1,8 +1,8 @@
 // error: Unknown field
-//   --> tests/fixtures/errors/unknown_field.lazy:13:10
+//   --> tests/fixtures/errors/unknown_field.lazy:13:14
 //    |
 // 13 | result = obj.unknownField
-//    |          ^--
+//    |              ^-----------
 //
 // Field `unknownField` is not defined on this object. Available fields are: `name`, `age`
 //

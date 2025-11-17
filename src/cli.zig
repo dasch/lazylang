@@ -448,9 +448,18 @@ fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const 
             if (err_ctx) |ctx| {
                 switch (ctx.last_error_data) {
                     .type_mismatch => |data| {
-                        const message = if (data.operation) |op|
-                            try std.fmt.allocPrint(arena_allocator, "Expected `{s}` for {s}, but found `{s}`.", .{ data.expected, op, data.found })
-                        else
+                        const message = if (data.operation) |op| blk2: {
+                            // Special formatting for function call pattern mismatches
+                            if (std.mem.startsWith(u8, op, "calling function `")) {
+                                // Extract function name from "calling function `f`"
+                                const func_name_start = "calling function `".len;
+                                const func_name_end = std.mem.indexOf(u8, op[func_name_start..], "`") orelse break :blk2 try std.fmt.allocPrint(arena_allocator, "Expected `{s}` for {s}, but found `{s}`.", .{ data.expected, op, data.found });
+                                const func_name = op[func_name_start .. func_name_start + func_name_end];
+                                break :blk2 try std.fmt.allocPrint(arena_allocator, "Function `{s}` expects {s}, but is being passed {s}.", .{ func_name, data.expected, data.found });
+                            } else {
+                                break :blk2 try std.fmt.allocPrint(arena_allocator, "Expected `{s}` for {s}, but found `{s}`.", .{ data.expected, op, data.found });
+                            }
+                        } else
                             try std.fmt.allocPrint(arena_allocator, "Expected `{s}`, but found `{s}`.", .{ data.expected, data.found });
 
                         break :blk error_reporter.ErrorInfo{

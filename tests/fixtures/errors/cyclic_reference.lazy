@@ -1,8 +1,8 @@
 // error: Cyclic reference
-//   --> tests/fixtures/errors/cyclic_reference.lazy:12:7
+//   --> tests/fixtures/errors/cyclic_reference.lazy:11:9
 //    |
-// 12 | obj = { x: obj.x + 1 }
-//    |       ^--
+// 11 | obj = { x: obj.x + 1 }
+//    |         ^-----------
 //
 // A cyclic reference was detected during evaluation. This usually means a value depends on itself in an invalid way.
 //

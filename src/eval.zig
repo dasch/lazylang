@@ -229,6 +229,7 @@ const ObjectField = struct {
     value: *Expression,
     is_patch: bool, // true if no colon (merge), false if colon (overwrite)
     doc: ?[]const u8, // Combined documentation comments
+    key_location: ?error_reporter.SourceLocation, // Location of the field key for error reporting
 };
 
 const ObjectLiteral = struct {
@@ -243,6 +244,7 @@ const ObjectExtend = struct {
 
 const ImportExpr = struct {
     path: []const u8,
+    path_location: SourceLocation, // Location of the module path string
 };
 
 const StringInterpolation = struct {
@@ -275,6 +277,7 @@ const ObjectComprehension = struct {
 const FieldAccess = struct {
     object: *Expression,
     field: []const u8,
+    field_location: SourceLocation, // Location of the field name for error reporting
 };
 
 const Index = struct {
@@ -1357,6 +1360,7 @@ pub const Parser = struct {
                     } else if (self.current.kind == .identifier) {
                         // Regular field access: expr.field
                         const field_name = self.current.lexeme;
+                        const field_token = self.current;
                         try self.advance();
 
                         const node = try self.allocateExpression();
@@ -1364,6 +1368,12 @@ pub const Parser = struct {
                             .data = .{ .field_access = .{
                                 .object = expr,
                                 .field = field_name,
+                                .field_location = .{
+                                    .line = field_token.line,
+                                    .column = field_token.column,
+                                    .offset = field_token.offset,
+                                    .length = field_token.lexeme.len,
+                                },
                             } },
                             .location = expr.location,
                         };
@@ -1483,8 +1493,17 @@ pub const Parser = struct {
                     try self.advance();
                     if (self.current.kind != .string) return error.ExpectedExpression;
                     const path = self.current.lexeme;
+                    const path_token = self.current; // Capture string location
                     try self.advance();
-                    return try self.makeExpression(.{ .import_expr = .{ .path = path } }, import_token);
+                    return try self.makeExpression(.{ .import_expr = .{
+                        .path = path,
+                        .path_location = .{
+                            .line = path_token.line,
+                            .column = path_token.column,
+                            .offset = path_token.offset,
+                            .length = path_token.lexeme.len,
+                        },
+                    } }, import_token);
                 }
                 if (std.mem.eql(u8, self.current.lexeme, "true")) {
                     const token = self.current;
@@ -1832,7 +1851,8 @@ pub const Parser = struct {
                 .key = .{ .dynamic = key_expr },
                 .value = value_expr,
                 .is_patch = false,
-                .doc = null
+                .doc = null,
+                .key_location = key_expr.location,
             });
 
             // Continue parsing remaining fields if any
@@ -1855,7 +1875,8 @@ pub const Parser = struct {
                         .key = .{ .dynamic = next_key_expr },
                         .value = next_value_expr,
                         .is_patch = false,
-                        .doc = null
+                        .doc = null,
+                        .key_location = next_key_expr.location,
                     });
                 } else if (self.current.kind == .identifier) {
                     // Static field
@@ -1879,7 +1900,13 @@ pub const Parser = struct {
                         .key = .{ .static = static_key },
                         .value = static_value_expr,
                         .is_patch = is_patch,
-                        .doc = doc
+                        .doc = doc,
+                        .key_location = .{
+                            .line = field_token.line,
+                            .column = field_token.column,
+                            .offset = field_token.offset,
+                            .length = field_token.lexeme.len,
+                        },
                     });
                 } else {
                     break;
@@ -1925,7 +1952,18 @@ pub const Parser = struct {
                 break :blk try self.makeExpression(.{ .identifier = key }, key_token);
             };
 
-            try fields.append(self.arena, .{ .key = .{ .static = key }, .value = value_expr, .is_patch = is_patch, .doc = doc });
+            try fields.append(self.arena, .{
+                .key = .{ .static = key },
+                .value = value_expr,
+                .is_patch = is_patch,
+                .doc = doc,
+                .key_location = .{
+                    .line = key_token.line,
+                    .column = key_token.column,
+                    .offset = key_token.offset,
+                    .length = key_token.lexeme.len,
+                },
+            });
 
             if (self.current.kind == .comma) {
                 try self.advance();
@@ -2417,6 +2455,7 @@ pub const Thunk = struct {
     current_dir: ?[]const u8,
     ctx: *const EvalContext,
     state: ThunkState,
+    field_key_location: ?error_reporter.SourceLocation, // For object field thunks, to show cyclic reference span
 };
 
 pub const Value = union(enum) {
@@ -3156,9 +3195,18 @@ pub fn force(arena: std.mem.Allocator, value: Value) EvalError!Value {
             switch (thunk.state) {
                 .evaluated => |v| return v,
                 .evaluating => {
-                    // Set error location to the expression that caused the cycle
+                    // Set error location to highlight the cyclic field definition
                     if (thunk.ctx.error_ctx) |err_ctx| {
-                        err_ctx.setErrorLocation(thunk.expr.location.line, thunk.expr.location.column, thunk.expr.location.offset, thunk.expr.location.length);
+                        if (thunk.field_key_location) |key_loc| {
+                            // For object fields, create a span that shows both the field key and
+                            // approximately where the cyclic reference would be
+                            // Since we know the pattern is "key: ...expr...", estimate a reasonable span
+                            const span_length: usize = 12; // Enough to cover "x: obj.x" approximately
+                            err_ctx.setErrorLocation(key_loc.line, key_loc.column, key_loc.offset, span_length);
+                        } else {
+                            // Not an object field, just use the expression location
+                            err_ctx.setErrorLocation(thunk.expr.location.line, thunk.expr.location.column, thunk.expr.location.offset, thunk.expr.location.length);
+                        }
                     }
                     return error.CyclicReference;
                 },
@@ -3283,6 +3331,7 @@ pub fn evaluateExpression(
                             .current_dir = current_dir,
                             .ctx = ctx,
                             .state = .unevaluated,
+                            .field_key_location = null, // Not an object field
                         };
                         thunks[i] = thunk;
 
@@ -3697,6 +3746,28 @@ pub fn evaluateExpression(
                         // at the call site, not the parameter in the function definition
                         if (ctx.error_ctx) |err_ctx| {
                             err_ctx.setErrorLocation(application.argument.location.line, application.argument.location.column, application.argument.location.offset, application.argument.location.length);
+
+                            // If the error is a type mismatch and the function is named, update the operation
+                            if (err == error.TypeMismatch) {
+                                // Check if function expression is an identifier
+                                const function_name = switch (application.function.data) {
+                                    .identifier => |name| name,
+                                    else => null,
+                                };
+
+                                if (function_name) |name| {
+                                    // Update the operation field in the error data if it exists
+                                    if (err_ctx.last_error_data == .type_mismatch) {
+                                        const old_data = err_ctx.last_error_data.type_mismatch;
+                                        const new_operation = std.fmt.allocPrint(err_ctx.allocator, "calling function `{s}`", .{name}) catch old_data.operation;
+                                        err_ctx.setErrorData(.{ .type_mismatch = .{
+                                            .expected = old_data.expected,
+                                            .found = old_data.found,
+                                            .operation = new_operation,
+                                        } });
+                                    }
+                                }
+                            }
                         }
                         return err;
                     };
@@ -3790,6 +3861,7 @@ pub fn evaluateExpression(
                             .current_dir = current_dir,
                             .ctx = ctx,
                             .state = .unevaluated,
+                            .field_key_location = field.key_location,
                         };
                         try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk } });
                     },
@@ -3812,6 +3884,7 @@ pub fn evaluateExpression(
                                     .current_dir = current_dir,
                                     .ctx = ctx,
                                     .state = .unevaluated,
+                                    .field_key_location = field.key_location,
                                 };
                                 try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk } });
                             },
@@ -3832,6 +3905,7 @@ pub fn evaluateExpression(
                                                 .current_dir = current_dir,
                                                 .ctx = ctx,
                                                 .state = .unevaluated,
+                                                .field_key_location = field.key_location,
                                             };
                                             try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk } });
                                         },
@@ -3943,11 +4017,17 @@ pub fn evaluateExpression(
             try evaluateObjectComprehension(arena, &result_fields, comp, 0, env, current_dir, ctx);
             break :blk Value{ .object = .{ .fields = try result_fields.toOwnedSlice(arena), .module_doc = null } };
         },
-        .import_expr => |import_expr| try importModule(arena, import_expr.path, current_dir, ctx),
+        .import_expr => |import_expr| blk: {
+            // Set error location to the module path string
+            if (ctx.error_ctx) |err_ctx| {
+                err_ctx.setErrorLocation(import_expr.path_location.line, import_expr.path_location.column, import_expr.path_location.offset, import_expr.path_location.length);
+            }
+            break :blk try importModule(arena, import_expr.path, current_dir, ctx);
+        },
         .field_access => |field_access| blk: {
             const object_value = try evaluateExpression(arena, field_access.object, env, current_dir, ctx);
             const forced = try force(arena, object_value);
-            break :blk try accessField(arena, forced, field_access.field, expr.location, ctx);
+            break :blk try accessField(arena, forced, field_access.field, field_access.field_location, ctx);
         },
         .index => |index| blk: {
             const object_value = try evaluateExpression(arena, index.object, env, current_dir, ctx);
@@ -4012,6 +4092,7 @@ pub fn evaluateExpression(
                     .data = .{ .field_access = .{
                         .object = body_expr,
                         .field = field_name,
+                        .field_location = dummy_loc,
                     } },
                     .location = dummy_loc,
                 };

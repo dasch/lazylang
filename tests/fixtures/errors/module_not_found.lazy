@@ -1,4 +1,8 @@
 // error: Module not found
+//   --> tests/fixtures/errors/module_not_found.lazy:11:22
+//    |
+// 11 | NonExistent = import 'NonExistentModule'
+//    |                      ^----------------
 //
 // Could not find module `NonExistentModule`.
 //

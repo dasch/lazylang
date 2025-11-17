@@ -184,7 +184,19 @@ pub const ErrorContext = struct {
             .module_not_found => |old_data| {
                 self.allocator.free(old_data.module_name);
             },
-            .type_mismatch, .none => {},
+            .type_mismatch => |old_data| {
+                // The expected and found strings are usually from formatPatternValue/formatValueShort
+                // which use page_allocator, so we don't free them here (they're leaked but acceptable)
+                // However, the operation string might be allocated with err_ctx.allocator if it's
+                // a custom operation like "calling function `f`"
+                if (old_data.operation) |op| {
+                    // Only free if it starts with "calling function" (our custom allocations)
+                    if (std.mem.startsWith(u8, op, "calling function `")) {
+                        self.allocator.free(op);
+                    }
+                }
+            },
+            .none => {},
         }
     }
 
