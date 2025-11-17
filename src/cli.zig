@@ -548,7 +548,7 @@ fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const 
         },
         error.CyclicReference => error_reporter.ErrorInfo{
             .title = "Cyclic reference",
-            .location = null,
+            .location = location,
             .message = "A cyclic reference was detected during evaluation. This usually means a value depends on itself in an invalid way.",
             .suggestion = "Check for circular dependencies in your definitions.",
         },

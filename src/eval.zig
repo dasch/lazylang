@@ -3149,7 +3149,13 @@ pub fn force(arena: std.mem.Allocator, value: Value) EvalError!Value {
         .thunk => |thunk| {
             switch (thunk.state) {
                 .evaluated => |v| return v,
-                .evaluating => return error.CyclicReference,
+                .evaluating => {
+                    // Set error location to the expression that caused the cycle
+                    if (thunk.ctx.error_ctx) |err_ctx| {
+                        err_ctx.setErrorLocation(thunk.expr.location.line, thunk.expr.location.column, thunk.expr.location.offset, thunk.expr.location.length);
+                    }
+                    return error.CyclicReference;
+                },
                 .unevaluated => {
                     thunk.state = .evaluating;
                     const result = try evaluateExpression(arena, thunk.expr, thunk.env, thunk.current_dir, thunk.ctx);
@@ -3386,7 +3392,8 @@ pub fn evaluateExpression(
                             .divide => blk3: {
                                 if (right_float == 0.0) {
                                     if (ctx.error_ctx) |err_ctx| {
-                                        err_ctx.setErrorLocation(expr.location.line, expr.location.column, expr.location.offset, expr.location.length);
+                                        // Point to the divisor (right operand)
+                                        err_ctx.setErrorLocation(binary.right.location.line, binary.right.location.column, binary.right.location.offset, binary.right.location.length);
                                     }
                                     return error.DivisionByZero;
                                 }
@@ -3445,7 +3452,8 @@ pub fn evaluateExpression(
                             .divide => blk4: {
                                 if (right_int == 0) {
                                     if (ctx.error_ctx) |err_ctx| {
-                                        err_ctx.setErrorLocation(expr.location.line, expr.location.column, expr.location.offset, expr.location.length);
+                                        // Point to the divisor (right operand)
+                                        err_ctx.setErrorLocation(binary.right.location.line, binary.right.location.column, binary.right.location.offset, binary.right.location.length);
                                     }
                                     return error.DivisionByZero;
                                 }

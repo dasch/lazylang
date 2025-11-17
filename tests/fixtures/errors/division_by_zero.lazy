@@ -1,8 +1,8 @@
 // error: Division by zero
-//   --> tests/fixtures/errors/division_by_zero.lazy:11:10
+//   --> tests/fixtures/errors/division_by_zero.lazy:11:15
 //    |
 // 11 | result = 10 / 0
-//    |          ^^
+//    |               ^
 //
 // Cannot divide by zero.
 //
