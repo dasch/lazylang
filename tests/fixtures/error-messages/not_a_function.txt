@@ -1,0 +1,5 @@
+error: Not a function
+
+Attempted to call a value that is not a function.
+
+help: Only functions can be called with arguments. Make sure this value is a function.

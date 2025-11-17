@@ -1,0 +1,7 @@
+outer = 10
+f = x -> (
+  inner = x + 2;
+  result = inner + unknownNested;
+  result
+)
+f 5

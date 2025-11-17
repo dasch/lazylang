@@ -1,0 +1,2 @@
+NonExistent = import 'NonExistentModule'
+NonExistent

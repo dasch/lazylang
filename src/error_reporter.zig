@@ -1,5 +1,16 @@
 const std = @import("std");
 
+/// Check if colors should be used in error output
+/// Respects NO_COLOR environment variable (https://no-color.org/)
+pub fn shouldUseColors() bool {
+    // Check NO_COLOR environment variable
+    if (std.process.hasEnvVarConstant("NO_COLOR")) {
+        return false;
+    }
+    // Default to colors enabled
+    return true;
+}
+
 /// Source location information for error reporting
 pub const SourceLocation = struct {
     line: usize, // 1-indexed
@@ -17,17 +28,25 @@ pub const ErrorInfo = struct {
 };
 
 /// Report an error with full context to any writer
-pub fn reportError(writer: anytype, source: []const u8, filename: []const u8, info: ErrorInfo) !void {
+pub fn reportError(writer: anytype, source: []const u8, filename: []const u8, info: ErrorInfo, use_colors: bool) !void {
     const w = writer;
 
-    // Print error title in red
-    try w.writeAll("\x1b[1;31merror:\x1b[0m \x1b[1m");
+    // Print error title
+    if (use_colors) {
+        try w.writeAll("\x1b[1;31merror:\x1b[0m \x1b[1m");
+    } else {
+        try w.writeAll("error: ");
+    }
     try w.writeAll(info.title);
-    try w.writeAll("\x1b[0m\n");
+    if (use_colors) {
+        try w.writeAll("\x1b[0m\n");
+    } else {
+        try w.writeAll("\n");
+    }
 
     // If we have a location, show the source context
     if (info.location) |loc| {
-        try showSourceContext(w, source, filename, loc);
+        try showSourceContext(w, source, filename, loc, use_colors);
     }
 
     // Print the error message
@@ -37,14 +56,19 @@ pub fn reportError(writer: anytype, source: []const u8, filename: []const u8, in
 
     // Print suggestion if available
     if (info.suggestion) |suggestion| {
-        try w.writeAll("\n\x1b[1;36mhelp:\x1b[0m ");
+        try w.writeAll("\n");
+        if (use_colors) {
+            try w.writeAll("\x1b[1;36mhelp:\x1b[0m ");
+        } else {
+            try w.writeAll("help: ");
+        }
         try w.writeAll(suggestion);
         try w.writeAll("\n");
     }
 }
 
 /// Show source code context with line numbers and error marker
-fn showSourceContext(writer: anytype, source: []const u8, filename: []const u8, loc: SourceLocation) !void {
+fn showSourceContext(writer: anytype, source: []const u8, filename: []const u8, loc: SourceLocation, use_colors: bool) !void {
     const w = writer;
 
     // Find the line containing the error
@@ -56,22 +80,27 @@ fn showSourceContext(writer: anytype, source: []const u8, filename: []const u8, 
         const line_num_width = countDigits(loc.line + 1);
 
     // Show location (filename:line:column)
-    try w.writeAll("  \x1b[1;34m-->\x1b[0m ");
+    try w.writeAll("  ");
+    if (use_colors) {
+        try w.writeAll("\x1b[1;34m-->\x1b[0m ");
+    } else {
+        try w.writeAll("--> ");
+    }
     try w.writeAll(filename);
     try w.print(":{d}:{d}\n", .{ loc.line, loc.column });
 
     // Show empty line with gutter
-    try writeGutter(w, line_num_width, null);
+    try writeGutter(w, line_num_width, null, use_colors);
     try w.writeAll("\n");
 
     // Show the error line
-    try writeGutter(w, line_num_width, loc.line);
+    try writeGutter(w, line_num_width, loc.line, use_colors);
     try w.writeAll(" ");
     try w.writeAll(line_content);
     try w.writeAll("\n");
 
     // Show the error marker (caret/underline)
-    try writeGutter(w, line_num_width, null);
+    try writeGutter(w, line_num_width, null, use_colors);
     try w.writeAll(" ");
 
     // Write spaces up to the error column
@@ -81,8 +110,10 @@ fn showSourceContext(writer: anytype, source: []const u8, filename: []const u8, 
         try w.writeAll(" ");
     }
 
-    // Write the caret/underline in red
-    try w.writeAll("\x1b[1;31m");
+    // Write the caret/underline
+    if (use_colors) {
+        try w.writeAll("\x1b[1;31m");
+    }
     if (loc.length <= 1) {
         try w.writeAll("^");
     } else if (loc.length == 2) {
@@ -95,13 +126,20 @@ fn showSourceContext(writer: anytype, source: []const u8, filename: []const u8, 
             try w.writeAll("-");
         }
     }
-    try w.writeAll("\x1b[0m\n");
+    if (use_colors) {
+        try w.writeAll("\x1b[0m");
+    }
+    try w.writeAll("\n");
 }
 
 /// Write the line number gutter
-fn writeGutter(writer: anytype, width: usize, line_num: ?usize) !void {
+fn writeGutter(writer: anytype, width: usize, line_num: ?usize, use_colors: bool) !void {
     if (line_num) |num| {
-        try writer.print("\x1b[1;34m{d:>[1]}\x1b[0m |", .{ num, width });
+        if (use_colors) {
+            try writer.print("\x1b[1;34m{d:>[1]}\x1b[0m |", .{ num, width });
+        } else {
+            try writer.print("{d:>[1]} |", .{ num, width });
+        }
     } else {
         // Empty gutter
         var i: usize = 0;

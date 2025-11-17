@@ -1,0 +1,9 @@
+error: Unexpected token
+  --> tests/fixtures/errors/missing_closing_paren.lazy:4:1
+  |
+4 | y = 10
+  | ^
+
+Found unexpected token `[36my[0m`.
+
+help: Check the syntax at this location.

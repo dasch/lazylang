@@ -320,7 +320,7 @@ fn reportErrorWithContext(allocator: std.mem.Allocator, stderr: anytype, filenam
             .message = crash_message,
             .suggestion = null,
         };
-        try error_reporter.reportError(stderr, source, filename, error_info);
+        try error_reporter.reportError(stderr, source, filename, error_info, error_reporter.shouldUseColors());
         evaluator.clearUserCrashMessage();
         return;
     }
@@ -346,10 +346,15 @@ fn reportErrorWithContext(allocator: std.mem.Allocator, stderr: anytype, filenam
         .suggestion = null,
     };
 
-    try error_reporter.reportError(stderr, source, filename, error_info);
+    try error_reporter.reportError(stderr, source, filename, error_info, error_reporter.shouldUseColors());
 }
 
 fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const u8, source: []const u8, err: anyerror, err_ctx: ?*const error_context.ErrorContext) !void {
+    // Use an arena allocator for all temporary error message strings
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const arena_allocator = arena.allocator();
+
     const location = if (err_ctx) |ctx| ctx.last_error_location else null;
 
     const error_info = switch (err) {
@@ -373,8 +378,27 @@ fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const 
         },
         error.UnexpectedToken => blk: {
             if (err_ctx) |ctx| {
+                switch (ctx.last_error_data) {
+                    .unexpected_token => |data| {
+                        const message = if (ctx.last_error_token_lexeme) |lexeme|
+                            try std.fmt.allocPrint(arena_allocator, "Expected {s} {s}, but found `\x1b[36m{s}\x1b[0m`.", .{ data.expected, data.context, lexeme })
+                        else
+                            try std.fmt.allocPrint(arena_allocator, "Expected {s} {s}.", .{ data.expected, data.context });
+
+                        const suggestion = try std.fmt.allocPrint(arena_allocator, "Add {s} at this location.", .{data.expected});
+
+                        break :blk error_reporter.ErrorInfo{
+                            .title = "Unexpected token",
+                            .location = location,
+                            .message = message,
+                            .suggestion = suggestion,
+                        };
+                    },
+                    else => {},
+                }
+
                 if (ctx.last_error_token_lexeme) |lexeme| {
-                    const message = try std.fmt.allocPrint(allocator, "Found unexpected token `\x1b[36m{s}\x1b[0m`.", .{lexeme});
+                    const message = try std.fmt.allocPrint(arena_allocator, "Found unexpected token `\x1b[36m{s}\x1b[0m`.", .{lexeme});
                     break :blk error_reporter.ErrorInfo{
                         .title = "Unexpected token",
                         .location = location,
@@ -394,11 +418,11 @@ fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const 
             if (err_ctx) |ctx| {
                 switch (ctx.last_error_data) {
                     .unknown_identifier => |data| {
-                        const message = try std.fmt.allocPrint(allocator, "Identifier `\x1b[36m{s}\x1b[0m` is not defined in the current scope.", .{data.name});
+                        const message = try std.fmt.allocPrint(arena_allocator, "Identifier `\x1b[36m{s}\x1b[0m` is not defined in the current scope.", .{data.name});
                         // Try to find similar identifiers
-                        const did_you_mean = try ctx.findSimilarIdentifiers(data.name, allocator);
+                        const did_you_mean = try ctx.findSimilarIdentifiers(data.name, arena_allocator);
                         const suggestion = if (did_you_mean) |dym|
-                            try std.fmt.allocPrint(allocator, "{s} Or define this variable before using it.", .{dym})
+                            try std.fmt.allocPrint(arena_allocator, "{s} Or define this variable before using it.", .{dym})
                         else
                             "Check the spelling or define this variable before using it.";
 
@@ -425,9 +449,9 @@ fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const 
                 switch (ctx.last_error_data) {
                     .type_mismatch => |data| {
                         const message = if (data.operation) |op|
-                            try std.fmt.allocPrint(allocator, "Expected `\x1b[36m{s}\x1b[0m` for {s}, but found `\x1b[36m{s}\x1b[0m`.", .{ data.expected, op, data.found })
+                            try std.fmt.allocPrint(arena_allocator, "Expected `\x1b[36m{s}\x1b[0m` for {s}, but found `\x1b[36m{s}\x1b[0m`.", .{ data.expected, op, data.found })
                         else
-                            try std.fmt.allocPrint(allocator, "Expected `\x1b[36m{s}\x1b[0m`, but found `\x1b[36m{s}\x1b[0m`.", .{ data.expected, data.found });
+                            try std.fmt.allocPrint(arena_allocator, "Expected `\x1b[36m{s}\x1b[0m`, but found `\x1b[36m{s}\x1b[0m`.", .{ data.expected, data.found });
 
                         break :blk error_reporter.ErrorInfo{
                             .title = "Type mismatch",
@@ -477,17 +501,17 @@ fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const 
                     .unknown_field => |data| {
                         // Build message based on available fields
                         const message = if (data.available_fields.len == 0)
-                            try std.fmt.allocPrint(allocator, "Field `\x1b[36m{s}\x1b[0m` is not defined on this object.", .{data.field_name})
+                            try std.fmt.allocPrint(arena_allocator, "Field `{s}` is not defined on this object.", .{data.field_name})
                         else if (data.available_fields.len == 1)
-                            try std.fmt.allocPrint(allocator, "Field `\x1b[36m{s}\x1b[0m` is not defined on this object. The only available field is `\x1b[36m{s}\x1b[0m`.", .{ data.field_name, data.available_fields[0] })
+                            try std.fmt.allocPrint(arena_allocator, "Field `{s}` is not defined on this object. The only available field is `{s}`.", .{ data.field_name, data.available_fields[0] })
                         else if (data.available_fields.len == 2)
-                            try std.fmt.allocPrint(allocator, "Field `\x1b[36m{s}\x1b[0m` is not defined on this object. Available fields are: `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`", .{ data.field_name, data.available_fields[0], data.available_fields[1] })
+                            try std.fmt.allocPrint(arena_allocator, "Field `{s}` is not defined on this object. Available fields are: `{s}`, `{s}`", .{ data.field_name, data.available_fields[0], data.available_fields[1] })
                         else if (data.available_fields.len == 3)
-                            try std.fmt.allocPrint(allocator, "Field `\x1b[36m{s}\x1b[0m` is not defined on this object. Available fields are: `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`", .{ data.field_name, data.available_fields[0], data.available_fields[1], data.available_fields[2] })
+                            try std.fmt.allocPrint(arena_allocator, "Field `{s}` is not defined on this object. Available fields are: `{s}`, `{s}`, `{s}`", .{ data.field_name, data.available_fields[0], data.available_fields[1], data.available_fields[2] })
                         else if (data.available_fields.len == 4)
-                            try std.fmt.allocPrint(allocator, "Field `\x1b[36m{s}\x1b[0m` is not defined on this object. Available fields are: `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`", .{ data.field_name, data.available_fields[0], data.available_fields[1], data.available_fields[2], data.available_fields[3] })
+                            try std.fmt.allocPrint(arena_allocator, "Field `{s}` is not defined on this object. Available fields are: `{s}`, `{s}`, `{s}`, `{s}`", .{ data.field_name, data.available_fields[0], data.available_fields[1], data.available_fields[2], data.available_fields[3] })
                         else
-                            try std.fmt.allocPrint(allocator, "Field `\x1b[36m{s}\x1b[0m` is not defined on this object. Available fields are: `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`", .{ data.field_name, data.available_fields[0], data.available_fields[1], data.available_fields[2], data.available_fields[3], data.available_fields[4] });
+                            try std.fmt.allocPrint(arena_allocator, "Field `{s}` is not defined on this object. Available fields are: `{s}`, `{s}`, `{s}`, `{s}`, `{s}`", .{ data.field_name, data.available_fields[0], data.available_fields[1], data.available_fields[2], data.available_fields[3], data.available_fields[4] });
 
                         break :blk error_reporter.ErrorInfo{
                             .title = "Unknown field",
@@ -536,7 +560,7 @@ fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const 
         },
     };
 
-    try error_reporter.reportError(stderr, source, filename, error_info);
+    try error_reporter.reportError(stderr, source, filename, error_info, error_reporter.shouldUseColors());
 }
 
 fn runSpec(

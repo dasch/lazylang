@@ -337,6 +337,7 @@ pub const Tokenizer = struct {
     line_start: usize, // byte offset of the current line start
     pending_doc_comments: std.ArrayListUnmanaged([]const u8),
     arena: std.mem.Allocator,
+    error_ctx: ?*error_context.ErrorContext,
 
     pub fn init(source: []const u8, arena: std.mem.Allocator) Tokenizer {
         return .{
@@ -349,6 +350,7 @@ pub const Tokenizer = struct {
             .line_start = 0,
             .pending_doc_comments = .{},
             .arena = arena,
+            .error_ctx = null,
         };
     }
 
@@ -409,6 +411,10 @@ pub const Tokenizer = struct {
                 if (self.index < self.source.len and self.source[self.index] == '|') {
                     self.advance();
                     return self.makeToken(.pipe_pipe, start, start_line, start_column);
+                }
+                // Record error location for the unexpected single pipe character
+                if (self.error_ctx) |ctx| {
+                    ctx.setErrorLocation(start_line, start_column, start, 1);
                 }
                 return error.UnexpectedCharacter;
             },
@@ -514,7 +520,13 @@ pub const Tokenizer = struct {
                 self.advance();
                 return self.makeToken(.backslash, start, start_line, start_column);
             },
-            else => return error.UnexpectedCharacter,
+            else => {
+                // Record error location for the unexpected character
+                if (self.error_ctx) |ctx| {
+                    ctx.setErrorLocation(start_line, start_column, start, 1);
+                }
+                return error.UnexpectedCharacter;
+            },
         }
     }
 
@@ -617,6 +629,10 @@ pub const Tokenizer = struct {
                 return token;
             }
             self.advance();
+        }
+        // Record error location for unterminated string
+        if (self.error_ctx) |ctx| {
+            ctx.setErrorLocation(start_line, start_column, start_content - 1, 1);
         }
         return error.UnterminatedString;
     }
@@ -831,21 +847,36 @@ pub const Parser = struct {
     error_ctx: ?*error_context.ErrorContext,
 
     pub fn init(arena: std.mem.Allocator, source: []const u8) ParseError!Parser {
+        return initWithContext(arena, source, null);
+    }
+
+    pub fn initWithContext(arena: std.mem.Allocator, source: []const u8, err_ctx: ?*error_context.ErrorContext) ParseError!Parser {
         var tokenizer = Tokenizer.init(source, arena);
-        const first = try tokenizer.next();
-        const second = try tokenizer.next();
+        tokenizer.error_ctx = err_ctx;
+
+        const first = tokenizer.next() catch |err| {
+            // Error context already set by tokenizer if available
+            return err;
+        };
+
+        const second = tokenizer.next() catch |err| {
+            // Error context already set by tokenizer if available
+            return err;
+        };
+
         return .{
             .arena = arena,
             .tokenizer = tokenizer,
             .current = first,
             .lookahead = second,
             .source = source,
-            .error_ctx = null,
+            .error_ctx = err_ctx,
         };
     }
 
     pub fn setErrorContext(self: *Parser, ctx: *error_context.ErrorContext) void {
         self.error_ctx = ctx;
+        self.tokenizer.error_ctx = ctx;
     }
 
     fn recordError(self: *Parser) void {
@@ -858,6 +889,62 @@ pub const Parser = struct {
             );
             ctx.setErrorToken(self.current.lexeme);
         }
+    }
+
+    fn friendlyTokenName(kind: TokenKind) []const u8 {
+        return switch (kind) {
+            .l_paren => "'('",
+            .r_paren => "')'",
+            .l_bracket => "'['",
+            .r_bracket => "']'",
+            .l_brace => "'{'",
+            .r_brace => "'}'",
+            .comma => "','",
+            .colon => "':'",
+            .semicolon => "';'",
+            .equals => "'='",
+            .arrow => "'->'",
+            .dot => "'.'",
+            .plus => "'+'",
+            .minus => "'-'",
+            .star => "'*'",
+            .ampersand => "'&'",
+            .bang => "'!'",
+            .less => "'<'",
+            .greater => "'>'",
+            .less_equals => "'<='",
+            .greater_equals => "'>='",
+            .equals_equals => "'=='",
+            .bang_equals => "'!='",
+            .ampersand_ampersand => "'&&'",
+            .pipe_pipe => "'||'",
+            .backslash => "'\\'",
+            .dot_dot_dot => "'...'",
+            .identifier => "identifier",
+            .number => "number",
+            .symbol => "symbol",
+            .string => "string",
+            .eof => "end of file",
+        };
+    }
+
+    fn expectToken(self: *Parser, expected: TokenKind, context: []const u8) ParseError!void {
+        if (self.current.kind != expected) {
+            self.recordError();
+            if (self.error_ctx) |ctx| {
+                const expected_name = friendlyTokenName(expected);
+                const owned_expected = ctx.allocator.dupe(u8, expected_name) catch expected_name;
+                const owned_context = ctx.allocator.dupe(u8, context) catch context;
+                ctx.setErrorData(.{
+                    .unexpected_token = .{
+                        .expected = owned_expected,
+                        .context = owned_context,
+                    },
+                });
+            }
+            return error.UnexpectedToken;
+        }
+        try self.advance();
     }
 
     pub fn parse(self: *Parser) ParseError!*Expression {
@@ -891,7 +978,7 @@ pub const Parser = struct {
             const doc = self.tokenizer.consumeDocComments();
             const start_token = self.current; // Capture start for location
             const pattern = try self.parsePattern();
-            try self.expect(.equals);
+            try self.expectToken(.equals, "in let binding");
             const value = try self.parseLambda();
 
             // Check for semicolon or newline separator
@@ -957,7 +1044,7 @@ pub const Parser = struct {
 
                 const doc = self.tokenizer.consumeDocComments();
                 const pattern = try self.parsePattern();
-                try self.expect(.equals);
+                try self.expectToken(.equals, "in where binding");
                 const value = try self.parseBinary(0);
 
                 try bindings.append(self.arena, .{ .pattern = pattern, .value = value, .doc = doc });
@@ -2170,7 +2257,15 @@ pub const Parser = struct {
 
     fn advance(self: *Parser) ParseError!void {
         self.current = self.lookahead;
-        self.lookahead = try self.tokenizer.next();
+        self.lookahead = self.tokenizer.next() catch |err| {
+            // For UnexpectedCharacter and UnterminatedString,
+            // the tokenizer already recorded the error location
+            // For other errors, record error location from current token
+            if (err != error.UnexpectedCharacter and err != error.UnterminatedString) {
+                self.recordError();
+            }
+            return err;
+        };
     }
 
     fn parseStringInterpolation(self: *Parser, string_content: []const u8) ParseError![]StringPart {
@@ -5041,8 +5136,15 @@ fn evalSourceWithFormat(
         .error_ctx = &err_ctx,
     };
 
-    var parser = try Parser.init(arena.allocator(), source);
-    parser.setErrorContext(&err_ctx);
+    var parser = Parser.initWithContext(arena.allocator(), source, &err_ctx) catch |err| {
+        // Error location already set by tokenizer if applicable
+        arena.deinit();
+        return EvalResult{
+            .output = null,
+            .error_ctx = err_ctx,
+            .err = err,
+        };
+    };
     const expression = parser.parse() catch |err| {
         arena.deinit();
         return EvalResult{

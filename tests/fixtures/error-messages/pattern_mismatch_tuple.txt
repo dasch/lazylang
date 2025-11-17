@@ -1,0 +1,9 @@
+error: Type mismatch
+  --> tests/fixtures/errors/pattern_mismatch_tuple.lazy:1:5
+  |
+1 | f = (x, y, z) -> x + y + z
+  |     ^
+
+Expected `[36mtuple with 3 elements[0m` for destructuring, but found `[36mtuple with 2 elements[0m`.
+
+help: Make sure you're using compatible types for this operation.

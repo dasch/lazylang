@@ -1,0 +1,9 @@
+error: Unexpected token
+  --> tests/fixtures/errors/unexpected_token.lazy:2:3
+  |
+2 | y = 10
+  |   ^
+
+Found unexpected token `[36m=[0m`.
+
+help: Check the syntax at this location.

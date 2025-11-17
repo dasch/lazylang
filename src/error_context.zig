@@ -15,6 +15,10 @@ pub const ErrorData = union(enum) {
     unknown_identifier: struct {
         name: []const u8,
     },
+    unexpected_token: struct {
+        expected: []const u8,
+        context: []const u8,
+    },
     none: void,
 };
 
@@ -79,6 +83,10 @@ pub const ErrorContext = struct {
             .unknown_identifier => |data| {
                 self.allocator.free(data.name);
             },
+            .unexpected_token => |data| {
+                self.allocator.free(data.expected);
+                self.allocator.free(data.context);
+            },
             .none => {},
         }
     }
@@ -95,16 +103,18 @@ pub const ErrorContext = struct {
     /// Register a source file in the source map (for error reporting)
     /// Makes copies of both filename and source
     pub fn registerSource(self: *ErrorContext, filename: []const u8, source: []const u8) !void {
+        // Check if this filename is already registered
+        if (self.source_map.get(filename)) |_| {
+            // Already registered, skip to avoid duplicate allocations
+            return;
+        }
+
         // Make owned copies
         const owned_filename = try self.allocator.dupe(u8, filename);
         errdefer self.allocator.free(owned_filename);
         const owned_source = try self.allocator.dupe(u8, source);
         errdefer self.allocator.free(owned_source);
 
-        // Store in map (will free old values if key exists)
-        if (self.source_map.get(owned_filename)) |old_source| {
-            self.allocator.free(old_source);
-        }
         try self.source_map.put(owned_filename, owned_source);
     }
 

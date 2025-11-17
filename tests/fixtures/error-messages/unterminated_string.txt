@@ -1,0 +1,9 @@
+error: Unterminated string
+  --> tests/fixtures/errors/unterminated_string.lazy:1:1
+  |
+1 | "Hello, world
+  | ^
+
+String literal is not closed. Add a closing quote.
+
+help: Add a matching quote character to close the string.
