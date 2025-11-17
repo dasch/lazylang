@@ -3615,7 +3615,13 @@ pub fn evaluateExpression(
                             const args = [_]Value{left_value};
                             break :blk2 try native_fn(arena, &args);
                         },
-                        else => return error.ExpectedFunction,
+                        else => {
+                            // Point to the right operand (function) that isn't actually a function
+                            if (ctx.error_ctx) |err_ctx| {
+                                err_ctx.setErrorLocation(binary.right.location.line, binary.right.location.column, binary.right.location.offset, binary.right.location.length);
+                            }
+                            return error.ExpectedFunction;
+                        },
                     }
                 },
                 .merge => blk2: {
@@ -3680,7 +3686,14 @@ pub fn evaluateExpression(
 
             switch (function_value) {
                 .function => |function_ptr| {
-                    const bound_env = try matchPattern(arena, function_ptr.param, argument_value, function_ptr.env, ctx);
+                    const bound_env = matchPattern(arena, function_ptr.param, argument_value, function_ptr.env, ctx) catch |err| {
+                        // If pattern matching fails, update error location to point to the argument
+                        // at the call site, not the parameter in the function definition
+                        if (ctx.error_ctx) |err_ctx| {
+                            err_ctx.setErrorLocation(application.argument.location.line, application.argument.location.column, application.argument.location.offset, application.argument.location.length);
+                        }
+                        return err;
+                    };
                     break :blk try evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx);
                 },
                 .native_fn => |native_fn| {
@@ -3688,7 +3701,13 @@ pub fn evaluateExpression(
                     const args = [_]Value{argument_value};
                     break :blk try native_fn(arena, &args);
                 },
-                else => return error.ExpectedFunction,
+                else => {
+                    // Point to the function expression that isn't actually a function
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.setErrorLocation(application.function.location.line, application.function.location.column, application.function.location.offset, application.function.location.length);
+                    }
+                    return error.ExpectedFunction;
+                },
             }
         },
         .array => |array| blk: {

@@ -1,8 +1,8 @@
 // error: Type mismatch
-//   --> tests/fixtures/errors/pattern_mismatch_tuple.lazy:11:5
+//   --> tests/fixtures/errors/pattern_mismatch_tuple.lazy:12:12
 //    |
-// 11 | f = (x, y, z) -> x + y + z
-//    |     ^
+// 12 | result = f (1, 2)
+//    |            ^
 //
 // Expected `tuple with 3 elements` for destructuring, but found `tuple with 2 elements`.
 //

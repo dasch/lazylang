@@ -1,4 +1,8 @@
 // error: Not a function
+//   --> tests/fixtures/errors/not_a_function.lazy:12:10
+//    |
+// 12 | result = x 10
+//    |          ^
 //
 // Attempted to call a value that is not a function.
 //
