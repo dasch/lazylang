@@ -3198,10 +3198,16 @@ pub fn force(arena: std.mem.Allocator, value: Value) EvalError!Value {
                     // Set error location to highlight the cyclic field definition
                     if (thunk.ctx.error_ctx) |err_ctx| {
                         if (thunk.field_key_location) |key_loc| {
-                            // For object fields, create a span that shows both the field key and
-                            // approximately where the cyclic reference would be
-                            // Since we know the pattern is "key: ...expr...", estimate a reasonable span
-                            const span_length: usize = 12; // Enough to cover "x: obj.x" approximately
+                            // For object fields, calculate span from field key to end of field value expression
+                            // This will show both the field definition and where the cycle occurs
+                            const expr_end = thunk.expr.location.offset + thunk.expr.location.length;
+                            const calculated_span = if (expr_end > key_loc.offset)
+                                expr_end - key_loc.offset
+                            else
+                                0;
+                            // Use at least 12 characters to ensure we capture meaningful context
+                            // even if expression location tracking is imperfect
+                            const span_length = @max(calculated_span, 12);
                             err_ctx.setErrorLocation(key_loc.line, key_loc.column, key_loc.offset, span_length);
                         } else {
                             // Not an object field, just use the expression location
@@ -3759,12 +3765,16 @@ pub fn evaluateExpression(
                                     // Update the operation field in the error data if it exists
                                     if (err_ctx.last_error_data == .type_mismatch) {
                                         const old_data = err_ctx.last_error_data.type_mismatch;
-                                        const new_operation = std.fmt.allocPrint(err_ctx.allocator, "calling function `{s}`", .{name}) catch old_data.operation;
-                                        err_ctx.setErrorData(.{ .type_mismatch = .{
-                                            .expected = old_data.expected,
-                                            .found = old_data.found,
-                                            .operation = new_operation,
-                                        } });
+                                        // Try to allocate new operation string; if it fails, leave error data as-is
+                                        if (std.fmt.allocPrint(err_ctx.allocator, "calling function `{s}`", .{name})) |new_operation| {
+                                            err_ctx.setErrorData(.{ .type_mismatch = .{
+                                                .expected = old_data.expected,
+                                                .found = old_data.found,
+                                                .operation = new_operation,
+                                            } });
+                                        } else |_| {
+                                            // Allocation failed, keep existing error data
+                                        }
                                     }
                                 }
                             }
