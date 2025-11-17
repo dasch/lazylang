@@ -1,9 +1,0 @@
-error: Unknown identifier
-  --> tests/fixtures/errors/unknown_identifier.lazy:2:5
-  |
-2 | y = unknownVar + x
-  |     ^---------
-
-Identifier `[36munknownVar[0m` is not defined in the current scope.
-
-help: Check the spelling or define this variable before using it.

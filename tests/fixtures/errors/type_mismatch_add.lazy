@@ -1,2 +1,8 @@
+// error: Type mismatch
+//
+// Expected `integer` for addition, but found `string`.
+//
+// help: Make sure you're using compatible types for this operation.
+
 result = 5 + "hello"
 result

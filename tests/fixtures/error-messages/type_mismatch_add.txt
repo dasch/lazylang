@@ -1,5 +1,0 @@
-error: Type mismatch
-
-Expected `[36minteger[0m` for addition, but found `[36mstring[0m`.
-
-help: Make sure you're using compatible types for this operation.

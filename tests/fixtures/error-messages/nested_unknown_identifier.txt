@@ -1,9 +1,0 @@
-error: Unknown identifier
-  --> tests/fixtures/errors/nested_unknown_identifier.lazy:8:20
-  |
-8 |   result = inner + unknownNested;
-  |                    ^------------
-
-Identifier `[36munknownNested[0m` is not defined in the current scope.
-
-help: Check the spelling or define this variable before using it.

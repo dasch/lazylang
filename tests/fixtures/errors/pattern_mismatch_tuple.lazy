@@ -1,3 +1,13 @@
+// error: Type mismatch
+//   --> tests/fixtures/errors/pattern_mismatch_tuple.lazy:11:5
+//    |
+// 11 | f = (x, y, z) -> x + y + z
+//    |     ^
+//
+// Expected `tuple with 3 elements` for destructuring, but found `tuple with 2 elements`.
+//
+// help: Make sure you're using compatible types for this operation.
+
 f = (x, y, z) -> x + y + z
 result = f (1, 2)
 result

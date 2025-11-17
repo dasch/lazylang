@@ -1,3 +1,13 @@
+// error: Unknown identifier
+//   --> tests/fixtures/errors/unknown_identifier.lazy:12:5
+//    |
+// 12 | y = unknownVar + x
+//    |     ^---------
+//
+// Identifier `unknownVar` is not defined in the current scope.
+//
+// help: Check the spelling or define this variable before using it.
+
 x = 10
 y = unknownVar + x
 y

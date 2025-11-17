@@ -381,7 +381,7 @@ fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const 
                 switch (ctx.last_error_data) {
                     .unexpected_token => |data| {
                         const message = if (ctx.last_error_token_lexeme) |lexeme|
-                            try std.fmt.allocPrint(arena_allocator, "Expected {s} {s}, but found `\x1b[36m{s}\x1b[0m`.", .{ data.expected, data.context, lexeme })
+                            try std.fmt.allocPrint(arena_allocator, "Expected {s} {s}, but found `{s}`.", .{ data.expected, data.context, lexeme })
                         else
                             try std.fmt.allocPrint(arena_allocator, "Expected {s} {s}.", .{ data.expected, data.context });
 
@@ -398,7 +398,7 @@ fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const 
                 }
 
                 if (ctx.last_error_token_lexeme) |lexeme| {
-                    const message = try std.fmt.allocPrint(arena_allocator, "Found unexpected token `\x1b[36m{s}\x1b[0m`.", .{lexeme});
+                    const message = try std.fmt.allocPrint(arena_allocator, "Found unexpected token `{s}`.", .{lexeme});
                     break :blk error_reporter.ErrorInfo{
                         .title = "Unexpected token",
                         .location = location,
@@ -418,7 +418,7 @@ fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const 
             if (err_ctx) |ctx| {
                 switch (ctx.last_error_data) {
                     .unknown_identifier => |data| {
-                        const message = try std.fmt.allocPrint(arena_allocator, "Identifier `\x1b[36m{s}\x1b[0m` is not defined in the current scope.", .{data.name});
+                        const message = try std.fmt.allocPrint(arena_allocator, "Identifier `{s}` is not defined in the current scope.", .{data.name});
                         // Try to find similar identifiers
                         const did_you_mean = try ctx.findSimilarIdentifiers(data.name, arena_allocator);
                         const suggestion = if (did_you_mean) |dym|
@@ -449,9 +449,9 @@ fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const 
                 switch (ctx.last_error_data) {
                     .type_mismatch => |data| {
                         const message = if (data.operation) |op|
-                            try std.fmt.allocPrint(arena_allocator, "Expected `\x1b[36m{s}\x1b[0m` for {s}, but found `\x1b[36m{s}\x1b[0m`.", .{ data.expected, op, data.found })
+                            try std.fmt.allocPrint(arena_allocator, "Expected `{s}` for {s}, but found `{s}`.", .{ data.expected, op, data.found })
                         else
-                            try std.fmt.allocPrint(arena_allocator, "Expected `\x1b[36m{s}\x1b[0m`, but found `\x1b[36m{s}\x1b[0m`.", .{ data.expected, data.found });
+                            try std.fmt.allocPrint(arena_allocator, "Expected `{s}`, but found `{s}`.", .{ data.expected, data.found });
 
                         break :blk error_reporter.ErrorInfo{
                             .title = "Type mismatch",

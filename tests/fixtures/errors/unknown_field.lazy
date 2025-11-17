@@ -1,3 +1,13 @@
+// error: Unknown field
+//   --> tests/fixtures/errors/unknown_field.lazy:13:10
+//    |
+// 13 | result = obj.unknownField
+//    |          ^--
+//
+// Field `unknownField` is not defined on this object. Available fields are: `name`, `age`
+//
+// help: Check the field name for typos.
+
 obj = { name: "Alice", age: 30 }
 result = obj.unknownField
 result

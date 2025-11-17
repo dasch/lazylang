@@ -1,2 +1,12 @@
+// error: Unexpected token
+//   --> tests/fixtures/errors/missing_closing_paren.lazy:14:1
+//    |
+// 14 | y = 10
+//    | ^
+//
+// Found unexpected token `y`.
+//
+// help: Check the syntax at this location.
+
 x = (5 + 3
 y = 10

@@ -1,9 +1,0 @@
-error: Unexpected character
-  --> tests/fixtures/errors/unexpected_char.lazy:2:7
-  |
-2 | y = x @ 3
-  |       ^
-
-Found an unexpected character in the source code.
-
-help: Remove the invalid character or check for typos.

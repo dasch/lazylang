@@ -29,15 +29,33 @@ fn captureErrorOutput(allocator: std.mem.Allocator, file_path: []const u8) ![]co
     return try stderr_buffer.toOwnedSlice(allocator);
 }
 
-/// Helper to load expected error message from separate file
-fn loadExpectedError(allocator: std.mem.Allocator, fixture_name: []const u8) ![]const u8 {
-    const path = try std.fmt.allocPrint(allocator, "tests/fixtures/error-messages/{s}.txt", .{fixture_name});
-    defer allocator.free(path);
-
-    const file = try std.fs.cwd().openFile(path, .{});
+/// Helper to extract expected error message from comments in fixture file
+fn loadExpectedError(allocator: std.mem.Allocator, file_path: []const u8) ![]const u8 {
+    const file = try std.fs.cwd().openFile(file_path, .{});
     defer file.close();
 
-    return try file.readToEndAlloc(allocator, 1024 * 1024);
+    const content = try file.readToEndAlloc(allocator, 1024 * 1024);
+    defer allocator.free(content);
+
+    var result = std.ArrayList(u8){};
+    errdefer result.deinit(allocator);
+
+    // Parse line by line
+    var lines = std.mem.splitScalar(u8, content, '\n');
+    while (lines.next()) |line| {
+        // Check if line starts with "//"
+        if (std.mem.startsWith(u8, line, "// ")) {
+            // Strip "// " and add to result
+            try result.appendSlice(allocator, line[3..]);
+            try result.append(allocator, '\n');
+        } else if (std.mem.eql(u8, line, "//")) {
+            // Empty comment line - just add newline
+            try result.append(allocator, '\n');
+        }
+        // Skip non-comment lines
+    }
+
+    return result.toOwnedSlice(allocator);
 }
 
 /// Helper to assert exact match between actual and expected output
@@ -66,70 +84,77 @@ fn assertContains(output: []const u8, expected: []const []const u8) !void {
 // ============================================================================
 
 test "exact error: unknown identifier shows precise error with location" {
-    const actual = try captureErrorOutput(testing.allocator, "tests/fixtures/errors/unknown_identifier.lazy");
+    const fixture = "tests/fixtures/errors/unknown_identifier.lazy";
+    const actual = try captureErrorOutput(testing.allocator, fixture);
     defer testing.allocator.free(actual);
 
-    const expected = try loadExpectedError(testing.allocator, "unknown_identifier");
+    const expected = try loadExpectedError(testing.allocator, fixture);
     defer testing.allocator.free(expected);
 
     try assertExactMatch(actual, expected);
 }
 
 test "exact error: unterminated string shows helpful message with quote suggestion" {
-    const actual = try captureErrorOutput(testing.allocator, "tests/fixtures/errors/unterminated_string.lazy");
+    const fixture = "tests/fixtures/errors/unterminated_string.lazy";
+    const actual = try captureErrorOutput(testing.allocator, fixture);
     defer testing.allocator.free(actual);
 
-    const expected = try loadExpectedError(testing.allocator, "unterminated_string");
+    const expected = try loadExpectedError(testing.allocator, fixture);
     defer testing.allocator.free(expected);
 
     try assertExactMatch(actual, expected);
 }
 
 test "exact error: type mismatch shows expected and found types" {
-    const actual = try captureErrorOutput(testing.allocator, "tests/fixtures/errors/type_mismatch_add.lazy");
+    const fixture = "tests/fixtures/errors/type_mismatch_add.lazy";
+    const actual = try captureErrorOutput(testing.allocator, fixture);
     defer testing.allocator.free(actual);
 
-    const expected = try loadExpectedError(testing.allocator, "type_mismatch_add");
+    const expected = try loadExpectedError(testing.allocator, fixture);
     defer testing.allocator.free(expected);
 
     try assertExactMatch(actual, expected);
 }
 
 test "exact error: unknown field lists available fields" {
-    const actual = try captureErrorOutput(testing.allocator, "tests/fixtures/errors/unknown_field.lazy");
+    const fixture = "tests/fixtures/errors/unknown_field.lazy";
+    const actual = try captureErrorOutput(testing.allocator, fixture);
     defer testing.allocator.free(actual);
 
-    const expected = try loadExpectedError(testing.allocator, "unknown_field");
+    const expected = try loadExpectedError(testing.allocator, fixture);
     defer testing.allocator.free(expected);
 
     try assertExactMatch(actual, expected);
 }
 
 test "exact error: unexpected character shows location and character" {
-    const actual = try captureErrorOutput(testing.allocator, "tests/fixtures/errors/unexpected_char.lazy");
+    const fixture = "tests/fixtures/errors/unexpected_char.lazy";
+    const actual = try captureErrorOutput(testing.allocator, fixture);
     defer testing.allocator.free(actual);
 
-    const expected = try loadExpectedError(testing.allocator, "unexpected_char");
+    const expected = try loadExpectedError(testing.allocator, fixture);
     defer testing.allocator.free(expected);
 
     try assertExactMatch(actual, expected);
 }
 
 test "exact error: pattern mismatch shows expected pattern" {
-    const actual = try captureErrorOutput(testing.allocator, "tests/fixtures/errors/pattern_mismatch_tuple.lazy");
+    const fixture = "tests/fixtures/errors/pattern_mismatch_tuple.lazy";
+    const actual = try captureErrorOutput(testing.allocator, fixture);
     defer testing.allocator.free(actual);
 
-    const expected = try loadExpectedError(testing.allocator, "pattern_mismatch_tuple");
+    const expected = try loadExpectedError(testing.allocator, fixture);
     defer testing.allocator.free(expected);
 
     try assertExactMatch(actual, expected);
 }
 
 test "exact error: nested error shows inner location" {
-    const actual = try captureErrorOutput(testing.allocator, "tests/fixtures/errors/nested_unknown_identifier.lazy");
+    const fixture = "tests/fixtures/errors/nested_unknown_identifier.lazy";
+    const actual = try captureErrorOutput(testing.allocator, fixture);
     defer testing.allocator.free(actual);
 
-    const expected = try loadExpectedError(testing.allocator, "nested_unknown_identifier");
+    const expected = try loadExpectedError(testing.allocator, fixture);
     defer testing.allocator.free(expected);
 
     try assertExactMatch(actual, expected);

@@ -1,9 +1,0 @@
-error: Unexpected character
-  --> tests/fixtures/errors/division_by_zero.lazy:1:13
-  |
-1 | result = 10 / 0
-  |             ^
-
-Found an unexpected character in the source code.
-
-help: Remove the invalid character or check for typos.

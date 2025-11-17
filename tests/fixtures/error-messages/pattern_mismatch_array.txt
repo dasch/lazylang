@@ -1,9 +1,0 @@
-error: Type mismatch
-  --> tests/fixtures/errors/pattern_mismatch_array.lazy:1:1
-  |
-1 | [x, y, z] = [1, 2]
-  | ^
-
-Expected `[36marray with exactly 3 elements[0m` for destructuring, but found `[36marray with 2 elements[0m`.
-
-help: Make sure you're using compatible types for this operation.

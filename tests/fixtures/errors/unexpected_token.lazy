@@ -1,2 +1,12 @@
+// error: Unexpected token
+//   --> tests/fixtures/errors/unexpected_token.lazy:12:3
+//    |
+// 12 | y = 10
+//    |   ^
+//
+// Found unexpected token `=`.
+//
+// help: Check the syntax at this location.
+
 x = 5 +
 y = 10

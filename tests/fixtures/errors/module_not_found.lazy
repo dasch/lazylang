@@ -1,2 +1,8 @@
+// error: Module not found
+//
+// Could not find the imported module file.
+//
+// help: Check that the module path is correct and the file exists. Module paths are searched in LAZYLANG_PATH and stdlib/lib.
+
 NonExistent = import 'NonExistentModule'
 NonExistent
