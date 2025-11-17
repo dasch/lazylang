@@ -2626,6 +2626,12 @@ fn openImportFile(ctx: *const EvalContext, import_path: []const u8, current_dir:
         ctx.allocator.free(candidate);
     }
 
+    // Set error context with module name
+    if (ctx.error_ctx) |err_ctx| {
+        const module_name_copy = try err_ctx.allocator.dupe(u8, import_path);
+        err_ctx.setErrorData(.{ .module_not_found = .{ .module_name = module_name_copy } });
+    }
+
     return error.ModuleNotFound;
 }
 

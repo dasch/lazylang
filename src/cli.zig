@@ -477,11 +477,28 @@ fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const 
             .message = "Attempted to call a value that is not a function.",
             .suggestion = "Only functions can be called with arguments. Make sure this value is a function.",
         },
-        error.ModuleNotFound => error_reporter.ErrorInfo{
-            .title = "Module not found",
-            .location = location,
-            .message = "Could not find the imported module file.",
-            .suggestion = "Check that the module path is correct and the file exists. Module paths are searched in LAZYLANG_PATH and stdlib/lib.",
+        error.ModuleNotFound => blk: {
+            if (err_ctx) |ctx| {
+                switch (ctx.last_error_data) {
+                    .module_not_found => |data| {
+                        const message = try std.fmt.allocPrint(arena_allocator, "Could not find module `{s}`.", .{data.module_name});
+                        break :blk error_reporter.ErrorInfo{
+                            .title = "Module not found",
+                            .location = location,
+                            .message = message,
+                            .suggestion = "Check that the module path is correct and the file exists. Module paths are searched in LAZYLANG_PATH and stdlib/lib.",
+                        };
+                    },
+                    else => {},
+                }
+            }
+
+            break :blk error_reporter.ErrorInfo{
+                .title = "Module not found",
+                .location = location,
+                .message = "Could not find the imported module file.",
+                .suggestion = "Check that the module path is correct and the file exists. Module paths are searched in LAZYLANG_PATH and stdlib/lib.",
+            };
         },
         error.WrongNumberOfArguments => error_reporter.ErrorInfo{
             .title = "Wrong number of arguments",

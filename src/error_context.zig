@@ -19,6 +19,9 @@ pub const ErrorData = union(enum) {
         expected: []const u8,
         context: []const u8,
     },
+    module_not_found: struct {
+        module_name: []const u8,
+    },
     none: void,
 };
 
@@ -69,26 +72,7 @@ pub const ErrorContext = struct {
         }
 
         // Free ErrorData memory
-        switch (self.last_error_data) {
-            .unknown_field => |data| {
-                self.allocator.free(data.field_name);
-                for (data.available_fields) |field| {
-                    self.allocator.free(field);
-                }
-                self.allocator.free(data.available_fields);
-            },
-            .type_mismatch => {
-                // Type mismatch strings are static/const, no need to free
-            },
-            .unknown_identifier => |data| {
-                self.allocator.free(data.name);
-            },
-            .unexpected_token => |data| {
-                self.allocator.free(data.expected);
-                self.allocator.free(data.context);
-            },
-            .none => {},
-        }
+        self.freeErrorData();
     }
 
     pub fn setSource(self: *ErrorContext, source: []const u8) void {
@@ -176,7 +160,32 @@ pub const ErrorContext = struct {
     }
 
     pub fn setErrorData(self: *ErrorContext, data: ErrorData) void {
+        // Free old error data before setting new data
+        self.freeErrorData();
         self.last_error_data = data;
+    }
+
+    fn freeErrorData(self: *ErrorContext) void {
+        switch (self.last_error_data) {
+            .unknown_field => |old_data| {
+                self.allocator.free(old_data.field_name);
+                for (old_data.available_fields) |field| {
+                    self.allocator.free(field);
+                }
+                self.allocator.free(old_data.available_fields);
+            },
+            .unknown_identifier => |old_data| {
+                self.allocator.free(old_data.name);
+            },
+            .unexpected_token => |old_data| {
+                self.allocator.free(old_data.expected);
+                self.allocator.free(old_data.context);
+            },
+            .module_not_found => |old_data| {
+                self.allocator.free(old_data.module_name);
+            },
+            .type_mismatch, .none => {},
+        }
     }
 
     pub fn registerIdentifier(self: *ErrorContext, name: []const u8) !void {
