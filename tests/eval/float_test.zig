@@ -29,6 +29,11 @@ test "float: multiplication" {
     try expectEvaluates("2.5 * 4.0", "10");
 }
 
+test "float: division" {
+    try expectEvaluates("10.0 / 2.0", "5");
+    try expectEvaluates("7.5 / 2.5", "3");
+}
+
 test "float: mixed integer and float addition" {
     try expectEvaluates("5 + 3.14", "8.14");
 }
@@ -39,6 +44,11 @@ test "float: mixed integer and float subtraction" {
 
 test "float: mixed integer and float multiplication" {
     try expectEvaluates("3 * 2.5", "7.5");
+}
+
+test "float: mixed integer and float division" {
+    try expectEvaluates("10 / 2.5", "4");
+    try expectEvaluates("7.5 / 3", "2.5");
 }
 
 // Comparison operations

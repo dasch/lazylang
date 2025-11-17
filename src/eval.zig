@@ -39,6 +39,7 @@ pub const TokenKind = enum {
     plus,
     minus,
     star,
+    slash,
     ampersand,
     ampersand_ampersand,
     pipe_pipe,
@@ -84,6 +85,7 @@ const BinaryOp = enum {
     add,
     subtract,
     multiply,
+    divide,
     logical_and,
     logical_or,
     pipeline,
@@ -389,6 +391,10 @@ pub const Tokenizer = struct {
             '*' => {
                 self.advance();
                 return self.makeToken(.star, start, start_line, start_column);
+            },
+            '/' => {
+                self.advance();
+                return self.makeToken(.slash, start, start_line, start_column);
             },
             '&' => {
                 self.advance();
@@ -1113,6 +1119,7 @@ pub const Parser = struct {
                         .plus => .add,
                         .minus => .subtract,
                         .star => .multiply,
+                        .slash => .divide,
                         .ampersand => .merge,
                         .ampersand_ampersand => .logical_and,
                         .pipe_pipe => .logical_or,
@@ -1910,11 +1917,12 @@ pub const Parser = struct {
             return try self.makeExpression(.{ .tuple = .{ .elements = &[_]*Expression{} } }, paren_token);
         }
 
-        // Check for operator function: (+), (-), (*), etc.
+        // Check for operator function: (+), (-), (*), (/), etc.
         const op: ?BinaryOp = switch (self.current.kind) {
             .plus => .add,
             .minus => .subtract,
             .star => .multiply,
+            .slash => .divide,
             .ampersand => .merge,
             .ampersand_ampersand => .logical_and,
             .pipe_pipe => .logical_or,
@@ -2282,7 +2290,7 @@ fn getPrecedence(kind: TokenKind) ?u32 {
         .equals_equals, .bang_equals, .less, .greater, .less_equals, .greater_equals => 5,
         .ampersand => 6, // Object merge operator
         .plus, .minus => 7,
-        .star => 8,
+        .star, .slash => 8,
         else => null,
     };
 }
@@ -3226,7 +3234,7 @@ pub fn evaluateExpression(
             const right_value = try evaluateExpression(arena, binary.right, env, current_dir, ctx);
 
             const result = switch (binary.op) {
-                .add, .subtract, .multiply => blk2: {
+                .add, .subtract, .multiply, .divide => blk2: {
                     // Check if either operand is a float
                     const is_float_op = (left_value == .float or right_value == .float);
 
@@ -3241,6 +3249,7 @@ pub fn evaluateExpression(
                                         .add => "addition",
                                         .subtract => "subtraction",
                                         .multiply => "multiplication",
+                                        .divide => "division",
                                         else => unreachable,
                                     };
                                     err_ctx.setErrorData(.{ .type_mismatch = .{
@@ -3261,6 +3270,7 @@ pub fn evaluateExpression(
                                         .add => "addition",
                                         .subtract => "subtraction",
                                         .multiply => "multiplication",
+                                        .divide => "division",
                                         else => unreachable,
                                     };
                                     err_ctx.setErrorData(.{ .type_mismatch = .{
@@ -3277,6 +3287,7 @@ pub fn evaluateExpression(
                             .add => left_float + right_float,
                             .subtract => left_float - right_float,
                             .multiply => left_float * right_float,
+                            .divide => left_float / right_float,
                             else => unreachable,
                         };
                         break :blk2 Value{ .float = float_result };
@@ -3290,6 +3301,7 @@ pub fn evaluateExpression(
                                         .add => "addition",
                                         .subtract => "subtraction",
                                         .multiply => "multiplication",
+                                        .divide => "division",
                                         else => unreachable,
                                     };
                                     err_ctx.setErrorData(.{ .type_mismatch = .{
@@ -3309,6 +3321,7 @@ pub fn evaluateExpression(
                                         .add => "addition",
                                         .subtract => "subtraction",
                                         .multiply => "multiplication",
+                                        .divide => "division",
                                         else => unreachable,
                                     };
                                     err_ctx.setErrorData(.{ .type_mismatch = .{
@@ -3325,6 +3338,7 @@ pub fn evaluateExpression(
                             .add => try std.math.add(i64, left_int, right_int),
                             .subtract => try std.math.sub(i64, left_int, right_int),
                             .multiply => try std.math.mul(i64, left_int, right_int),
+                            .divide => @divTrunc(left_int, right_int),
                             else => unreachable,
                         };
                         break :blk2 Value{ .integer = int_result };
