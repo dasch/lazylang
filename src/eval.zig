@@ -908,6 +908,7 @@ pub const Parser = struct {
             .plus => "'+'",
             .minus => "'-'",
             .star => "'*'",
+            .slash => "'/'",
             .ampersand => "'&'",
             .bang => "'!'",
             .less => "'<'",
@@ -3382,7 +3383,15 @@ pub fn evaluateExpression(
                             .add => left_float + right_float,
                             .subtract => left_float - right_float,
                             .multiply => left_float * right_float,
-                            .divide => left_float / right_float,
+                            .divide => blk3: {
+                                if (right_float == 0.0) {
+                                    if (ctx.error_ctx) |err_ctx| {
+                                        err_ctx.setErrorLocation(expr.location.line, expr.location.column, expr.location.offset, expr.location.length);
+                                    }
+                                    return error.DivisionByZero;
+                                }
+                                break :blk3 left_float / right_float;
+                            },
                             else => unreachable,
                         };
                         break :blk2 Value{ .float = float_result };
@@ -3433,7 +3442,15 @@ pub fn evaluateExpression(
                             .add => try std.math.add(i64, left_int, right_int),
                             .subtract => try std.math.sub(i64, left_int, right_int),
                             .multiply => try std.math.mul(i64, left_int, right_int),
-                            .divide => @divTrunc(left_int, right_int),
+                            .divide => blk4: {
+                                if (right_int == 0) {
+                                    if (ctx.error_ctx) |err_ctx| {
+                                        err_ctx.setErrorLocation(expr.location.line, expr.location.column, expr.location.offset, expr.location.length);
+                                    }
+                                    return error.DivisionByZero;
+                                }
+                                break :blk4 @divTrunc(left_int, right_int);
+                            },
                             else => unreachable,
                         };
                         break :blk2 Value{ .integer = int_result };

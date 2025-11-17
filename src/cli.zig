@@ -552,6 +552,12 @@ fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const 
             .message = "A cyclic reference was detected during evaluation. This usually means a value depends on itself in an invalid way.",
             .suggestion = "Check for circular dependencies in your definitions.",
         },
+        error.DivisionByZero => error_reporter.ErrorInfo{
+            .title = "Division by zero",
+            .location = location,
+            .message = "Cannot divide by zero.",
+            .suggestion = "Ensure the divisor is not zero before performing division.",
+        },
         else => error_reporter.ErrorInfo{
             .title = "Error",
             .location = null,

@@ -1,12 +1,12 @@
-// error: Unexpected character
-//   --> tests/fixtures/errors/division_by_zero.lazy:11:13
+// error: Division by zero
+//   --> tests/fixtures/errors/division_by_zero.lazy:11:10
 //    |
 // 11 | result = 10 / 0
-//    |             ^
+//    |          ^^
 //
-// Found an unexpected character in the source code.
+// Cannot divide by zero.
 //
-// help: Remove the invalid character or check for typos.
+// help: Ensure the divisor is not zero before performing division.
 
 result = 10 / 0
 result
