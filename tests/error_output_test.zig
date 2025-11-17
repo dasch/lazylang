@@ -2,15 +2,16 @@ const std = @import("std");
 const cli = @import("cli");
 const testing = std.testing;
 
+// Zig-native declarations of POSIX environment functions
+extern "c" fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
+extern "c" fn unsetenv(name: [*:0]const u8) c_int;
+
 /// Helper to capture error output from evaluating a file
 fn captureErrorOutput(allocator: std.mem.Allocator, file_path: []const u8) ![]const u8 {
     // Set NO_COLOR environment variable to disable ANSI color codes
     // Note: This affects the current process and all subsequent calls
-    const c = @cImport({
-        @cInclude("stdlib.h");
-    });
-    _ = c.setenv("NO_COLOR", "1", 1);
-    defer _ = c.unsetenv("NO_COLOR");
+    _ = setenv("NO_COLOR", "1", 1);
+    defer _ = unsetenv("NO_COLOR");
 
     var stdout_buffer = std.ArrayList(u8){};
     defer stdout_buffer.deinit(allocator);
