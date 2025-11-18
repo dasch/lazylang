@@ -11,6 +11,43 @@ pub fn shouldUseColors() bool {
     return true;
 }
 
+// ============================================================================
+// Color Helper Functions
+// ============================================================================
+
+/// Write text with ANSI color codes (only if colors are enabled)
+fn colored(writer: anytype, text: []const u8, code: []const u8, use_colors: bool) !void {
+    if (use_colors) {
+        try writer.writeAll(code);
+        try writer.writeAll(text);
+        try writer.writeAll("\x1b[0m");
+    } else {
+        try writer.writeAll(text);
+    }
+}
+
+/// Write text in bold red (for error labels and carets)
+fn boldRed(writer: anytype, text: []const u8, use_colors: bool) !void {
+    try colored(writer, text, "\x1b[1;31m", use_colors);
+}
+
+/// Write text in bold blue (for line numbers, arrows, and vertical bars)
+fn boldBlue(writer: anytype, text: []const u8, use_colors: bool) !void {
+    try colored(writer, text, "\x1b[1;34m", use_colors);
+}
+
+/// Write text in bold cyan (for help labels)
+fn boldCyan(writer: anytype, text: []const u8, use_colors: bool) !void {
+    try colored(writer, text, "\x1b[1;36m", use_colors);
+}
+
+/// Write text in bold (for error titles)
+fn bold(writer: anytype, text: []const u8, use_colors: bool) !void {
+    try colored(writer, text, "\x1b[1m", use_colors);
+}
+
+// ============================================================================
+
 /// Source location information for error reporting
 pub const SourceLocation = struct {
     line: usize, // 1-indexed
@@ -35,17 +72,10 @@ pub fn reportError(writer: anytype, source: []const u8, filename: []const u8, in
     const w = writer;
 
     // Print error title
-    if (use_colors) {
-        try w.writeAll("\x1b[1;31merror:\x1b[0m \x1b[1m");
-    } else {
-        try w.writeAll("error: ");
-    }
-    try w.writeAll(info.title);
-    if (use_colors) {
-        try w.writeAll("\x1b[0m\n");
-    } else {
-        try w.writeAll("\n");
-    }
+    try boldRed(w, "error:", use_colors);
+    try w.writeAll(" ");
+    try bold(w, info.title, use_colors);
+    try w.writeAll("\n");
 
     // If we have a location, show the source context
     if (info.location) |loc| {
@@ -103,11 +133,8 @@ pub fn reportError(writer: anytype, source: []const u8, filename: []const u8, in
     // Print suggestion if available
     if (info.suggestion) |suggestion| {
         try w.writeAll("\n");
-        if (use_colors) {
-            try w.writeAll("\x1b[1;36mhelp:\x1b[0m ");
-        } else {
-            try w.writeAll("help: ");
-        }
+        try boldCyan(w, "help:", use_colors);
+        try w.writeAll(" ");
         try w.writeAll(suggestion);
         try w.writeAll("\n");
     }
@@ -135,11 +162,8 @@ fn showSourceContextTwoSpans(
 
     // Show location (filename:line:column)
     try w.writeAll("  ");
-    if (use_colors) {
-        try w.writeAll("\x1b[1;34m-->\x1b[0m ");
-    } else {
-        try w.writeAll("--> ");
-    }
+    try boldBlue(w, "-->", use_colors);
+    try w.writeAll(" ");
     try w.writeAll(filename);
     try w.print(":{d}:{d}\n", .{ loc1.line, loc1.column });
 
@@ -170,13 +194,7 @@ fn showSourceContextTwoSpans(
     }
 
     // Write the first caret
-    if (use_colors) {
-        try w.writeAll("\x1b[1;31m");
-    }
-    try w.writeAll("^");
-    if (use_colors) {
-        try w.writeAll("\x1b[0m");
-    }
+    try boldRed(w, "^", use_colors);
 
     // Write spaces between the two carets
     // After writing the first caret at column N, we need (second_column - first_column - 1) spaces
@@ -186,13 +204,7 @@ fn showSourceContextTwoSpans(
     }
 
     // Write the second caret
-    if (use_colors) {
-        try w.writeAll("\x1b[1;31m");
-    }
-    try w.writeAll("^");
-    if (use_colors) {
-        try w.writeAll("\x1b[0m");
-    }
+    try boldRed(w, "^", use_colors);
     try w.writeAll("\n");
 
     // Show labels with connecting lines if provided
@@ -204,24 +216,12 @@ fn showSourceContextTwoSpans(
         while (i < first_loc.column - 1) : (i += 1) {
             try w.writeAll(" ");
         }
-        if (use_colors) {
-            try w.writeAll("\x1b[1;34m");
-        }
-        try w.writeAll("|");
-        if (use_colors) {
-            try w.writeAll("\x1b[0m");
-        }
+        try boldBlue(w, "|", use_colors);
         j = first_loc.column + 1;
         while (j < second_loc.column) : (j += 1) {
             try w.writeAll(" ");
         }
-        if (use_colors) {
-            try w.writeAll("\x1b[1;34m");
-        }
-        try w.writeAll("|");
-        if (use_colors) {
-            try w.writeAll("\x1b[0m");
-        }
+        try boldBlue(w, "|", use_colors);
         try w.writeAll("\n");
 
         // Show second label first (rightmost label)
@@ -233,13 +233,7 @@ fn showSourceContextTwoSpans(
             while (i < first_loc.column - 1) : (i += 1) {
                 try w.writeAll(" ");
             }
-            if (use_colors) {
-                try w.writeAll("\x1b[1;34m");
-            }
-            try w.writeAll("|");
-            if (use_colors) {
-                try w.writeAll("\x1b[0m");
-            }
+            try boldBlue(w, "|", use_colors);
             // Write spaces to reach second caret column, then label
             j = first_loc.column + 1;
             while (j < second_loc.column) : (j += 1) {
@@ -277,11 +271,8 @@ fn showSourceContext(writer: anytype, source: []const u8, filename: []const u8, 
 
     // Show location (filename:line:column)
     try w.writeAll("  ");
-    if (use_colors) {
-        try w.writeAll("\x1b[1;34m-->\x1b[0m ");
-    } else {
-        try w.writeAll("--> ");
-    }
+    try boldBlue(w, "-->", use_colors);
+    try w.writeAll(" ");
     try w.writeAll(filename);
     try w.print(":{d}:{d}\n", .{ loc.line, loc.column });
 
@@ -307,23 +298,19 @@ fn showSourceContext(writer: anytype, source: []const u8, filename: []const u8, 
     }
 
     // Write the caret/underline
-    if (use_colors) {
-        try w.writeAll("\x1b[1;31m");
-    }
     if (loc.length <= 1) {
-        try w.writeAll("^");
+        try boldRed(w, "^", use_colors);
     } else if (loc.length == 2) {
-        try w.writeAll("^^");
+        try boldRed(w, "^^", use_colors);
     } else {
         // For longer spans, use ^--- style
+        if (use_colors) try w.writeAll("\x1b[1;31m");
         try w.writeAll("^");
         var j: usize = 1;
         while (j < loc.length) : (j += 1) {
             try w.writeAll("-");
         }
-    }
-    if (use_colors) {
-        try w.writeAll("\x1b[0m");
+        if (use_colors) try w.writeAll("\x1b[0m");
     }
     try w.writeAll("\n");
 }
@@ -331,11 +318,11 @@ fn showSourceContext(writer: anytype, source: []const u8, filename: []const u8, 
 /// Write the line number gutter
 fn writeGutter(writer: anytype, width: usize, line_num: ?usize, use_colors: bool) !void {
     if (line_num) |num| {
-        if (use_colors) {
-            try writer.print("\x1b[1;34m{d:>[1]}\x1b[0m |", .{ num, width });
-        } else {
-            try writer.print("{d:>[1]} |", .{ num, width });
-        }
+        // Write line number in bold blue
+        if (use_colors) try writer.writeAll("\x1b[1;34m");
+        try writer.print("{d:>[1]}", .{ num, width });
+        if (use_colors) try writer.writeAll("\x1b[0m");
+        try writer.writeAll(" |");
     } else {
         // Empty gutter
         var i: usize = 0;
