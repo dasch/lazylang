@@ -29,6 +29,9 @@ pub const ErrorData = union(enum) {
 /// This is a workaround for Zig's error system which doesn't allow attaching data to errors
 pub const ErrorContext = struct {
     last_error_location: ?error_reporter.SourceLocation = null,
+    last_error_secondary_location: ?error_reporter.SourceLocation = null,
+    last_error_location_label: ?[]const u8 = null,
+    last_error_secondary_label: ?[]const u8 = null,
     last_error_token_lexeme: ?[]const u8 = null,
     last_error_data: ErrorData = .none,
     source: []const u8 = "",
@@ -146,6 +149,37 @@ pub const ErrorContext = struct {
         self.source_filename = self.current_file;
     }
 
+    pub fn setErrorLocationWithLabels(
+        self: *ErrorContext,
+        line: usize,
+        column: usize,
+        offset: usize,
+        length: usize,
+        label: []const u8,
+        secondary_line: usize,
+        secondary_column: usize,
+        secondary_offset: usize,
+        secondary_length: usize,
+        secondary_label: []const u8,
+    ) void {
+        self.last_error_location = .{
+            .line = line,
+            .column = column,
+            .offset = offset,
+            .length = length,
+        };
+        self.last_error_secondary_location = .{
+            .line = secondary_line,
+            .column = secondary_column,
+            .offset = secondary_offset,
+            .length = secondary_length,
+        };
+        self.last_error_location_label = label;
+        self.last_error_secondary_label = secondary_label;
+        // Capture the current file when the error occurs
+        self.source_filename = self.current_file;
+    }
+
     pub fn setErrorToken(self: *ErrorContext, lexeme: []const u8) void {
         // Make a copy of the lexeme since it may be a slice into source that gets freed
         if (self.allocator.dupe(u8, lexeme)) |owned_lexeme| {
@@ -206,6 +240,9 @@ pub const ErrorContext = struct {
 
     pub fn clearError(self: *ErrorContext) void {
         self.last_error_location = null;
+        self.last_error_secondary_location = null;
+        self.last_error_location_label = null;
+        self.last_error_secondary_label = null;
         self.last_error_token_lexeme = null;
         self.last_error_data = .none;
     }

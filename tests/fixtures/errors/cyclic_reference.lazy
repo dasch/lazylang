@@ -1,12 +1,13 @@
 // error: Cyclic reference
-//   --> tests/fixtures/errors/cyclic_reference.lazy:11:9
+//   --> tests/fixtures/errors/cyclic_reference.lazy:12:9
 //    |
-// 11 | obj = { x: obj.x + 1 }
-//    |         ^-----------
+// 12 | obj = { x: obj.x + 1 }
+//    |         ^      ^
+//    |         |      |
+//    |         |      cyclic reference here
+//    |         field defined here
 //
-// A cyclic reference was detected during evaluation. This usually means a value depends on itself in an invalid way.
-//
-// help: Check for circular dependencies in your definitions.
+// help: Break the circular dependency by using a non-recursive value.
 
 obj = { x: obj.x + 1 }
 obj.x

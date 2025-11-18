@@ -161,6 +161,28 @@ test "exact error: nested error shows inner location" {
     try assertExactMatch(actual, expected);
 }
 
+test "exact error: cyclic reference shows both definition and reference on same line" {
+    const fixture = "tests/fixtures/errors/cyclic_reference.lazy";
+    const actual = try captureErrorOutput(testing.allocator, fixture);
+    defer testing.allocator.free(actual);
+
+    const expected = try loadExpectedError(testing.allocator, fixture);
+    defer testing.allocator.free(expected);
+
+    try assertExactMatch(actual, expected);
+}
+
+test "exact error: cyclic reference shows both definition and reference on different lines" {
+    const fixture = "tests/fixtures/errors/cyclic_reference_multiline.lazy";
+    const actual = try captureErrorOutput(testing.allocator, fixture);
+    defer testing.allocator.free(actual);
+
+    const expected = try loadExpectedError(testing.allocator, fixture);
+    defer testing.allocator.free(expected);
+
+    try assertExactMatch(actual, expected);
+}
+
 // ============================================================================
 // ERROR MESSAGE QUALITY TESTS
 // These tests verify error messages contain helpful information
@@ -277,6 +299,7 @@ test "regression: all error fixtures produce non-empty, formatted output" {
         "tests/fixtures/errors/pattern_mismatch_array.lazy",
         "tests/fixtures/errors/missing_closing_paren.lazy",
         "tests/fixtures/errors/cyclic_reference.lazy",
+        "tests/fixtures/errors/cyclic_reference_multiline.lazy",
         "tests/fixtures/errors/nested_unknown_identifier.lazy",
     };
 

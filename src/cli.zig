@@ -572,11 +572,20 @@ fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const 
                 .suggestion = null,
             };
         },
-        error.CyclicReference => error_reporter.ErrorInfo{
-            .title = "Cyclic reference",
-            .location = location,
-            .message = "A cyclic reference was detected during evaluation. This usually means a value depends on itself in an invalid way.",
-            .suggestion = "Check for circular dependencies in your definitions.",
+        error.CyclicReference => blk: {
+            const secondary_location = if (err_ctx) |ctx| ctx.last_error_secondary_location else null;
+            const location_label = if (err_ctx) |ctx| ctx.last_error_location_label else null;
+            const secondary_label = if (err_ctx) |ctx| ctx.last_error_secondary_label else null;
+
+            break :blk error_reporter.ErrorInfo{
+                .title = "Cyclic reference",
+                .location = location,
+                .secondary_location = secondary_location,
+                .location_label = location_label,
+                .secondary_label = secondary_label,
+                .message = "",
+                .suggestion = "Break the circular dependency by using a non-recursive value.",
+            };
         },
         error.DivisionByZero => error_reporter.ErrorInfo{
             .title = "Division by zero",

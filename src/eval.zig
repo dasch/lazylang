@@ -3188,6 +3188,66 @@ fn mergeObjects(arena: std.mem.Allocator, base: ObjectValue, extension: ObjectVa
     return Value{ .object = .{ .fields = try result_fields.toOwnedSlice(arena), .module_doc = module_doc } };
 }
 
+/// Find field access locations in an expression for a given field name
+fn findFieldAccessInExpression(expr: *Expression, field_name: []const u8) ?error_reporter.SourceLocation {
+    return switch (expr.data) {
+        .field_access => |fa| {
+            // Check if this field access matches the field name we're looking for
+            if (std.mem.eql(u8, fa.field, field_name)) {
+                return fa.field_location;
+            }
+            // Recursively search in the object expression
+            return findFieldAccessInExpression(fa.object, field_name);
+        },
+        .binary => |bin| {
+            // Search in both operands
+            if (findFieldAccessInExpression(bin.left, field_name)) |loc| return loc;
+            if (findFieldAccessInExpression(bin.right, field_name)) |loc| return loc;
+            return null;
+        },
+        .unary => |un| {
+            return findFieldAccessInExpression(un.operand, field_name);
+        },
+        .application => |app| {
+            if (findFieldAccessInExpression(app.function, field_name)) |loc| return loc;
+            if (findFieldAccessInExpression(app.argument, field_name)) |loc| return loc;
+            return null;
+        },
+        .if_expr => |if_expr| {
+            if (findFieldAccessInExpression(if_expr.condition, field_name)) |loc| return loc;
+            if (findFieldAccessInExpression(if_expr.then_expr, field_name)) |loc| return loc;
+            if (if_expr.else_expr) |else_expr| {
+                if (findFieldAccessInExpression(else_expr, field_name)) |loc| return loc;
+            }
+            return null;
+        },
+        .let => |let_expr| {
+            if (findFieldAccessInExpression(let_expr.value, field_name)) |loc| return loc;
+            if (findFieldAccessInExpression(let_expr.body, field_name)) |loc| return loc;
+            return null;
+        },
+        .array => |arr| {
+            for (arr.elements) |elem| {
+                const elem_expr = switch (elem) {
+                    .normal => |e| e,
+                    .spread => |e| e,
+                    .conditional_if => |c| c.expr,
+                    .conditional_unless => |c| c.expr,
+                };
+                if (findFieldAccessInExpression(elem_expr, field_name)) |loc| return loc;
+            }
+            return null;
+        },
+        .tuple => |tup| {
+            for (tup.elements) |elem| {
+                if (findFieldAccessInExpression(elem, field_name)) |loc| return loc;
+            }
+            return null;
+        },
+        else => null,
+    };
+}
+
 /// Force evaluation of a thunk if needed
 pub fn force(arena: std.mem.Allocator, value: Value) EvalError!Value {
     return switch (value) {
@@ -3195,20 +3255,48 @@ pub fn force(arena: std.mem.Allocator, value: Value) EvalError!Value {
             switch (thunk.state) {
                 .evaluated => |v| return v,
                 .evaluating => {
-                    // Set error location to highlight the cyclic field definition
+                    // Set error location to highlight the cyclic field definition and reference
                     if (thunk.ctx.error_ctx) |err_ctx| {
                         if (thunk.field_key_location) |key_loc| {
-                            // For object fields, calculate span from field key to end of field value expression
-                            // This will show both the field definition and where the cycle occurs
-                            const expr_end = thunk.expr.location.offset + thunk.expr.location.length;
-                            const calculated_span = if (expr_end > key_loc.offset)
-                                expr_end - key_loc.offset
-                            else
-                                0;
-                            // Use at least 12 characters to ensure we capture meaningful context
-                            // even if expression location tracking is imperfect
-                            const span_length = @max(calculated_span, 12);
-                            err_ctx.setErrorLocation(key_loc.line, key_loc.column, key_loc.offset, span_length);
+                            // For object fields, try to find the field access that's causing the cycle
+                            // We need to extract the field name from the key location
+                            // Since we don't have the field name directly, we'll search for any field access in the expression
+
+                            // Try to find a field access in the expression that could be causing the cycle
+                            // We look for the first field access we find
+                            const field_access_loc = findFirstFieldAccess(thunk.expr);
+
+                            if (field_access_loc) |access_loc| {
+                                // Recalculate the line number from the offset to fix any tokenizer issues
+                                // Get the source from the error context
+                                const source = err_ctx.source_map.get(err_ctx.current_file) orelse err_ctx.source;
+                                const corrected_loc = error_reporter.offsetToLocation(source, access_loc.offset);
+
+                                // Use the corrected location with the original length
+                                const final_access_loc = error_reporter.SourceLocation{
+                                    .line = corrected_loc.line,
+                                    .column = corrected_loc.column,
+                                    .offset = access_loc.offset,
+                                    .length = access_loc.length,
+                                };
+
+                                // We found a field access - report both locations
+                                err_ctx.setErrorLocationWithLabels(
+                                    key_loc.line,
+                                    key_loc.column,
+                                    key_loc.offset,
+                                    1, // Just the identifier character
+                                    "field defined here",
+                                    final_access_loc.line,
+                                    final_access_loc.column,
+                                    final_access_loc.offset,
+                                    1, // Just the identifier character
+                                    "cyclic reference here",
+                                );
+                            } else {
+                                // Fallback: just use the field key location
+                                err_ctx.setErrorLocation(key_loc.line, key_loc.column, key_loc.offset, 1);
+                            }
                         } else {
                             // Not an object field, just use the expression location
                             err_ctx.setErrorLocation(thunk.expr.location.line, thunk.expr.location.column, thunk.expr.location.offset, thunk.expr.location.length);
@@ -3225,6 +3313,56 @@ pub fn force(arena: std.mem.Allocator, value: Value) EvalError!Value {
             }
         },
         else => value,
+    };
+}
+
+/// Find the first field access in an expression (used for cyclic reference detection)
+fn findFirstFieldAccess(expr: *Expression) ?error_reporter.SourceLocation {
+    return switch (expr.data) {
+        .field_access => |fa| fa.field_location,
+        .binary => |bin| {
+            if (findFirstFieldAccess(bin.left)) |loc| return loc;
+            if (findFirstFieldAccess(bin.right)) |loc| return loc;
+            return null;
+        },
+        .unary => |un| findFirstFieldAccess(un.operand),
+        .application => |app| {
+            if (findFirstFieldAccess(app.function)) |loc| return loc;
+            if (findFirstFieldAccess(app.argument)) |loc| return loc;
+            return null;
+        },
+        .if_expr => |if_expr| {
+            if (findFirstFieldAccess(if_expr.condition)) |loc| return loc;
+            if (findFirstFieldAccess(if_expr.then_expr)) |loc| return loc;
+            if (if_expr.else_expr) |else_expr| {
+                if (findFirstFieldAccess(else_expr)) |loc| return loc;
+            }
+            return null;
+        },
+        .let => |let_expr| {
+            if (findFirstFieldAccess(let_expr.value)) |loc| return loc;
+            if (findFirstFieldAccess(let_expr.body)) |loc| return loc;
+            return null;
+        },
+        .array => |arr| {
+            for (arr.elements) |elem| {
+                const elem_expr = switch (elem) {
+                    .normal => |e| e,
+                    .spread => |e| e,
+                    .conditional_if => |c| c.expr,
+                    .conditional_unless => |c| c.expr,
+                };
+                if (findFirstFieldAccess(elem_expr)) |loc| return loc;
+            }
+            return null;
+        },
+        .tuple => |tup| {
+            for (tup.elements) |elem| {
+                if (findFirstFieldAccess(elem)) |loc| return loc;
+            }
+            return null;
+        },
+        else => null,
     };
 }
 
