@@ -1,10 +1,54 @@
 const std = @import("std");
 const error_reporter = @import("error_reporter.zig");
 const error_context = @import("error_context.zig");
+const ast = @import("ast.zig");
 
 // Re-export error_context for use by other modules
 pub const ErrorContext = error_context.ErrorContext;
 pub const ErrorData = error_context.ErrorData;
+
+// Re-export AST types
+pub const TokenKind = ast.TokenKind;
+pub const Token = ast.Token;
+pub const BinaryOp = ast.BinaryOp;
+pub const UnaryOp = ast.UnaryOp;
+pub const SourceLocation = ast.SourceLocation;
+pub const Expression = ast.Expression;
+pub const ExpressionData = ast.ExpressionData;
+pub const Pattern = ast.Pattern;
+pub const PatternData = ast.PatternData;
+pub const Lambda = ast.Lambda;
+pub const Let = ast.Let;
+pub const WhereBinding = ast.WhereBinding;
+pub const WhereExpr = ast.WhereExpr;
+pub const Unary = ast.Unary;
+pub const Binary = ast.Binary;
+pub const Application = ast.Application;
+pub const If = ast.If;
+pub const WhenMatches = ast.WhenMatches;
+pub const MatchBranch = ast.MatchBranch;
+pub const ConditionalElement = ast.ConditionalElement;
+pub const ArrayElement = ast.ArrayElement;
+pub const ArrayLiteral = ast.ArrayLiteral;
+pub const TupleLiteral = ast.TupleLiteral;
+pub const ObjectFieldKey = ast.ObjectFieldKey;
+pub const ObjectField = ast.ObjectField;
+pub const ObjectLiteral = ast.ObjectLiteral;
+pub const ObjectExtend = ast.ObjectExtend;
+pub const ImportExpr = ast.ImportExpr;
+pub const StringInterpolation = ast.StringInterpolation;
+pub const StringPart = ast.StringPart;
+pub const ForClause = ast.ForClause;
+pub const ArrayComprehension = ast.ArrayComprehension;
+pub const ObjectComprehension = ast.ObjectComprehension;
+pub const FieldAccess = ast.FieldAccess;
+pub const Index = ast.Index;
+pub const FieldAccessor = ast.FieldAccessor;
+pub const FieldProjection = ast.FieldProjection;
+pub const TuplePattern = ast.TuplePattern;
+pub const ArrayPattern = ast.ArrayPattern;
+pub const ObjectPattern = ast.ObjectPattern;
+pub const ObjectPatternField = ast.ObjectPatternField;
 
 /// Thread-local storage for user crash messages
 threadlocal var user_crash_message: ?[]const u8 = null;
@@ -24,53 +68,6 @@ pub fn clearUserCrashMessage() void {
     user_crash_message = null;
 }
 
-pub const TokenKind = enum {
-    eof,
-    identifier,
-    number,
-    string,
-    symbol,
-    comma,
-    colon,
-    semicolon,
-    equals,
-    arrow,
-    backslash,
-    plus,
-    minus,
-    star,
-    slash,
-    ampersand,
-    ampersand_ampersand,
-    pipe_pipe,
-    bang,
-    equals_equals,
-    bang_equals,
-    less,
-    greater,
-    less_equals,
-    greater_equals,
-    dot,
-    dot_dot_dot,
-    l_paren,
-    r_paren,
-    l_bracket,
-    r_bracket,
-    l_brace,
-    r_brace,
-};
-
-pub const Token = struct {
-    kind: TokenKind,
-    lexeme: []const u8,
-    preceded_by_newline: bool,
-    preceded_by_whitespace: bool, // True if any whitespace (space, tab, or newline) precedes this token
-    line: usize, // 1-indexed line number
-    column: usize, // 1-indexed column number
-    offset: usize, // byte offset in source
-    doc_comments: ?[]const u8, // Documentation comments preceding this token
-};
-
 const TokenizerError = error{
     UnexpectedCharacter,
     UnterminatedString,
@@ -79,255 +76,6 @@ const TokenizerError = error{
 const ParseError = TokenizerError || std.mem.Allocator.Error || std.fmt.ParseIntError || std.fmt.ParseFloatError || error{
     ExpectedExpression,
     UnexpectedToken,
-};
-
-const BinaryOp = enum {
-    add,
-    subtract,
-    multiply,
-    divide,
-    logical_and,
-    logical_or,
-    pipeline,
-    equal,
-    not_equal,
-    less_than,
-    greater_than,
-    less_or_equal,
-    greater_or_equal,
-    merge,
-};
-
-const UnaryOp = enum {
-    logical_not,
-};
-
-/// Source location for an expression (reusing error_reporter's type)
-pub const SourceLocation = error_reporter.SourceLocation;
-
-/// An expression with source location information
-pub const Expression = struct {
-    data: ExpressionData,
-    location: SourceLocation,
-};
-
-/// The actual expression data (what used to be Expression)
-pub const ExpressionData = union(enum) {
-    integer: i64,
-    float: f64,
-    boolean: bool,
-    null_literal,
-    symbol: []const u8,
-    identifier: []const u8,
-    string_literal: []const u8,
-    string_interpolation: StringInterpolation,
-    lambda: Lambda,
-    let: Let,
-    where_expr: WhereExpr,
-    unary: Unary,
-    binary: Binary,
-    application: Application,
-    if_expr: If,
-    when_matches: WhenMatches,
-    array: ArrayLiteral,
-    tuple: TupleLiteral,
-    object: ObjectLiteral,
-    object_extend: ObjectExtend,
-    import_expr: ImportExpr,
-    array_comprehension: ArrayComprehension,
-    object_comprehension: ObjectComprehension,
-    field_access: FieldAccess,
-    index: Index,
-    field_accessor: FieldAccessor,
-    field_projection: FieldProjection,
-    operator_function: BinaryOp,
-};
-
-const Lambda = struct {
-    param: *Pattern,
-    body: *Expression,
-};
-
-const Let = struct {
-    pattern: *Pattern,
-    value: *Expression,
-    body: *Expression,
-    doc: ?[]const u8, // Combined documentation comments
-};
-
-const WhereBinding = struct {
-    pattern: *Pattern,
-    value: *Expression,
-    doc: ?[]const u8,
-};
-
-const WhereExpr = struct {
-    expr: *Expression,
-    bindings: []WhereBinding,
-};
-
-const Unary = struct {
-    op: UnaryOp,
-    operand: *Expression,
-};
-
-const Binary = struct {
-    op: BinaryOp,
-    left: *Expression,
-    right: *Expression,
-};
-
-const Application = struct {
-    function: *Expression,
-    argument: *Expression,
-};
-
-const If = struct {
-    condition: *Expression,
-    then_expr: *Expression,
-    else_expr: ?*Expression,
-};
-
-const WhenMatches = struct {
-    value: *Expression,
-    branches: []MatchBranch,
-    otherwise: ?*Expression,
-};
-
-const MatchBranch = struct {
-    pattern: *Pattern,
-    expression: *Expression,
-};
-
-const ConditionalElement = struct {
-    expr: *Expression,
-    condition: *Expression,
-};
-
-const ArrayElement = union(enum) {
-    normal: *Expression,
-    spread: *Expression,
-    conditional_if: ConditionalElement,
-    conditional_unless: ConditionalElement,
-};
-
-const ArrayLiteral = struct {
-    elements: []ArrayElement,
-};
-
-const TupleLiteral = struct {
-    elements: []*Expression,
-};
-
-const ObjectFieldKey = union(enum) {
-    static: []const u8,
-    dynamic: *Expression,
-};
-
-const ObjectField = struct {
-    key: ObjectFieldKey,
-    value: *Expression,
-    is_patch: bool, // true if no colon (merge), false if colon (overwrite)
-    doc: ?[]const u8, // Combined documentation comments
-    key_location: ?error_reporter.SourceLocation, // Location of the field key for error reporting
-};
-
-const ObjectLiteral = struct {
-    fields: []ObjectField,
-    module_doc: ?[]const u8, // Module-level documentation
-};
-
-const ObjectExtend = struct {
-    base: *Expression,
-    fields: []ObjectField,
-};
-
-const ImportExpr = struct {
-    path: []const u8,
-    path_location: SourceLocation, // Location of the module path string
-};
-
-const StringInterpolation = struct {
-    parts: []StringPart,
-};
-
-const StringPart = union(enum) {
-    literal: []const u8,
-    interpolation: *Expression,
-};
-
-const ForClause = struct {
-    pattern: *Pattern,
-    iterable: *Expression,
-};
-
-const ArrayComprehension = struct {
-    body: *Expression,
-    clauses: []ForClause,
-    filter: ?*Expression,
-};
-
-const ObjectComprehension = struct {
-    key: *Expression,
-    value: *Expression,
-    clauses: []ForClause,
-    filter: ?*Expression,
-};
-
-const FieldAccess = struct {
-    object: *Expression,
-    field: []const u8,
-    field_location: SourceLocation, // Location of the field name for error reporting
-};
-
-const Index = struct {
-    object: *Expression,
-    index: *Expression,
-};
-
-const FieldAccessor = struct {
-    fields: [][]const u8, // Chain of field names, e.g. ["user", "address"]
-};
-
-const FieldProjection = struct {
-    object: *Expression,
-    fields: [][]const u8, // List of fields to extract
-};
-
-pub const Pattern = struct {
-    data: PatternData,
-    location: SourceLocation, // Use same location type as Expression
-};
-
-pub const PatternData = union(enum) {
-    identifier: []const u8,
-    integer: i64,
-    float: f64,
-    boolean: bool,
-    null_literal,
-    symbol: []const u8,
-    string_literal: []const u8,
-    tuple: TuplePattern,
-    array: ArrayPattern,
-    object: ObjectPattern,
-};
-
-const TuplePattern = struct {
-    elements: []*Pattern,
-};
-
-const ArrayPattern = struct {
-    elements: []*Pattern,
-    rest: ?[]const u8, // Optional rest identifier (e.g., "tail" in [head, ...tail])
-};
-
-const ObjectPattern = struct {
-    fields: []ObjectPatternField,
-};
-
-const ObjectPatternField = struct {
-    key: []const u8,
-    pattern: *Pattern, // Either identifier for extraction or literal for matching
 };
 
 pub const Tokenizer = struct {
