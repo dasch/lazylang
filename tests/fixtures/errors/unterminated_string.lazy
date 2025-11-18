@@ -1,0 +1,11 @@
+// error: Unterminated string
+//   --> tests/fixtures/errors/unterminated_string.lazy:11:1
+//    |
+// 11 | "Hello, world
+//    | ^
+//
+// String literal is not closed. Add a closing quote.
+//
+// help: Add a matching quote character to close the string.
+
+"Hello, world

@@ -15,6 +15,13 @@ pub const ErrorData = union(enum) {
     unknown_identifier: struct {
         name: []const u8,
     },
+    unexpected_token: struct {
+        expected: []const u8,
+        context: []const u8,
+    },
+    module_not_found: struct {
+        module_name: []const u8,
+    },
     none: void,
 };
 
@@ -22,6 +29,9 @@ pub const ErrorData = union(enum) {
 /// This is a workaround for Zig's error system which doesn't allow attaching data to errors
 pub const ErrorContext = struct {
     last_error_location: ?error_reporter.SourceLocation = null,
+    last_error_secondary_location: ?error_reporter.SourceLocation = null,
+    last_error_location_label: ?[]const u8 = null,
+    last_error_secondary_label: ?[]const u8 = null,
     last_error_token_lexeme: ?[]const u8 = null,
     last_error_data: ErrorData = .none,
     source: []const u8 = "",
@@ -65,22 +75,7 @@ pub const ErrorContext = struct {
         }
 
         // Free ErrorData memory
-        switch (self.last_error_data) {
-            .unknown_field => |data| {
-                self.allocator.free(data.field_name);
-                for (data.available_fields) |field| {
-                    self.allocator.free(field);
-                }
-                self.allocator.free(data.available_fields);
-            },
-            .type_mismatch => {
-                // Type mismatch strings are static/const, no need to free
-            },
-            .unknown_identifier => |data| {
-                self.allocator.free(data.name);
-            },
-            .none => {},
-        }
+        self.freeErrorData();
     }
 
     pub fn setSource(self: *ErrorContext, source: []const u8) void {
@@ -95,16 +90,18 @@ pub const ErrorContext = struct {
     /// Register a source file in the source map (for error reporting)
     /// Makes copies of both filename and source
     pub fn registerSource(self: *ErrorContext, filename: []const u8, source: []const u8) !void {
+        // Check if this filename is already registered
+        if (self.source_map.get(filename)) |_| {
+            // Already registered, skip to avoid duplicate allocations
+            return;
+        }
+
         // Make owned copies
         const owned_filename = try self.allocator.dupe(u8, filename);
         errdefer self.allocator.free(owned_filename);
         const owned_source = try self.allocator.dupe(u8, source);
         errdefer self.allocator.free(owned_source);
 
-        // Store in map (will free old values if key exists)
-        if (self.source_map.get(owned_filename)) |old_source| {
-            self.allocator.free(old_source);
-        }
         try self.source_map.put(owned_filename, owned_source);
     }
 
@@ -152,6 +149,37 @@ pub const ErrorContext = struct {
         self.source_filename = self.current_file;
     }
 
+    pub fn setErrorLocationWithLabels(
+        self: *ErrorContext,
+        line: usize,
+        column: usize,
+        offset: usize,
+        length: usize,
+        label: []const u8,
+        secondary_line: usize,
+        secondary_column: usize,
+        secondary_offset: usize,
+        secondary_length: usize,
+        secondary_label: []const u8,
+    ) void {
+        self.last_error_location = .{
+            .line = line,
+            .column = column,
+            .offset = offset,
+            .length = length,
+        };
+        self.last_error_secondary_location = .{
+            .line = secondary_line,
+            .column = secondary_column,
+            .offset = secondary_offset,
+            .length = secondary_length,
+        };
+        self.last_error_location_label = label;
+        self.last_error_secondary_label = secondary_label;
+        // Capture the current file when the error occurs
+        self.source_filename = self.current_file;
+    }
+
     pub fn setErrorToken(self: *ErrorContext, lexeme: []const u8) void {
         // Make a copy of the lexeme since it may be a slice into source that gets freed
         if (self.allocator.dupe(u8, lexeme)) |owned_lexeme| {
@@ -166,7 +194,44 @@ pub const ErrorContext = struct {
     }
 
     pub fn setErrorData(self: *ErrorContext, data: ErrorData) void {
+        // Free old error data before setting new data
+        self.freeErrorData();
         self.last_error_data = data;
+    }
+
+    fn freeErrorData(self: *ErrorContext) void {
+        switch (self.last_error_data) {
+            .unknown_field => |old_data| {
+                self.allocator.free(old_data.field_name);
+                for (old_data.available_fields) |field| {
+                    self.allocator.free(field);
+                }
+                self.allocator.free(old_data.available_fields);
+            },
+            .unknown_identifier => |old_data| {
+                self.allocator.free(old_data.name);
+            },
+            .unexpected_token => |old_data| {
+                self.allocator.free(old_data.expected);
+                self.allocator.free(old_data.context);
+            },
+            .module_not_found => |old_data| {
+                self.allocator.free(old_data.module_name);
+            },
+            .type_mismatch => |old_data| {
+                // The expected and found strings are usually from formatPatternValue/formatValueShort
+                // which use page_allocator, so we don't free them here (they're leaked but acceptable)
+                // However, the operation string might be allocated with err_ctx.allocator if it's
+                // a custom operation like "calling function `f`"
+                if (old_data.operation) |op| {
+                    // Only free if it starts with "calling function" (our custom allocations)
+                    if (std.mem.startsWith(u8, op, "calling function `")) {
+                        self.allocator.free(op);
+                    }
+                }
+            },
+            .none => {},
+        }
     }
 
     pub fn registerIdentifier(self: *ErrorContext, name: []const u8) !void {
@@ -175,6 +240,9 @@ pub const ErrorContext = struct {
 
     pub fn clearError(self: *ErrorContext) void {
         self.last_error_location = null;
+        self.last_error_secondary_location = null;
+        self.last_error_location_label = null;
+        self.last_error_secondary_label = null;
         self.last_error_token_lexeme = null;
         self.last_error_data = .none;
     }

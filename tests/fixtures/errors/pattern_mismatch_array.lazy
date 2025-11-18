@@ -1,0 +1,12 @@
+// error: Type mismatch
+//   --> tests/fixtures/errors/pattern_mismatch_array.lazy:11:1
+//    |
+// 11 | [x, y, z] = [1, 2]
+//    | ^
+//
+// Expected `array with exactly 3 elements` for destructuring, but found `array with 2 elements`.
+//
+// help: Make sure you're using compatible types for this operation.
+
+[x, y, z] = [1, 2]
+x + y + z

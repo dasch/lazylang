@@ -1,0 +1,13 @@
+// error: Type mismatch
+//   --> tests/fixtures/errors/pattern_mismatch_tuple.lazy:12:12
+//    |
+// 12 | result = f (1, 2)
+//    |            ^
+//
+// Function `f` expects tuple with 3 elements, but is being passed tuple with 2 elements.
+//
+// help: Make sure you're using compatible types for this operation.
+
+f = (x, y, z) -> x + y + z
+result = f (1, 2)
+result

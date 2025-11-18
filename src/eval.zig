@@ -229,6 +229,7 @@ const ObjectField = struct {
     value: *Expression,
     is_patch: bool, // true if no colon (merge), false if colon (overwrite)
     doc: ?[]const u8, // Combined documentation comments
+    key_location: ?error_reporter.SourceLocation, // Location of the field key for error reporting
 };
 
 const ObjectLiteral = struct {
@@ -243,6 +244,7 @@ const ObjectExtend = struct {
 
 const ImportExpr = struct {
     path: []const u8,
+    path_location: SourceLocation, // Location of the module path string
 };
 
 const StringInterpolation = struct {
@@ -275,6 +277,7 @@ const ObjectComprehension = struct {
 const FieldAccess = struct {
     object: *Expression,
     field: []const u8,
+    field_location: SourceLocation, // Location of the field name for error reporting
 };
 
 const Index = struct {
@@ -337,6 +340,7 @@ pub const Tokenizer = struct {
     line_start: usize, // byte offset of the current line start
     pending_doc_comments: std.ArrayListUnmanaged([]const u8),
     arena: std.mem.Allocator,
+    error_ctx: ?*error_context.ErrorContext,
 
     pub fn init(source: []const u8, arena: std.mem.Allocator) Tokenizer {
         return .{
@@ -349,6 +353,7 @@ pub const Tokenizer = struct {
             .line_start = 0,
             .pending_doc_comments = .{},
             .arena = arena,
+            .error_ctx = null,
         };
     }
 
@@ -409,6 +414,10 @@ pub const Tokenizer = struct {
                 if (self.index < self.source.len and self.source[self.index] == '|') {
                     self.advance();
                     return self.makeToken(.pipe_pipe, start, start_line, start_column);
+                }
+                // Record error location for the unexpected single pipe character
+                if (self.error_ctx) |ctx| {
+                    ctx.setErrorLocation(start_line, start_column, start, 1);
                 }
                 return error.UnexpectedCharacter;
             },
@@ -514,7 +523,13 @@ pub const Tokenizer = struct {
                 self.advance();
                 return self.makeToken(.backslash, start, start_line, start_column);
             },
-            else => return error.UnexpectedCharacter,
+            else => {
+                // Record error location for the unexpected character
+                if (self.error_ctx) |ctx| {
+                    ctx.setErrorLocation(start_line, start_column, start, 1);
+                }
+                return error.UnexpectedCharacter;
+            },
         }
     }
 
@@ -617,6 +632,10 @@ pub const Tokenizer = struct {
                 return token;
             }
             self.advance();
+        }
+        // Record error location for unterminated string
+        if (self.error_ctx) |ctx| {
+            ctx.setErrorLocation(start_line, start_column, start_content - 1, 1);
         }
         return error.UnterminatedString;
     }
@@ -831,21 +850,36 @@ pub const Parser = struct {
     error_ctx: ?*error_context.ErrorContext,
 
     pub fn init(arena: std.mem.Allocator, source: []const u8) ParseError!Parser {
+        return initWithContext(arena, source, null);
+    }
+
+    pub fn initWithContext(arena: std.mem.Allocator, source: []const u8, err_ctx: ?*error_context.ErrorContext) ParseError!Parser {
         var tokenizer = Tokenizer.init(source, arena);
-        const first = try tokenizer.next();
-        const second = try tokenizer.next();
+        tokenizer.error_ctx = err_ctx;
+
+        const first = tokenizer.next() catch |err| {
+            // Error context already set by tokenizer if available
+            return err;
+        };
+
+        const second = tokenizer.next() catch |err| {
+            // Error context already set by tokenizer if available
+            return err;
+        };
+
         return .{
             .arena = arena,
             .tokenizer = tokenizer,
             .current = first,
             .lookahead = second,
             .source = source,
-            .error_ctx = null,
+            .error_ctx = err_ctx,
         };
     }
 
     pub fn setErrorContext(self: *Parser, ctx: *error_context.ErrorContext) void {
         self.error_ctx = ctx;
+        self.tokenizer.error_ctx = ctx;
     }
 
     fn recordError(self: *Parser) void {
@@ -858,6 +892,63 @@ pub const Parser = struct {
             );
             ctx.setErrorToken(self.current.lexeme);
         }
+    }
+
+    fn friendlyTokenName(kind: TokenKind) []const u8 {
+        return switch (kind) {
+            .l_paren => "'('",
+            .r_paren => "')'",
+            .l_bracket => "'['",
+            .r_bracket => "']'",
+            .l_brace => "'{'",
+            .r_brace => "'}'",
+            .comma => "','",
+            .colon => "':'",
+            .semicolon => "';'",
+            .equals => "'='",
+            .arrow => "'->'",
+            .dot => "'.'",
+            .plus => "'+'",
+            .minus => "'-'",
+            .star => "'*'",
+            .slash => "'/'",
+            .ampersand => "'&'",
+            .bang => "'!'",
+            .less => "'<'",
+            .greater => "'>'",
+            .less_equals => "'<='",
+            .greater_equals => "'>='",
+            .equals_equals => "'=='",
+            .bang_equals => "'!='",
+            .ampersand_ampersand => "'&&'",
+            .pipe_pipe => "'||'",
+            .backslash => "'\\'",
+            .dot_dot_dot => "'...'",
+            .identifier => "identifier",
+            .number => "number",
+            .symbol => "symbol",
+            .string => "string",
+            .eof => "end of file",
+        };
+    }
+
+    fn expectToken(self: *Parser, expected: TokenKind, context: []const u8) ParseError!void {
+        if (self.current.kind != expected) {
+            self.recordError();
+            if (self.error_ctx) |ctx| {
+                const expected_name = friendlyTokenName(expected);
+                const owned_expected = ctx.allocator.dupe(u8, expected_name) catch expected_name;
+                const owned_context = ctx.allocator.dupe(u8, context) catch context;
+                ctx.setErrorData(.{
+                    .unexpected_token = .{
+                        .expected = owned_expected,
+                        .context = owned_context,
+                    },
+                });
+            }
+            return error.UnexpectedToken;
+        }
+        try self.advance();
     }
 
     pub fn parse(self: *Parser) ParseError!*Expression {
@@ -891,7 +982,7 @@ pub const Parser = struct {
             const doc = self.tokenizer.consumeDocComments();
             const start_token = self.current; // Capture start for location
             const pattern = try self.parsePattern();
-            try self.expect(.equals);
+            try self.expectToken(.equals, "in let binding");
             const value = try self.parseLambda();
 
             // Check for semicolon or newline separator
@@ -957,7 +1048,7 @@ pub const Parser = struct {
 
                 const doc = self.tokenizer.consumeDocComments();
                 const pattern = try self.parsePattern();
-                try self.expect(.equals);
+                try self.expectToken(.equals, "in where binding");
                 const value = try self.parseBinary(0);
 
                 try bindings.append(self.arena, .{ .pattern = pattern, .value = value, .doc = doc });
@@ -1269,6 +1360,7 @@ pub const Parser = struct {
                     } else if (self.current.kind == .identifier) {
                         // Regular field access: expr.field
                         const field_name = self.current.lexeme;
+                        const field_token = self.current;
                         try self.advance();
 
                         const node = try self.allocateExpression();
@@ -1276,6 +1368,12 @@ pub const Parser = struct {
                             .data = .{ .field_access = .{
                                 .object = expr,
                                 .field = field_name,
+                                .field_location = .{
+                                    .line = field_token.line,
+                                    .column = field_token.column,
+                                    .offset = field_token.offset,
+                                    .length = field_token.lexeme.len,
+                                },
                             } },
                             .location = expr.location,
                         };
@@ -1395,8 +1493,17 @@ pub const Parser = struct {
                     try self.advance();
                     if (self.current.kind != .string) return error.ExpectedExpression;
                     const path = self.current.lexeme;
+                    const path_token = self.current; // Capture string location
                     try self.advance();
-                    return try self.makeExpression(.{ .import_expr = .{ .path = path } }, import_token);
+                    return try self.makeExpression(.{ .import_expr = .{
+                        .path = path,
+                        .path_location = .{
+                            .line = path_token.line,
+                            .column = path_token.column,
+                            .offset = path_token.offset,
+                            .length = path_token.lexeme.len,
+                        },
+                    } }, import_token);
                 }
                 if (std.mem.eql(u8, self.current.lexeme, "true")) {
                     const token = self.current;
@@ -1744,7 +1851,8 @@ pub const Parser = struct {
                 .key = .{ .dynamic = key_expr },
                 .value = value_expr,
                 .is_patch = false,
-                .doc = null
+                .doc = null,
+                .key_location = key_expr.location,
             });
 
             // Continue parsing remaining fields if any
@@ -1767,7 +1875,8 @@ pub const Parser = struct {
                         .key = .{ .dynamic = next_key_expr },
                         .value = next_value_expr,
                         .is_patch = false,
-                        .doc = null
+                        .doc = null,
+                        .key_location = next_key_expr.location,
                     });
                 } else if (self.current.kind == .identifier) {
                     // Static field
@@ -1791,7 +1900,13 @@ pub const Parser = struct {
                         .key = .{ .static = static_key },
                         .value = static_value_expr,
                         .is_patch = is_patch,
-                        .doc = doc
+                        .doc = doc,
+                        .key_location = .{
+                            .line = field_token.line,
+                            .column = field_token.column,
+                            .offset = field_token.offset,
+                            .length = field_token.lexeme.len,
+                        },
                     });
                 } else {
                     break;
@@ -1837,7 +1952,18 @@ pub const Parser = struct {
                 break :blk try self.makeExpression(.{ .identifier = key }, key_token);
             };
 
-            try fields.append(self.arena, .{ .key = .{ .static = key }, .value = value_expr, .is_patch = is_patch, .doc = doc });
+            try fields.append(self.arena, .{
+                .key = .{ .static = key },
+                .value = value_expr,
+                .is_patch = is_patch,
+                .doc = doc,
+                .key_location = .{
+                    .line = key_token.line,
+                    .column = key_token.column,
+                    .offset = key_token.offset,
+                    .length = key_token.lexeme.len,
+                },
+            });
 
             if (self.current.kind == .comma) {
                 try self.advance();
@@ -2170,7 +2296,15 @@ pub const Parser = struct {
 
     fn advance(self: *Parser) ParseError!void {
         self.current = self.lookahead;
-        self.lookahead = try self.tokenizer.next();
+        self.lookahead = self.tokenizer.next() catch |err| {
+            // For UnexpectedCharacter and UnterminatedString,
+            // the tokenizer already recorded the error location
+            // For other errors, record error location from current token
+            if (err != error.UnexpectedCharacter and err != error.UnterminatedString) {
+                self.recordError();
+            }
+            return err;
+        };
     }
 
     fn parseStringInterpolation(self: *Parser, string_content: []const u8) ParseError![]StringPart {
@@ -2321,6 +2455,7 @@ pub const Thunk = struct {
     current_dir: ?[]const u8,
     ctx: *const EvalContext,
     state: ThunkState,
+    field_key_location: ?error_reporter.SourceLocation, // For object field thunks, to show cyclic reference span
 };
 
 pub const Value = union(enum) {
@@ -2528,6 +2663,12 @@ fn openImportFile(ctx: *const EvalContext, import_path: []const u8, current_dir:
             return .{ .path = candidate, .file = file };
         }
         ctx.allocator.free(candidate);
+    }
+
+    // Set error context with module name
+    if (ctx.error_ctx) |err_ctx| {
+        const module_name_copy = try err_ctx.allocator.dupe(u8, import_path);
+        err_ctx.setErrorData(.{ .module_not_found = .{ .module_name = module_name_copy } });
     }
 
     return error.ModuleNotFound;
@@ -3047,13 +3188,122 @@ fn mergeObjects(arena: std.mem.Allocator, base: ObjectValue, extension: ObjectVa
     return Value{ .object = .{ .fields = try result_fields.toOwnedSlice(arena), .module_doc = module_doc } };
 }
 
+/// Find field access locations in an expression for a given field name
+fn findFieldAccessInExpression(expr: *Expression, field_name: []const u8) ?error_reporter.SourceLocation {
+    return switch (expr.data) {
+        .field_access => |fa| {
+            // Check if this field access matches the field name we're looking for
+            if (std.mem.eql(u8, fa.field, field_name)) {
+                return fa.field_location;
+            }
+            // Recursively search in the object expression
+            return findFieldAccessInExpression(fa.object, field_name);
+        },
+        .binary => |bin| {
+            // Search in both operands
+            if (findFieldAccessInExpression(bin.left, field_name)) |loc| return loc;
+            if (findFieldAccessInExpression(bin.right, field_name)) |loc| return loc;
+            return null;
+        },
+        .unary => |un| {
+            return findFieldAccessInExpression(un.operand, field_name);
+        },
+        .application => |app| {
+            if (findFieldAccessInExpression(app.function, field_name)) |loc| return loc;
+            if (findFieldAccessInExpression(app.argument, field_name)) |loc| return loc;
+            return null;
+        },
+        .if_expr => |if_expr| {
+            if (findFieldAccessInExpression(if_expr.condition, field_name)) |loc| return loc;
+            if (findFieldAccessInExpression(if_expr.then_expr, field_name)) |loc| return loc;
+            if (if_expr.else_expr) |else_expr| {
+                if (findFieldAccessInExpression(else_expr, field_name)) |loc| return loc;
+            }
+            return null;
+        },
+        .let => |let_expr| {
+            if (findFieldAccessInExpression(let_expr.value, field_name)) |loc| return loc;
+            if (findFieldAccessInExpression(let_expr.body, field_name)) |loc| return loc;
+            return null;
+        },
+        .array => |arr| {
+            for (arr.elements) |elem| {
+                const elem_expr = switch (elem) {
+                    .normal => |e| e,
+                    .spread => |e| e,
+                    .conditional_if => |c| c.expr,
+                    .conditional_unless => |c| c.expr,
+                };
+                if (findFieldAccessInExpression(elem_expr, field_name)) |loc| return loc;
+            }
+            return null;
+        },
+        .tuple => |tup| {
+            for (tup.elements) |elem| {
+                if (findFieldAccessInExpression(elem, field_name)) |loc| return loc;
+            }
+            return null;
+        },
+        else => null,
+    };
+}
+
 /// Force evaluation of a thunk if needed
 pub fn force(arena: std.mem.Allocator, value: Value) EvalError!Value {
     return switch (value) {
         .thunk => |thunk| {
             switch (thunk.state) {
                 .evaluated => |v| return v,
-                .evaluating => return error.CyclicReference,
+                .evaluating => {
+                    // Set error location to highlight the cyclic field definition and reference
+                    if (thunk.ctx.error_ctx) |err_ctx| {
+                        if (thunk.field_key_location) |key_loc| {
+                            // For object fields, try to find the field access that's causing the cycle
+                            // We need to extract the field name from the key location
+                            // Since we don't have the field name directly, we'll search for any field access in the expression
+
+                            // Try to find a field access in the expression that could be causing the cycle
+                            // We look for the first field access we find
+                            const field_access_loc = findFirstFieldAccess(thunk.expr);
+
+                            if (field_access_loc) |access_loc| {
+                                // Recalculate the line number from the offset to fix any tokenizer issues
+                                // Get the source from the error context
+                                const source = err_ctx.source_map.get(err_ctx.current_file) orelse err_ctx.source;
+                                const corrected_loc = error_reporter.offsetToLocation(source, access_loc.offset);
+
+                                // Use the corrected location with the original length
+                                const final_access_loc = error_reporter.SourceLocation{
+                                    .line = corrected_loc.line,
+                                    .column = corrected_loc.column,
+                                    .offset = access_loc.offset,
+                                    .length = access_loc.length,
+                                };
+
+                                // We found a field access - report both locations
+                                err_ctx.setErrorLocationWithLabels(
+                                    key_loc.line,
+                                    key_loc.column,
+                                    key_loc.offset,
+                                    1, // Just the identifier character
+                                    "field defined here",
+                                    final_access_loc.line,
+                                    final_access_loc.column,
+                                    final_access_loc.offset,
+                                    1, // Just the identifier character
+                                    "cyclic reference here",
+                                );
+                            } else {
+                                // Fallback: just use the field key location
+                                err_ctx.setErrorLocation(key_loc.line, key_loc.column, key_loc.offset, 1);
+                            }
+                        } else {
+                            // Not an object field, just use the expression location
+                            err_ctx.setErrorLocation(thunk.expr.location.line, thunk.expr.location.column, thunk.expr.location.offset, thunk.expr.location.length);
+                        }
+                    }
+                    return error.CyclicReference;
+                },
                 .unevaluated => {
                     thunk.state = .evaluating;
                     const result = try evaluateExpression(arena, thunk.expr, thunk.env, thunk.current_dir, thunk.ctx);
@@ -3063,6 +3313,56 @@ pub fn force(arena: std.mem.Allocator, value: Value) EvalError!Value {
             }
         },
         else => value,
+    };
+}
+
+/// Find the first field access in an expression (used for cyclic reference detection)
+fn findFirstFieldAccess(expr: *Expression) ?error_reporter.SourceLocation {
+    return switch (expr.data) {
+        .field_access => |fa| fa.field_location,
+        .binary => |bin| {
+            if (findFirstFieldAccess(bin.left)) |loc| return loc;
+            if (findFirstFieldAccess(bin.right)) |loc| return loc;
+            return null;
+        },
+        .unary => |un| findFirstFieldAccess(un.operand),
+        .application => |app| {
+            if (findFirstFieldAccess(app.function)) |loc| return loc;
+            if (findFirstFieldAccess(app.argument)) |loc| return loc;
+            return null;
+        },
+        .if_expr => |if_expr| {
+            if (findFirstFieldAccess(if_expr.condition)) |loc| return loc;
+            if (findFirstFieldAccess(if_expr.then_expr)) |loc| return loc;
+            if (if_expr.else_expr) |else_expr| {
+                if (findFirstFieldAccess(else_expr)) |loc| return loc;
+            }
+            return null;
+        },
+        .let => |let_expr| {
+            if (findFirstFieldAccess(let_expr.value)) |loc| return loc;
+            if (findFirstFieldAccess(let_expr.body)) |loc| return loc;
+            return null;
+        },
+        .array => |arr| {
+            for (arr.elements) |elem| {
+                const elem_expr = switch (elem) {
+                    .normal => |e| e,
+                    .spread => |e| e,
+                    .conditional_if => |c| c.expr,
+                    .conditional_unless => |c| c.expr,
+                };
+                if (findFirstFieldAccess(elem_expr)) |loc| return loc;
+            }
+            return null;
+        },
+        .tuple => |tup| {
+            for (tup.elements) |elem| {
+                if (findFirstFieldAccess(elem)) |loc| return loc;
+            }
+            return null;
+        },
+        else => null,
     };
 }
 
@@ -3175,6 +3475,7 @@ pub fn evaluateExpression(
                             .current_dir = current_dir,
                             .ctx = ctx,
                             .state = .unevaluated,
+                            .field_key_location = null, // Not an object field
                         };
                         thunks[i] = thunk;
 
@@ -3287,7 +3588,16 @@ pub fn evaluateExpression(
                             .add => left_float + right_float,
                             .subtract => left_float - right_float,
                             .multiply => left_float * right_float,
-                            .divide => left_float / right_float,
+                            .divide => blk3: {
+                                if (right_float == 0.0) {
+                                    if (ctx.error_ctx) |err_ctx| {
+                                        // Point to the divisor (right operand)
+                                        err_ctx.setErrorLocation(binary.right.location.line, binary.right.location.column, binary.right.location.offset, binary.right.location.length);
+                                    }
+                                    return error.DivisionByZero;
+                                }
+                                break :blk3 left_float / right_float;
+                            },
                             else => unreachable,
                         };
                         break :blk2 Value{ .float = float_result };
@@ -3338,7 +3648,16 @@ pub fn evaluateExpression(
                             .add => try std.math.add(i64, left_int, right_int),
                             .subtract => try std.math.sub(i64, left_int, right_int),
                             .multiply => try std.math.mul(i64, left_int, right_int),
-                            .divide => @divTrunc(left_int, right_int),
+                            .divide => blk4: {
+                                if (right_int == 0) {
+                                    if (ctx.error_ctx) |err_ctx| {
+                                        // Point to the divisor (right operand)
+                                        err_ctx.setErrorLocation(binary.right.location.line, binary.right.location.column, binary.right.location.offset, binary.right.location.length);
+                                    }
+                                    return error.DivisionByZero;
+                                }
+                                break :blk4 @divTrunc(left_int, right_int);
+                            },
                             else => unreachable,
                         };
                         break :blk2 Value{ .integer = int_result };
@@ -3495,7 +3814,13 @@ pub fn evaluateExpression(
                             const args = [_]Value{left_value};
                             break :blk2 try native_fn(arena, &args);
                         },
-                        else => return error.ExpectedFunction,
+                        else => {
+                            // Point to the right operand (function) that isn't actually a function
+                            if (ctx.error_ctx) |err_ctx| {
+                                err_ctx.setErrorLocation(binary.right.location.line, binary.right.location.column, binary.right.location.offset, binary.right.location.length);
+                            }
+                            return error.ExpectedFunction;
+                        },
                     }
                 },
                 .merge => blk2: {
@@ -3560,7 +3885,40 @@ pub fn evaluateExpression(
 
             switch (function_value) {
                 .function => |function_ptr| {
-                    const bound_env = try matchPattern(arena, function_ptr.param, argument_value, function_ptr.env, ctx);
+                    const bound_env = matchPattern(arena, function_ptr.param, argument_value, function_ptr.env, ctx) catch |err| {
+                        // If pattern matching fails, update error location to point to the argument
+                        // at the call site, not the parameter in the function definition
+                        if (ctx.error_ctx) |err_ctx| {
+                            err_ctx.setErrorLocation(application.argument.location.line, application.argument.location.column, application.argument.location.offset, application.argument.location.length);
+
+                            // If the error is a type mismatch and the function is named, update the operation
+                            if (err == error.TypeMismatch) {
+                                // Check if function expression is an identifier
+                                const function_name = switch (application.function.data) {
+                                    .identifier => |name| name,
+                                    else => null,
+                                };
+
+                                if (function_name) |name| {
+                                    // Update the operation field in the error data if it exists
+                                    if (err_ctx.last_error_data == .type_mismatch) {
+                                        const old_data = err_ctx.last_error_data.type_mismatch;
+                                        // Try to allocate new operation string; if it fails, leave error data as-is
+                                        if (std.fmt.allocPrint(err_ctx.allocator, "calling function `{s}`", .{name})) |new_operation| {
+                                            err_ctx.setErrorData(.{ .type_mismatch = .{
+                                                .expected = old_data.expected,
+                                                .found = old_data.found,
+                                                .operation = new_operation,
+                                            } });
+                                        } else |_| {
+                                            // Allocation failed, keep existing error data
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        return err;
+                    };
                     break :blk try evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx);
                 },
                 .native_fn => |native_fn| {
@@ -3568,7 +3926,13 @@ pub fn evaluateExpression(
                     const args = [_]Value{argument_value};
                     break :blk try native_fn(arena, &args);
                 },
-                else => return error.ExpectedFunction,
+                else => {
+                    // Point to the function expression that isn't actually a function
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.setErrorLocation(application.function.location.line, application.function.location.column, application.function.location.offset, application.function.location.length);
+                    }
+                    return error.ExpectedFunction;
+                },
             }
         },
         .array => |array| blk: {
@@ -3645,6 +4009,7 @@ pub fn evaluateExpression(
                             .current_dir = current_dir,
                             .ctx = ctx,
                             .state = .unevaluated,
+                            .field_key_location = field.key_location,
                         };
                         try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk } });
                     },
@@ -3667,6 +4032,7 @@ pub fn evaluateExpression(
                                     .current_dir = current_dir,
                                     .ctx = ctx,
                                     .state = .unevaluated,
+                                    .field_key_location = field.key_location,
                                 };
                                 try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk } });
                             },
@@ -3687,6 +4053,7 @@ pub fn evaluateExpression(
                                                 .current_dir = current_dir,
                                                 .ctx = ctx,
                                                 .state = .unevaluated,
+                                                .field_key_location = field.key_location,
                                             };
                                             try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk } });
                                         },
@@ -3798,11 +4165,17 @@ pub fn evaluateExpression(
             try evaluateObjectComprehension(arena, &result_fields, comp, 0, env, current_dir, ctx);
             break :blk Value{ .object = .{ .fields = try result_fields.toOwnedSlice(arena), .module_doc = null } };
         },
-        .import_expr => |import_expr| try importModule(arena, import_expr.path, current_dir, ctx),
+        .import_expr => |import_expr| blk: {
+            // Set error location to the module path string
+            if (ctx.error_ctx) |err_ctx| {
+                err_ctx.setErrorLocation(import_expr.path_location.line, import_expr.path_location.column, import_expr.path_location.offset, import_expr.path_location.length);
+            }
+            break :blk try importModule(arena, import_expr.path, current_dir, ctx);
+        },
         .field_access => |field_access| blk: {
             const object_value = try evaluateExpression(arena, field_access.object, env, current_dir, ctx);
             const forced = try force(arena, object_value);
-            break :blk try accessField(arena, forced, field_access.field, expr.location, ctx);
+            break :blk try accessField(arena, forced, field_access.field, field_access.field_location, ctx);
         },
         .index => |index| blk: {
             const object_value = try evaluateExpression(arena, index.object, env, current_dir, ctx);
@@ -3867,6 +4240,7 @@ pub fn evaluateExpression(
                     .data = .{ .field_access = .{
                         .object = body_expr,
                         .field = field_name,
+                        .field_location = dummy_loc,
                     } },
                     .location = dummy_loc,
                 };
@@ -5041,8 +5415,15 @@ fn evalSourceWithFormat(
         .error_ctx = &err_ctx,
     };
 
-    var parser = try Parser.init(arena.allocator(), source);
-    parser.setErrorContext(&err_ctx);
+    var parser = Parser.initWithContext(arena.allocator(), source, &err_ctx) catch |err| {
+        // Error location already set by tokenizer if applicable
+        arena.deinit();
+        return EvalResult{
+            .output = null,
+            .error_ctx = err_ctx,
+            .err = err,
+        };
+    };
     const expression = parser.parse() catch |err| {
         arena.deinit();
         return EvalResult{

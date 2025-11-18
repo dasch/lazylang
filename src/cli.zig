@@ -64,6 +64,7 @@ fn runEval(
     var output_format: OutputFormat = .pretty;
     var json_output = false;
     var manifest_mode = false;
+    var use_colors: ?bool = null; // null means auto-detect
     var index: usize = 0;
 
     while (index < args.len) : (index += 1) {
@@ -94,14 +95,31 @@ fn runEval(
             manifest_mode = true;
             continue;
         }
+        if (std.mem.eql(u8, arg, "--no-color")) {
+            use_colors = false;
+            continue;
+        }
+        if (std.mem.eql(u8, arg, "--color")) {
+            use_colors = true;
+            continue;
+        }
 
         // Positional argument - treat as file path
+        // Check if this is an unknown flag
+        if (std.mem.startsWith(u8, arg, "--") or std.mem.startsWith(u8, arg, "-")) {
+            try stderr.print("error: unknown flag '{s}'\n", .{arg});
+            return .{ .exit_code = 1 };
+        }
+
         if (file_path != null) {
             try stderr.print("error: unexpected argument '{s}'\n", .{arg});
             return .{ .exit_code = 1 };
         }
         file_path = arg;
     }
+
+    // Determine final color value (auto-detect if not explicitly set)
+    const colors_enabled = use_colors orelse error_reporter.shouldUseColors();
 
     // --expr takes precedence over file path
     if (inline_expr != null) {
@@ -116,14 +134,14 @@ fn runEval(
                 if (json_output) {
                     try json_error.reportErrorAsJson(stderr, "<inline>", &error_context.ErrorContext.init(allocator), @errorName(err), @errorName(err), null);
                 } else {
-                    try reportError(allocator, stderr, "<inline>", inline_expr.?, err, null);
+                    try reportError(allocator, stderr, "<inline>", inline_expr.?, err, null, colors_enabled);
                 }
                 return .{ .exit_code = 1 };
             };
             defer value_result.deinit();
 
             if (value_result.err) |_| {
-                try reportErrorWithContext(allocator, stderr, "<inline>", inline_expr.?, &value_result.error_ctx, null);
+                try reportErrorWithContext(allocator, stderr, "<inline>", inline_expr.?, &value_result.error_ctx, null, colors_enabled);
                 return .{ .exit_code = 1 };
             }
 
@@ -148,7 +166,7 @@ fn runEval(
                 try json_error.reportErrorAsJson(stderr, "<inline>", &error_context.ErrorContext.init(allocator), @errorName(err), message, null);
                 if (err == error.UserCrash) evaluator.clearUserCrashMessage();
             } else {
-                try reportError(allocator, stderr, "<inline>", inline_expr.?, err, null);
+                try reportError(allocator, stderr, "<inline>", inline_expr.?, err, null, colors_enabled);
             }
             return .{ .exit_code = 1 };
         };
@@ -162,7 +180,7 @@ fn runEval(
             if (json_output) {
                 try json_error.reportErrorAsJson(stderr, "<inline>", &result.error_ctx, "ParseError", "An error occurred at this location.", null);
             } else {
-                try reportErrorWithContext(allocator, stderr, "<inline>", inline_expr.?, &result.error_ctx, result.err);
+                try reportErrorWithContext(allocator, stderr, "<inline>", inline_expr.?, &result.error_ctx, result.err, colors_enabled);
             }
             return .{ .exit_code = 1 };
         }
@@ -193,7 +211,7 @@ fn runEval(
             try json_error.reportErrorAsJson(stderr, file_path.?, &error_context.ErrorContext.init(allocator), @errorName(err), message, null);
             if (err == error.UserCrash) evaluator.clearUserCrashMessage();
         } else {
-            try reportError(allocator, stderr, file_path.?, file_content, err, null);
+            try reportError(allocator, stderr, file_path.?, file_content, err, null, colors_enabled);
         }
         return .{ .exit_code = 1 };
     };
@@ -213,14 +231,14 @@ fn runEval(
                 if (json_output) {
                     try json_error.reportErrorAsJson(stderr, file_path.?, &error_context.ErrorContext.init(allocator), @errorName(err), @errorName(err), null);
                 } else {
-                    try reportError(allocator, stderr, file_path.?, file_content, err, null);
+                    try reportError(allocator, stderr, file_path.?, file_content, err, null, colors_enabled);
                 }
                 return .{ .exit_code = 1 };
             };
             defer value_result.deinit();
 
             if (value_result.err) |_| {
-                try reportErrorWithContext(allocator, stderr, file_path.?, file_content, &value_result.error_ctx, null);
+                try reportErrorWithContext(allocator, stderr, file_path.?, file_content, &value_result.error_ctx, null, colors_enabled);
                 return .{ .exit_code = 1 };
             }
 
@@ -248,7 +266,7 @@ fn runEval(
         if (json_output) {
             try json_error.reportErrorAsJson(stderr, error_filename, &result.error_ctx, "ParseError", "An error occurred at this location.", null);
         } else {
-            try reportErrorWithContext(allocator, stderr, error_filename, error_source, &result.error_ctx, result.err);
+            try reportErrorWithContext(allocator, stderr, error_filename, error_source, &result.error_ctx, result.err, colors_enabled);
         }
         return .{ .exit_code = 1 };
     }
@@ -311,7 +329,7 @@ fn writeManifestFiles(
     }
 }
 
-fn reportErrorWithContext(allocator: std.mem.Allocator, stderr: anytype, filename: []const u8, source: []const u8, err_ctx: *const error_context.ErrorContext, err: ?anyerror) !void {
+fn reportErrorWithContext(allocator: std.mem.Allocator, stderr: anytype, filename: []const u8, source: []const u8, err_ctx: *const error_context.ErrorContext, err: ?anyerror, use_colors: bool) !void {
     // Check if it's a user crash
     if (evaluator.getUserCrashMessage()) |crash_message| {
         const error_info = error_reporter.ErrorInfo{
@@ -320,14 +338,14 @@ fn reportErrorWithContext(allocator: std.mem.Allocator, stderr: anytype, filenam
             .message = crash_message,
             .suggestion = null,
         };
-        try error_reporter.reportError(stderr, source, filename, error_info);
+        try error_reporter.reportError(stderr, source, filename, error_info, use_colors);
         evaluator.clearUserCrashMessage();
         return;
     }
 
     // If we have the error type, use the detailed error reporting
     if (err) |error_type| {
-        try reportError(allocator, stderr, filename, source, error_type, err_ctx);
+        try reportError(allocator, stderr, filename, source, error_type, err_ctx, use_colors);
         return;
     }
 
@@ -346,10 +364,15 @@ fn reportErrorWithContext(allocator: std.mem.Allocator, stderr: anytype, filenam
         .suggestion = null,
     };
 
-    try error_reporter.reportError(stderr, source, filename, error_info);
+    try error_reporter.reportError(stderr, source, filename, error_info, use_colors);
 }
 
-fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const u8, source: []const u8, err: anyerror, err_ctx: ?*const error_context.ErrorContext) !void {
+fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const u8, source: []const u8, err: anyerror, err_ctx: ?*const error_context.ErrorContext, use_colors: bool) !void {
+    // Use an arena allocator for all temporary error message strings
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const arena_allocator = arena.allocator();
+
     const location = if (err_ctx) |ctx| ctx.last_error_location else null;
 
     const error_info = switch (err) {
@@ -373,8 +396,27 @@ fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const 
         },
         error.UnexpectedToken => blk: {
             if (err_ctx) |ctx| {
+                switch (ctx.last_error_data) {
+                    .unexpected_token => |data| {
+                        const message = if (ctx.last_error_token_lexeme) |lexeme|
+                            try std.fmt.allocPrint(arena_allocator, "Expected {s} {s}, but found `{s}`.", .{ data.expected, data.context, lexeme })
+                        else
+                            try std.fmt.allocPrint(arena_allocator, "Expected {s} {s}.", .{ data.expected, data.context });
+
+                        const suggestion = try std.fmt.allocPrint(arena_allocator, "Add {s} at this location.", .{data.expected});
+
+                        break :blk error_reporter.ErrorInfo{
+                            .title = "Unexpected token",
+                            .location = location,
+                            .message = message,
+                            .suggestion = suggestion,
+                        };
+                    },
+                    else => {},
+                }
+
                 if (ctx.last_error_token_lexeme) |lexeme| {
-                    const message = try std.fmt.allocPrint(allocator, "Found unexpected token `\x1b[36m{s}\x1b[0m`.", .{lexeme});
+                    const message = try std.fmt.allocPrint(arena_allocator, "Found unexpected token `{s}`.", .{lexeme});
                     break :blk error_reporter.ErrorInfo{
                         .title = "Unexpected token",
                         .location = location,
@@ -394,11 +436,11 @@ fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const 
             if (err_ctx) |ctx| {
                 switch (ctx.last_error_data) {
                     .unknown_identifier => |data| {
-                        const message = try std.fmt.allocPrint(allocator, "Identifier `\x1b[36m{s}\x1b[0m` is not defined in the current scope.", .{data.name});
+                        const message = try std.fmt.allocPrint(arena_allocator, "Identifier `{s}` is not defined in the current scope.", .{data.name});
                         // Try to find similar identifiers
-                        const did_you_mean = try ctx.findSimilarIdentifiers(data.name, allocator);
+                        const did_you_mean = try ctx.findSimilarIdentifiers(data.name, arena_allocator);
                         const suggestion = if (did_you_mean) |dym|
-                            try std.fmt.allocPrint(allocator, "{s} Or define this variable before using it.", .{dym})
+                            try std.fmt.allocPrint(arena_allocator, "{s} Or define this variable before using it.", .{dym})
                         else
                             "Check the spelling or define this variable before using it.";
 
@@ -424,10 +466,19 @@ fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const 
             if (err_ctx) |ctx| {
                 switch (ctx.last_error_data) {
                     .type_mismatch => |data| {
-                        const message = if (data.operation) |op|
-                            try std.fmt.allocPrint(allocator, "Expected `\x1b[36m{s}\x1b[0m` for {s}, but found `\x1b[36m{s}\x1b[0m`.", .{ data.expected, op, data.found })
-                        else
-                            try std.fmt.allocPrint(allocator, "Expected `\x1b[36m{s}\x1b[0m`, but found `\x1b[36m{s}\x1b[0m`.", .{ data.expected, data.found });
+                        const message = if (data.operation) |op| blk2: {
+                            // Special formatting for function call pattern mismatches
+                            if (std.mem.startsWith(u8, op, "calling function `")) {
+                                // Extract function name from "calling function `f`"
+                                const func_name_start = "calling function `".len;
+                                const func_name_end = std.mem.indexOf(u8, op[func_name_start..], "`") orelse break :blk2 try std.fmt.allocPrint(arena_allocator, "Expected `{s}` for {s}, but found `{s}`.", .{ data.expected, op, data.found });
+                                const func_name = op[func_name_start .. func_name_start + func_name_end];
+                                break :blk2 try std.fmt.allocPrint(arena_allocator, "Function `{s}` expects {s}, but is being passed {s}.", .{ func_name, data.expected, data.found });
+                            } else {
+                                break :blk2 try std.fmt.allocPrint(arena_allocator, "Expected `{s}` for {s}, but found `{s}`.", .{ data.expected, op, data.found });
+                            }
+                        } else
+                            try std.fmt.allocPrint(arena_allocator, "Expected `{s}`, but found `{s}`.", .{ data.expected, data.found });
 
                         break :blk error_reporter.ErrorInfo{
                             .title = "Type mismatch",
@@ -453,11 +504,28 @@ fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const 
             .message = "Attempted to call a value that is not a function.",
             .suggestion = "Only functions can be called with arguments. Make sure this value is a function.",
         },
-        error.ModuleNotFound => error_reporter.ErrorInfo{
-            .title = "Module not found",
-            .location = location,
-            .message = "Could not find the imported module file.",
-            .suggestion = "Check that the module path is correct and the file exists. Module paths are searched in LAZYLANG_PATH and stdlib/lib.",
+        error.ModuleNotFound => blk: {
+            if (err_ctx) |ctx| {
+                switch (ctx.last_error_data) {
+                    .module_not_found => |data| {
+                        const message = try std.fmt.allocPrint(arena_allocator, "Could not find module `{s}`.", .{data.module_name});
+                        break :blk error_reporter.ErrorInfo{
+                            .title = "Module not found",
+                            .location = location,
+                            .message = message,
+                            .suggestion = "Check that the module path is correct and the file exists. Module paths are searched in LAZYLANG_PATH and stdlib/lib.",
+                        };
+                    },
+                    else => {},
+                }
+            }
+
+            break :blk error_reporter.ErrorInfo{
+                .title = "Module not found",
+                .location = location,
+                .message = "Could not find the imported module file.",
+                .suggestion = "Check that the module path is correct and the file exists. Module paths are searched in LAZYLANG_PATH and stdlib/lib.",
+            };
         },
         error.WrongNumberOfArguments => error_reporter.ErrorInfo{
             .title = "Wrong number of arguments",
@@ -477,17 +545,17 @@ fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const 
                     .unknown_field => |data| {
                         // Build message based on available fields
                         const message = if (data.available_fields.len == 0)
-                            try std.fmt.allocPrint(allocator, "Field `\x1b[36m{s}\x1b[0m` is not defined on this object.", .{data.field_name})
+                            try std.fmt.allocPrint(arena_allocator, "Field `{s}` is not defined on this object.", .{data.field_name})
                         else if (data.available_fields.len == 1)
-                            try std.fmt.allocPrint(allocator, "Field `\x1b[36m{s}\x1b[0m` is not defined on this object. The only available field is `\x1b[36m{s}\x1b[0m`.", .{ data.field_name, data.available_fields[0] })
+                            try std.fmt.allocPrint(arena_allocator, "Field `{s}` is not defined on this object. The only available field is `{s}`.", .{ data.field_name, data.available_fields[0] })
                         else if (data.available_fields.len == 2)
-                            try std.fmt.allocPrint(allocator, "Field `\x1b[36m{s}\x1b[0m` is not defined on this object. Available fields are: `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`", .{ data.field_name, data.available_fields[0], data.available_fields[1] })
+                            try std.fmt.allocPrint(arena_allocator, "Field `{s}` is not defined on this object. Available fields are: `{s}`, `{s}`", .{ data.field_name, data.available_fields[0], data.available_fields[1] })
                         else if (data.available_fields.len == 3)
-                            try std.fmt.allocPrint(allocator, "Field `\x1b[36m{s}\x1b[0m` is not defined on this object. Available fields are: `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`", .{ data.field_name, data.available_fields[0], data.available_fields[1], data.available_fields[2] })
+                            try std.fmt.allocPrint(arena_allocator, "Field `{s}` is not defined on this object. Available fields are: `{s}`, `{s}`, `{s}`", .{ data.field_name, data.available_fields[0], data.available_fields[1], data.available_fields[2] })
                         else if (data.available_fields.len == 4)
-                            try std.fmt.allocPrint(allocator, "Field `\x1b[36m{s}\x1b[0m` is not defined on this object. Available fields are: `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`", .{ data.field_name, data.available_fields[0], data.available_fields[1], data.available_fields[2], data.available_fields[3] })
+                            try std.fmt.allocPrint(arena_allocator, "Field `{s}` is not defined on this object. Available fields are: `{s}`, `{s}`, `{s}`, `{s}`", .{ data.field_name, data.available_fields[0], data.available_fields[1], data.available_fields[2], data.available_fields[3] })
                         else
-                            try std.fmt.allocPrint(allocator, "Field `\x1b[36m{s}\x1b[0m` is not defined on this object. Available fields are: `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`, `\x1b[36m{s}\x1b[0m`", .{ data.field_name, data.available_fields[0], data.available_fields[1], data.available_fields[2], data.available_fields[3], data.available_fields[4] });
+                            try std.fmt.allocPrint(arena_allocator, "Field `{s}` is not defined on this object. Available fields are: `{s}`, `{s}`, `{s}`, `{s}`, `{s}`", .{ data.field_name, data.available_fields[0], data.available_fields[1], data.available_fields[2], data.available_fields[3], data.available_fields[4] });
 
                         break :blk error_reporter.ErrorInfo{
                             .title = "Unknown field",
@@ -522,11 +590,26 @@ fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const 
                 .suggestion = null,
             };
         },
-        error.CyclicReference => error_reporter.ErrorInfo{
-            .title = "Cyclic reference",
-            .location = null,
-            .message = "A cyclic reference was detected during evaluation. This usually means a value depends on itself in an invalid way.",
-            .suggestion = "Check for circular dependencies in your definitions.",
+        error.CyclicReference => blk: {
+            const secondary_location = if (err_ctx) |ctx| ctx.last_error_secondary_location else null;
+            const location_label = if (err_ctx) |ctx| ctx.last_error_location_label else null;
+            const secondary_label = if (err_ctx) |ctx| ctx.last_error_secondary_label else null;
+
+            break :blk error_reporter.ErrorInfo{
+                .title = "Cyclic reference",
+                .location = location,
+                .secondary_location = secondary_location,
+                .location_label = location_label,
+                .secondary_label = secondary_label,
+                .message = "",
+                .suggestion = "Break the circular dependency by using a non-recursive value.",
+            };
+        },
+        error.DivisionByZero => error_reporter.ErrorInfo{
+            .title = "Division by zero",
+            .location = location,
+            .message = "Cannot divide by zero.",
+            .suggestion = "Ensure the divisor is not zero before performing division.",
         },
         else => error_reporter.ErrorInfo{
             .title = "Error",
@@ -536,7 +619,7 @@ fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const 
         },
     };
 
-    try error_reporter.reportError(stderr, source, filename, error_info);
+    try error_reporter.reportError(stderr, source, filename, error_info, use_colors);
 }
 
 fn runSpec(
@@ -677,15 +760,18 @@ fn runRun(
     defer arena_allocator.deinit();
     const arena = arena_allocator.allocator();
 
+    // Determine final color value (auto-detect since runRun doesn't have color flags)
+    const colors_enabled = error_reporter.shouldUseColors();
+
     // Parse the file
     var parser = evaluator.Parser.init(arena, file_content) catch |err| {
-        try reportError(allocator, stderr, file_path, file_content, err, null);
+        try reportError(allocator, stderr, file_path, file_content, err, null, colors_enabled);
         return .{ .exit_code = 1 };
     };
 
     const expression = parser.parse() catch |err| {
         var err_ctx = error_context.ErrorContext.init(allocator);
-        try reportErrorWithContext(allocator, stderr, file_path, file_content, &err_ctx, err);
+        try reportErrorWithContext(allocator, stderr, file_path, file_content, &err_ctx, err, colors_enabled);
         return .{ .exit_code = 1 };
     };
 
@@ -697,7 +783,7 @@ fn runRun(
     };
 
     const value = evaluator.evaluateExpression(arena, expression, null, directory, &eval_ctx) catch |err| {
-        try reportError(allocator, stderr, file_path, file_content, err, null);
+        try reportError(allocator, stderr, file_path, file_content, err, null, colors_enabled);
         return .{ .exit_code = 1 };
     };
 
@@ -764,7 +850,7 @@ fn runRun(
     };
 
     const result = evaluator.evaluateExpression(arena, function.body, bound_env, directory, &eval_ctx) catch |err| {
-        try reportError(allocator, stderr, file_path, file_content, err, null);
+        try reportError(allocator, stderr, file_path, file_content, err, null, colors_enabled);
         return .{ .exit_code = 1 };
     };
 

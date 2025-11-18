@@ -1,0 +1,12 @@
+// error: Module not found
+//   --> tests/fixtures/errors/module_not_found.lazy:11:22
+//    |
+// 11 | NonExistent = import 'NonExistentModule'
+//    |                      ^----------------
+//
+// Could not find module `NonExistentModule`.
+//
+// help: Check that the module path is correct and the file exists. Module paths are searched in LAZYLANG_PATH and stdlib/lib.
+
+NonExistent = import 'NonExistentModule'
+NonExistent

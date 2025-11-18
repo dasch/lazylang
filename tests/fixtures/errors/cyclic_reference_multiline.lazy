@@ -1,0 +1,19 @@
+// error: Cyclic reference
+//   --> tests/fixtures/errors/cyclic_reference_multiline.lazy:16:9
+//    |
+// 16 | obj = { x:
+//    |         ^
+//    |         field defined here
+//    |
+//   --> tests/fixtures/errors/cyclic_reference_multiline.lazy:17:7
+//    |
+// 17 |   obj.x + 1
+//    |       ^
+//    |       cyclic reference here
+//
+// help: Break the circular dependency by using a non-recursive value.
+
+obj = { x:
+  obj.x + 1
+}
+obj.x
