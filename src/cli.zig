@@ -1,3 +1,32 @@
+//! Command-line interface for Lazylang.
+//!
+//! This module implements the CLI dispatcher and command handlers for the
+//! Lazylang interpreter. It provides the following subcommands:
+//!
+//! Commands:
+//! - eval: Evaluate a Lazylang file or expression
+//!   - Supports --json and --yaml output formats
+//!   - Supports --manifest mode for multi-file output
+//!   - Can evaluate inline expressions with -e/--expr
+//!
+//! - run: Execute a Lazylang program with system args/env
+//!   - Program must be a function taking {args, env}
+//!   - Passes command-line args and environment variables
+//!
+//! - spec: Run Lazylang test files (*Spec.lazy)
+//!   - Supports running individual tests by line number
+//!   - Colored output with test results
+//!
+//! - format: Format Lazylang source code
+//!   - Normalizes whitespace and indentation
+//!
+//! - docs: Generate HTML documentation from doc comments
+//!   - Extracts /// comments from stdlib modules
+//!   - Generates browsable API documentation
+//!
+//! The CLI handles error reporting, color output, and delegates actual
+//! command logic to specialized modules or evaluator functions.
+
 const std = @import("std");
 const evaluator = @import("eval.zig");
 const spec = @import("spec.zig");

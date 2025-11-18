@@ -1,3 +1,31 @@
+//! Core evaluation engine for Lazylang.
+//!
+//! This module serves as the main entry point for parsing and evaluating Lazylang code.
+//! It re-exports modularized components while maintaining backward compatibility:
+//!
+//! Architecture:
+//! - Imports and re-exports AST types from ast.zig
+//! - Imports and re-exports Tokenizer from tokenizer.zig
+//! - Contains Parser: Recursive descent parser with operator precedence
+//! - Contains Evaluator: Tree-walking interpreter with pattern matching
+//! - Contains Value types: Runtime value representation (Value, Environment, Thunk)
+//! - Contains module system: Import resolution and module loading
+//! - Contains value formatting: JSON, YAML, and pretty-print output
+//!
+//! Key features:
+//! - Pure functional semantics with lazy evaluation
+//! - Pattern matching and destructuring
+//! - Object merging with patch fields (field vs field:)
+//! - Array/object comprehensions
+//! - Module imports with LAZYLANG_PATH resolution
+//!
+//! Public API:
+//! - evalInline/evalFile: Parse and evaluate code
+//! - Parser.init: Create parser from source
+//! - evaluateExpression: Evaluate AST nodes
+//!
+//! See REFACTORING.md for details on ongoing modularization.
+
 const std = @import("std");
 const error_reporter = @import("error_reporter.zig");
 const error_context = @import("error_context.zig");

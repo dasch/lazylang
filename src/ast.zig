@@ -1,3 +1,14 @@
+//! Abstract Syntax Tree (AST) type definitions for Lazylang.
+//!
+//! This module contains all the type definitions for:
+//! - Tokens: The output of lexical analysis (TokenKind, Token)
+//! - Expressions: The AST nodes representing Lazylang code (Expression, ExpressionData)
+//! - Patterns: Used for destructuring and pattern matching (Pattern, PatternData)
+//! - Operators: Binary and unary operators (BinaryOp, UnaryOp)
+//!
+//! These types form the intermediate representation between parsing and evaluation.
+//! All AST nodes include source location information for error reporting.
+
 const std = @import("std");
 const error_reporter = @import("error_reporter.zig");
 

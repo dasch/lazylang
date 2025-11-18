@@ -1,3 +1,19 @@
+//! Lexical analyzer (tokenizer) for Lazylang.
+//!
+//! The tokenizer converts source code into a stream of tokens. It handles:
+//! - Single and multi-character operators (e.g., ==, !=, &&, ||)
+//! - Keywords and identifiers
+//! - Literals (numbers, strings, symbols)
+//! - Comments (regular // and doc comments ///)
+//! - Whitespace tracking for layout-sensitive parsing
+//!
+//! The tokenizer maintains line and column information for error reporting
+//! and accumulates documentation comments to attach to the following token.
+//!
+//! Example:
+//!     var tokenizer = Tokenizer.init(source, arena);
+//!     const token = try tokenizer.next();
+
 const std = @import("std");
 const ast = @import("ast.zig");
 const error_context = @import("error_context.zig");

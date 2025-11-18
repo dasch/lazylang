@@ -1,3 +1,25 @@
+//! CLI error reporting and formatting.
+//!
+//! This module handles error reporting for the Lazylang CLI, converting
+//! evaluation errors into human-readable messages with helpful suggestions.
+//!
+//! It provides two main functions:
+//! - reportError: Formats specific error types with detailed messages
+//! - reportErrorWithContext: Wrapper that handles user crashes and delegates to reportError
+//!
+//! Error types handled:
+//! - Syntax errors (UnexpectedToken, UnterminatedString, etc.)
+//! - Type errors (TypeMismatch, ExpectedFunction, etc.)
+//! - Runtime errors (UnknownIdentifier, UnknownField, ModuleNotFound, etc.)
+//! - Arithmetic errors (Overflow, DivisionByZero)
+//! - User errors (UserCrash from crash() builtin)
+//!
+//! Each error type includes:
+//! - A descriptive title
+//! - Source location (when available)
+//! - A clear explanation of what went wrong
+//! - Helpful suggestions for fixing the issue
+
 const std = @import("std");
 const evaluator = @import("eval.zig");
 const error_context = @import("error_context.zig");
