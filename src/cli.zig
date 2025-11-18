@@ -64,6 +64,7 @@ fn runEval(
     var output_format: OutputFormat = .pretty;
     var json_output = false;
     var manifest_mode = false;
+    var use_colors: ?bool = null; // null means auto-detect
     var index: usize = 0;
 
     while (index < args.len) : (index += 1) {
@@ -94,14 +95,31 @@ fn runEval(
             manifest_mode = true;
             continue;
         }
+        if (std.mem.eql(u8, arg, "--no-color")) {
+            use_colors = false;
+            continue;
+        }
+        if (std.mem.eql(u8, arg, "--color")) {
+            use_colors = true;
+            continue;
+        }
 
         // Positional argument - treat as file path
+        // Check if this is an unknown flag
+        if (std.mem.startsWith(u8, arg, "--") or std.mem.startsWith(u8, arg, "-")) {
+            try stderr.print("error: unknown flag '{s}'\n", .{arg});
+            return .{ .exit_code = 1 };
+        }
+
         if (file_path != null) {
             try stderr.print("error: unexpected argument '{s}'\n", .{arg});
             return .{ .exit_code = 1 };
         }
         file_path = arg;
     }
+
+    // Determine final color value (auto-detect if not explicitly set)
+    const colors_enabled = use_colors orelse error_reporter.shouldUseColors();
 
     // --expr takes precedence over file path
     if (inline_expr != null) {
@@ -116,14 +134,14 @@ fn runEval(
                 if (json_output) {
                     try json_error.reportErrorAsJson(stderr, "<inline>", &error_context.ErrorContext.init(allocator), @errorName(err), @errorName(err), null);
                 } else {
-                    try reportError(allocator, stderr, "<inline>", inline_expr.?, err, null);
+                    try reportError(allocator, stderr, "<inline>", inline_expr.?, err, null, colors_enabled);
                 }
                 return .{ .exit_code = 1 };
             };
             defer value_result.deinit();
 
             if (value_result.err) |_| {
-                try reportErrorWithContext(allocator, stderr, "<inline>", inline_expr.?, &value_result.error_ctx, null);
+                try reportErrorWithContext(allocator, stderr, "<inline>", inline_expr.?, &value_result.error_ctx, null, colors_enabled);
                 return .{ .exit_code = 1 };
             }
 
@@ -148,7 +166,7 @@ fn runEval(
                 try json_error.reportErrorAsJson(stderr, "<inline>", &error_context.ErrorContext.init(allocator), @errorName(err), message, null);
                 if (err == error.UserCrash) evaluator.clearUserCrashMessage();
             } else {
-                try reportError(allocator, stderr, "<inline>", inline_expr.?, err, null);
+                try reportError(allocator, stderr, "<inline>", inline_expr.?, err, null, colors_enabled);
             }
             return .{ .exit_code = 1 };
         };
@@ -162,7 +180,7 @@ fn runEval(
             if (json_output) {
                 try json_error.reportErrorAsJson(stderr, "<inline>", &result.error_ctx, "ParseError", "An error occurred at this location.", null);
             } else {
-                try reportErrorWithContext(allocator, stderr, "<inline>", inline_expr.?, &result.error_ctx, result.err);
+                try reportErrorWithContext(allocator, stderr, "<inline>", inline_expr.?, &result.error_ctx, result.err, colors_enabled);
             }
             return .{ .exit_code = 1 };
         }
@@ -193,7 +211,7 @@ fn runEval(
             try json_error.reportErrorAsJson(stderr, file_path.?, &error_context.ErrorContext.init(allocator), @errorName(err), message, null);
             if (err == error.UserCrash) evaluator.clearUserCrashMessage();
         } else {
-            try reportError(allocator, stderr, file_path.?, file_content, err, null);
+            try reportError(allocator, stderr, file_path.?, file_content, err, null, colors_enabled);
         }
         return .{ .exit_code = 1 };
     };
@@ -213,14 +231,14 @@ fn runEval(
                 if (json_output) {
                     try json_error.reportErrorAsJson(stderr, file_path.?, &error_context.ErrorContext.init(allocator), @errorName(err), @errorName(err), null);
                 } else {
-                    try reportError(allocator, stderr, file_path.?, file_content, err, null);
+                    try reportError(allocator, stderr, file_path.?, file_content, err, null, colors_enabled);
                 }
                 return .{ .exit_code = 1 };
             };
             defer value_result.deinit();
 
             if (value_result.err) |_| {
-                try reportErrorWithContext(allocator, stderr, file_path.?, file_content, &value_result.error_ctx, null);
+                try reportErrorWithContext(allocator, stderr, file_path.?, file_content, &value_result.error_ctx, null, colors_enabled);
                 return .{ .exit_code = 1 };
             }
 
@@ -248,7 +266,7 @@ fn runEval(
         if (json_output) {
             try json_error.reportErrorAsJson(stderr, error_filename, &result.error_ctx, "ParseError", "An error occurred at this location.", null);
         } else {
-            try reportErrorWithContext(allocator, stderr, error_filename, error_source, &result.error_ctx, result.err);
+            try reportErrorWithContext(allocator, stderr, error_filename, error_source, &result.error_ctx, result.err, colors_enabled);
         }
         return .{ .exit_code = 1 };
     }
@@ -311,7 +329,7 @@ fn writeManifestFiles(
     }
 }
 
-fn reportErrorWithContext(allocator: std.mem.Allocator, stderr: anytype, filename: []const u8, source: []const u8, err_ctx: *const error_context.ErrorContext, err: ?anyerror) !void {
+fn reportErrorWithContext(allocator: std.mem.Allocator, stderr: anytype, filename: []const u8, source: []const u8, err_ctx: *const error_context.ErrorContext, err: ?anyerror, use_colors: bool) !void {
     // Check if it's a user crash
     if (evaluator.getUserCrashMessage()) |crash_message| {
         const error_info = error_reporter.ErrorInfo{
@@ -320,14 +338,14 @@ fn reportErrorWithContext(allocator: std.mem.Allocator, stderr: anytype, filenam
             .message = crash_message,
             .suggestion = null,
         };
-        try error_reporter.reportError(stderr, source, filename, error_info, error_reporter.shouldUseColors());
+        try error_reporter.reportError(stderr, source, filename, error_info, use_colors);
         evaluator.clearUserCrashMessage();
         return;
     }
 
     // If we have the error type, use the detailed error reporting
     if (err) |error_type| {
-        try reportError(allocator, stderr, filename, source, error_type, err_ctx);
+        try reportError(allocator, stderr, filename, source, error_type, err_ctx, use_colors);
         return;
     }
 
@@ -346,10 +364,10 @@ fn reportErrorWithContext(allocator: std.mem.Allocator, stderr: anytype, filenam
         .suggestion = null,
     };
 
-    try error_reporter.reportError(stderr, source, filename, error_info, error_reporter.shouldUseColors());
+    try error_reporter.reportError(stderr, source, filename, error_info, use_colors);
 }
 
-fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const u8, source: []const u8, err: anyerror, err_ctx: ?*const error_context.ErrorContext) !void {
+fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const u8, source: []const u8, err: anyerror, err_ctx: ?*const error_context.ErrorContext, use_colors: bool) !void {
     // Use an arena allocator for all temporary error message strings
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
@@ -601,7 +619,7 @@ fn reportError(allocator: std.mem.Allocator, stderr: anytype, filename: []const 
         },
     };
 
-    try error_reporter.reportError(stderr, source, filename, error_info, error_reporter.shouldUseColors());
+    try error_reporter.reportError(stderr, source, filename, error_info, use_colors);
 }
 
 fn runSpec(
@@ -742,15 +760,18 @@ fn runRun(
     defer arena_allocator.deinit();
     const arena = arena_allocator.allocator();
 
+    // Determine final color value (auto-detect since runRun doesn't have color flags)
+    const colors_enabled = error_reporter.shouldUseColors();
+
     // Parse the file
     var parser = evaluator.Parser.init(arena, file_content) catch |err| {
-        try reportError(allocator, stderr, file_path, file_content, err, null);
+        try reportError(allocator, stderr, file_path, file_content, err, null, colors_enabled);
         return .{ .exit_code = 1 };
     };
 
     const expression = parser.parse() catch |err| {
         var err_ctx = error_context.ErrorContext.init(allocator);
-        try reportErrorWithContext(allocator, stderr, file_path, file_content, &err_ctx, err);
+        try reportErrorWithContext(allocator, stderr, file_path, file_content, &err_ctx, err, colors_enabled);
         return .{ .exit_code = 1 };
     };
 
@@ -762,7 +783,7 @@ fn runRun(
     };
 
     const value = evaluator.evaluateExpression(arena, expression, null, directory, &eval_ctx) catch |err| {
-        try reportError(allocator, stderr, file_path, file_content, err, null);
+        try reportError(allocator, stderr, file_path, file_content, err, null, colors_enabled);
         return .{ .exit_code = 1 };
     };
 
@@ -829,7 +850,7 @@ fn runRun(
     };
 
     const result = evaluator.evaluateExpression(arena, function.body, bound_env, directory, &eval_ctx) catch |err| {
-        try reportError(allocator, stderr, file_path, file_content, err, null);
+        try reportError(allocator, stderr, file_path, file_content, err, null, colors_enabled);
         return .{ .exit_code = 1 };
     };
 

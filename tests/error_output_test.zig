@@ -2,23 +2,14 @@ const std = @import("std");
 const cli = @import("cli");
 const testing = std.testing;
 
-// Zig-native declarations of POSIX environment functions
-extern "c" fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
-extern "c" fn unsetenv(name: [*:0]const u8) c_int;
-
 /// Helper to capture error output from evaluating a file
 fn captureErrorOutput(allocator: std.mem.Allocator, file_path: []const u8) ![]const u8 {
-    // Set NO_COLOR environment variable to disable ANSI color codes
-    // Note: This affects the current process and all subsequent calls
-    _ = setenv("NO_COLOR", "1", 1);
-    defer _ = unsetenv("NO_COLOR");
-
     var stdout_buffer = std.ArrayList(u8){};
     defer stdout_buffer.deinit(allocator);
 
     var stderr_buffer = std.ArrayList(u8){};
 
-    const args = &[_][]const u8{ "lazylang", "eval", file_path };
+    const args = &[_][]const u8{ "lazylang", "eval", "--no-color", file_path };
 
     _ = try cli.run(
         allocator,
