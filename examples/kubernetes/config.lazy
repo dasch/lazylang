@@ -1,40 +1,40 @@
-base = {
-  name: "app-server"
-  application: "recipes"
-  team: "devops"
+{
+  default {
+    name: "app-server"
+    application: "recipes"
+    team: "devops"
 
-  deployment {
-    enabled: true
-  }
+    deployment {
+      enabled: true
+    }
 
-  service {
-    enabled: true
-  }
+    service {
+      enabled: true
+    }
 
-  hpa {
-    enabled: true
-    minReplicas: 1
-    maxReplicas: 3
-    cpu {
-      targetAverageUtilization: 75
+    hpa {
+      enabled: true
+      minReplicas: 1
+      maxReplicas: 3
+      cpu {
+        targetAverageUtilization: 75
+      }
     }
   }
-}
 
-{
-  development: base {
+  development {
     env {
       RAILS_ENV: "development"
     }
   }
 
-  staging: base {
+  staging {
     env {
       RAILS_ENV: "staging"
     }
   }
 
-  production: base {
+  production {
     hpa {
       minReplicas: 3
       maxReplicas: 9

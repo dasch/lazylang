@@ -42,9 +42,55 @@ targets = ["development", "staging", "production"]
       }
     }
 
-    hpa = null
+    hpa = {
+      apiVersion: "autoscaling/v2"
+      kind: "HorizontalPodAutoscaler"
+      metadata: {
+        name: config.name
+      }
+      spec {
+        scaleTargetRef: {
+          apiVersion: deployment.apiVersion
+          kind: deployment.kind
+          name: deployment.metadata.name
+        }
+        minReplicas: config.hpa.minReplicas
+        maxReplicas: config.hpa.maxReplicas
+        metrics: [
+          {
+            type: "Resource"
+            resource: {
+              name: "cpu"
+              target: {
+                type: "Utilization"
+                averageUtilization: config.hpa.cpu.targetAverageUtilization
+              }
+            }
+          }
+        ]
+      }
+    }
 
-    service = null
+    service = {
+      apiVersion: "v1"
+      kind: "Service"
+      metadata: {
+        name: config.name
+      }
+      spec {
+        selector:
+          labels
+            \ Object.slice ["app", "component"]
+
+        ports: [
+          {
+            protocol: "TCP"
+            port: 80
+            targetPort: 3000
+          }
+        ]
+      }
+    }
 
     labels = {
       app: config.application
@@ -52,7 +98,7 @@ targets = ["development", "staging", "production"]
       team: config.team
     }
 
-    config = envConfig[target]
+    config = envConfig.default & envConfig[target]
 
   for target in targets
 }
