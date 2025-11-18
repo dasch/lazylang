@@ -233,18 +233,23 @@ pub const Environment = struct {
 ```
 lazylang/
 ├── src/
-│   ├── main.zig              # CLI entry (run, test, format commands)
-│   ├── cli.zig               # Command-line parsing
-│   ├── eval.zig              # ⭐ Core: Tokenizer + Parser + Evaluator
-│   ├── builtins.zig          # Native function implementations
-│   ├── spec.zig              # Test framework (runs *Spec.lazy files)
-│   ├── error_context.zig     # Error location tracking
-│   ├── error_reporter.zig    # Pretty error formatting
-│   ├── formatter.zig         # Code formatter
-│   ├── lsp.zig               # LSP server implementation
-│   ├── lsp_main.zig          # LSP entry point
-│   ├── json_rpc.zig          # JSON-RPC for LSP
-│   └── json_error.zig        # JSON error handling
+│   ├── main.zig                   # CLI entry point
+│   ├── cli.zig                    # Command dispatcher (661 lines)
+│   ├── cli_error_reporting.zig    # CLI error formatting
+│   │
+│   ├── eval.zig                   # ⭐ Core evaluator (4939 lines, re-exports modules)
+│   ├── ast.zig                    # AST type definitions
+│   ├── tokenizer.zig              # Lexical analysis
+│   │
+│   ├── builtins.zig               # Native function implementations
+│   ├── spec.zig                   # Test framework (runs *Spec.lazy files)
+│   ├── error_context.zig          # Error location tracking
+│   ├── error_reporter.zig         # Pretty error formatting
+│   ├── formatter.zig              # Code formatter
+│   ├── lsp.zig                    # LSP server implementation
+│   ├── lsp_main.zig               # LSP entry point
+│   ├── json_rpc.zig               # JSON-RPC for LSP
+│   └── json_error.zig             # JSON error handling
 ├── stdlib/lib/
 │   ├── Array.lazy            # Array utilities
 │   ├── String.lazy           # String utilities
@@ -267,21 +272,26 @@ lazylang/
 
 ### Key Files Deep Dive
 
-#### eval.zig (~3000 lines) - THE CORE
+#### eval.zig (~4900 lines) - THE CORE
 
-**Sections**:
-- Lines 5-78: Token definition
-- Lines 79-224: Expression AST
-- Lines 225-254: Pattern types
-- Lines 255-648: Tokenizer implementation
-- Lines 650-1822: Parser (recursive descent)
-- Lines 1837-1841: Environment
-- Lines 1851-1879: Value types
-- Lines 1904-1977: Module import system
-- Lines 2170-2551: Evaluator (`evaluateExpression`)
-- Lines 2696-2747: Builtin environment setup
+**Architecture**: eval.zig now serves as a re-export layer for modularized components while maintaining backward compatibility.
 
-**Why monolithic?**: Simplicity. Everything related to evaluation is in one place. No need to coordinate between files.
+**Structure** (after partial refactoring):
+- Imports and re-exports AST types from ast.zig
+- Imports and re-exports Tokenizer from tokenizer.zig
+- Contains Parser implementation (~1600 lines)
+- Contains evaluateExpression and evaluation logic (~1400 lines)
+- Contains Value types and Environment (~200 lines)
+- Contains module import system (~200 lines)
+- Contains value formatting (~800 lines)
+- Contains builtin environment setup (~100 lines)
+
+**Extracted modules**:
+- **ast.zig**: All AST and token type definitions
+- **tokenizer.zig**: Complete lexical analysis implementation
+- See REFACTORING.md for extraction details and remaining work
+
+**Why still large?**: The refactoring is ongoing. Parser, evaluator, and value formatting are candidates for further extraction.
 
 #### builtins.zig (~600 lines)
 
