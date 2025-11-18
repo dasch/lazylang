@@ -255,6 +255,7 @@ const Parser = struct {
             try fields.append(self.arena, .{
                 .key = key,
                 .value = value,
+                .is_patch = false,
             });
         }
 
@@ -323,6 +324,7 @@ const Parser = struct {
             try fields.append(self.arena, .{
                 .key = key,
                 .value = value,
+                .is_patch = false,
             });
 
             // Skip to next line

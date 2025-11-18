@@ -818,6 +818,7 @@ fn runRun(
         try env_fields.append(arena, .{
             .key = key_copy,
             .value = evaluator.Value{ .string = value_copy },
+            .is_patch = false,
         });
     }
 
@@ -833,10 +834,12 @@ fn runRun(
     system_fields[0] = .{
         .key = "args",
         .value = evaluator.Value{ .array = .{ .elements = args_values } },
+        .is_patch = false,
     };
     system_fields[1] = .{
         .key = "env",
         .value = env_object,
+        .is_patch = false,
     };
 
     const system_value = evaluator.Value{

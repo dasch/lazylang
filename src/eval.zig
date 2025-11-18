@@ -2484,6 +2484,7 @@ pub const TupleValue = struct {
 pub const ObjectFieldValue = struct {
     key: []const u8,
     value: Value,
+    is_patch: bool, // true if field should be deep-merged (written as `field { ... }` without colon)
 };
 
 pub const ObjectValue = struct {
@@ -3155,16 +3156,32 @@ fn mergeObjects(arena: std.mem.Allocator, base: ObjectValue, extension: ObjectVa
         for (extension.fields) |ext_field| {
             if (std.mem.eql(u8, base_field.key, ext_field.key)) {
                 found_override = true;
-                // Use the extension value (it overrides the base)
-                const key_copy = try arena.dupe(u8, ext_field.key);
-                try result_fields.append(arena, .{ .key = key_copy, .value = ext_field.value });
+                // Check if we should deep merge or replace
+                if (ext_field.is_patch) {
+                    // Deep merge: both values should be objects
+                    const base_forced = try force(arena, base_field.value);
+                    const ext_forced = try force(arena, ext_field.value);
+                    if (base_forced == .object and ext_forced == .object) {
+                        const merged = try mergeObjects(arena, base_forced.object, ext_forced.object);
+                        const key_copy = try arena.dupe(u8, ext_field.key);
+                        try result_fields.append(arena, .{ .key = key_copy, .value = merged, .is_patch = false });
+                    } else {
+                        // Not both objects, just use extension value
+                        const key_copy = try arena.dupe(u8, ext_field.key);
+                        try result_fields.append(arena, .{ .key = key_copy, .value = ext_field.value, .is_patch = ext_field.is_patch });
+                    }
+                } else {
+                    // Shallow replace: use the extension value
+                    const key_copy = try arena.dupe(u8, ext_field.key);
+                    try result_fields.append(arena, .{ .key = key_copy, .value = ext_field.value, .is_patch = ext_field.is_patch });
+                }
                 break;
             }
         }
         if (!found_override) {
             // No override, keep the base field
             const key_copy = try arena.dupe(u8, base_field.key);
-            try result_fields.append(arena, .{ .key = key_copy, .value = base_field.value });
+            try result_fields.append(arena, .{ .key = key_copy, .value = base_field.value, .is_patch = base_field.is_patch });
         }
     }
 
@@ -3179,7 +3196,7 @@ fn mergeObjects(arena: std.mem.Allocator, base: ObjectValue, extension: ObjectVa
         }
         if (!found_in_base) {
             const key_copy = try arena.dupe(u8, ext_field.key);
-            try result_fields.append(arena, .{ .key = key_copy, .value = ext_field.value });
+            try result_fields.append(arena, .{ .key = key_copy, .value = ext_field.value, .is_patch = ext_field.is_patch });
         }
     }
 
@@ -4011,7 +4028,7 @@ pub fn evaluateExpression(
                             .state = .unevaluated,
                             .field_key_location = field.key_location,
                         };
-                        try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk } });
+                        try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch });
                     },
                     .dynamic => |key_expr| {
                         // Evaluate the key expression
@@ -4034,7 +4051,7 @@ pub fn evaluateExpression(
                                     .state = .unevaluated,
                                     .field_key_location = field.key_location,
                                 };
-                                try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk } });
+                                try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch });
                             },
                             .array => |arr| {
                                 // Array of keys: create multiple fields with same value
@@ -4055,7 +4072,7 @@ pub fn evaluateExpression(
                                                 .state = .unevaluated,
                                                 .field_key_location = field.key_location,
                                             };
-                                            try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk } });
+                                            try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch });
                                         },
                                         else => return error.TypeMismatch,
                                     }
@@ -4087,7 +4104,7 @@ pub fn evaluateExpression(
                             .dynamic => return error.TypeMismatch, // Dynamic keys not supported in object_extend
                         };
                         const key_copy = try arena.dupe(u8, static_key);
-                        try fields_list.append(arena, .{ .key = key_copy, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx) });
+                        try fields_list.append(arena, .{ .key = key_copy, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx), .is_patch = field.is_patch });
                     }
                     const obj_arg = Value{ .object = .{ .fields = try fields_list.toOwnedSlice(arena), .module_doc = null } };
                     const bound_env = try matchPattern(arena, function_ptr.param, obj_arg, function_ptr.env, ctx);
@@ -4104,7 +4121,7 @@ pub fn evaluateExpression(
                             .dynamic => return error.TypeMismatch, // Dynamic keys not supported in object_extend
                         };
                         const key_copy = try arena.dupe(u8, static_key);
-                        try fields_list.append(arena, .{ .key = key_copy, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx) });
+                        try fields_list.append(arena, .{ .key = key_copy, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx), .is_patch = field.is_patch });
                     }
                     const obj_arg = Value{ .object = .{ .fields = try fields_list.toOwnedSlice(arena), .module_doc = null } };
                     const args = [_]Value{obj_arg};
@@ -4137,14 +4154,14 @@ pub fn evaluateExpression(
                                     else => return error.TypeMismatch,
                                 };
                                 const merged = try mergeObjects(arena, existing_obj, value_obj);
-                                try extension_fields.append(arena, .{ .key = key_copy, .value = merged });
+                                try extension_fields.append(arena, .{ .key = key_copy, .value = merged, .is_patch = false });
                             } else {
                                 // Field doesn't exist in base, just add it
-                                try extension_fields.append(arena, .{ .key = key_copy, .value = value });
+                                try extension_fields.append(arena, .{ .key = key_copy, .value = value, .is_patch = field.is_patch });
                             }
                         } else {
                             // Overwrite: just use the new value
-                            try extension_fields.append(arena, .{ .key = key_copy, .value = value });
+                            try extension_fields.append(arena, .{ .key = key_copy, .value = value, .is_patch = field.is_patch });
                         }
                     }
 
@@ -4330,6 +4347,7 @@ pub fn evaluateExpression(
                 new_fields[i] = .{
                     .key = try arena.dupe(u8, field_name),
                     .value = field_value,
+                    .is_patch = false,
                 };
             }
 
@@ -4466,7 +4484,7 @@ fn evaluateObjectComprehension(
             else => return error.TypeMismatch,
         };
 
-        try result.append(arena, .{ .key = key_string, .value = value_value });
+        try result.append(arena, .{ .key = key_string, .value = value_value, .is_patch = false });
         return;
     }
 

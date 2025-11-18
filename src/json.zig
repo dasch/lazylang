@@ -102,7 +102,7 @@ fn jsonValueToLazylang(arena: std.mem.Allocator, json_value: std.json.Value) (Js
             while (iter.next()) |entry| {
                 const key = try arena.dupe(u8, entry.key_ptr.*);
                 const value = try jsonValueToLazylang(arena, entry.value_ptr.*);
-                fields[i] = .{ .key = key, .value = value };
+                fields[i] = .{ .key = key, .value = value, .is_patch = false };
                 i += 1;
             }
             return eval.Value{ .object = .{ .fields = fields, .module_doc = null } };
