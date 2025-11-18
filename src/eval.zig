@@ -4964,22 +4964,35 @@ fn formatValueAsYamlImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator,
                 const formatted = try formatValueAsYamlImpl(allocator, arena, element, indent + 1);
                 defer allocator.free(formatted);
 
-                // If the formatted value contains newlines, we need to indent it
+                // If the formatted value contains newlines, append as-is (already properly indented)
                 if (std.mem.indexOf(u8, formatted, "\n")) |_| {
+                    // Child was formatted with indent+1, so lines are already indented
+                    // First line goes after "- ", subsequent lines already have correct indentation
                     var is_first = true;
                     var iter = std.mem.splitScalar(u8, formatted, '\n');
                     while (iter.next()) |line| {
-                        if (!is_first) {
+                        if (is_first) {
+                            // Strip leading indent from first line (it goes inline with "- ")
+                            const spaces_to_strip = (indent + 1) * 2;
+                            const stripped = if (line.len >= spaces_to_strip and std.mem.allEqual(u8, line[0..spaces_to_strip], ' '))
+                                line[spaces_to_strip..]
+                            else
+                                line;
+                            try builder.appendSlice(allocator, stripped);
+                            is_first = false;
+                        } else {
                             try builder.append(allocator, '\n');
-                            for (0..indent + 1) |_| {
-                                try builder.appendSlice(allocator, "  ");
-                            }
+                            try builder.appendSlice(allocator, line);
                         }
-                        try builder.appendSlice(allocator, line);
-                        is_first = false;
                     }
                 } else {
-                    try builder.appendSlice(allocator, formatted);
+                    // Single-line value: strip leading indentation (it goes inline with "- ")
+                    const spaces_to_strip = (indent + 1) * 2;
+                    const stripped = if (formatted.len >= spaces_to_strip and std.mem.allEqual(u8, formatted[0..spaces_to_strip], ' '))
+                        formatted[spaces_to_strip..]
+                    else
+                        formatted;
+                    try builder.appendSlice(allocator, stripped);
                 }
             }
 
@@ -5004,7 +5017,37 @@ fn formatValueAsYamlImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator,
                 try builder.appendSlice(allocator, "- ");
                 const formatted = try formatValueAsYamlImpl(allocator, arena, element, indent + 1);
                 defer allocator.free(formatted);
-                try builder.appendSlice(allocator, formatted);
+
+                // If the formatted value contains newlines, append as-is (already properly indented)
+                if (std.mem.indexOf(u8, formatted, "\n")) |_| {
+                    // Child was formatted with indent+1, so lines are already indented
+                    // First line goes after "- ", subsequent lines already have correct indentation
+                    var is_first = true;
+                    var iter = std.mem.splitScalar(u8, formatted, '\n');
+                    while (iter.next()) |line| {
+                        if (is_first) {
+                            // Strip leading indent from first line (it goes inline with "- ")
+                            const spaces_to_strip = (indent + 1) * 2;
+                            const stripped = if (line.len >= spaces_to_strip and std.mem.allEqual(u8, line[0..spaces_to_strip], ' '))
+                                line[spaces_to_strip..]
+                            else
+                                line;
+                            try builder.appendSlice(allocator, stripped);
+                            is_first = false;
+                        } else {
+                            try builder.append(allocator, '\n');
+                            try builder.appendSlice(allocator, line);
+                        }
+                    }
+                } else {
+                    // Single-line value: strip leading indentation (it goes inline with "- ")
+                    const spaces_to_strip = (indent + 1) * 2;
+                    const stripped = if (formatted.len >= spaces_to_strip and std.mem.allEqual(u8, formatted[0..spaces_to_strip], ' '))
+                        formatted[spaces_to_strip..]
+                    else
+                        formatted;
+                    try builder.appendSlice(allocator, stripped);
+                }
             }
 
             break :blk try builder.toOwnedSlice(allocator);
@@ -5038,22 +5081,26 @@ fn formatValueAsYamlImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator,
                 const formatted = try formatValueAsYamlImpl(allocator, arena, field.value, indent + 1);
                 defer allocator.free(formatted);
 
-                // If the formatted value contains newlines, put it on the next line
-                if (std.mem.indexOf(u8, formatted, "\n")) |_| {
+                // Check if value should go on a new line (multiline, array, or nested object)
+                const expected_indent = (indent + 1) * 2;
+                const is_multiline = std.mem.indexOf(u8, formatted, "\n") != null;
+                const is_structured = formatted.len >= expected_indent and
+                                     std.mem.allEqual(u8, formatted[0..expected_indent], ' ');
+
+                if (is_multiline or is_structured) {
                     try builder.append(allocator, '\n');
+                    // Child was formatted with indent+1, so lines already have correct indentation
                     var is_first = true;
                     var iter = std.mem.splitScalar(u8, formatted, '\n');
                     while (iter.next()) |line| {
                         if (!is_first) {
                             try builder.append(allocator, '\n');
                         }
-                        for (0..indent + 1) |_| {
-                            try builder.appendSlice(allocator, "  ");
-                        }
                         try builder.appendSlice(allocator, line);
                         is_first = false;
                     }
                 } else {
+                    // Simple scalar value: goes inline with ": "
                     try builder.appendSlice(allocator, formatted);
                 }
             }
