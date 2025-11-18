@@ -1,3 +1,14 @@
+//! Main entry point for the Lazylang CLI.
+//!
+//! This is a thin wrapper that:
+//! - Sets up the allocator
+//! - Collects command-line arguments
+//! - Buffers stdout/stderr for atomic output
+//! - Delegates to cli.run() for command dispatch
+//! - Exits with the appropriate exit code
+//!
+//! All actual CLI logic is in cli.zig.
+
 const std = @import("std");
 const cli = @import("cli.zig");
 

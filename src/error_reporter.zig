@@ -1,3 +1,27 @@
+//! Pretty error reporting with source context.
+//!
+//! This module formats errors with:
+//! - File location indicators (--> file.lazy:10:5)
+//! - Source line excerpts with line numbers
+//! - Caret/underline highlighting of error locations
+//! - Colored output (respects NO_COLOR environment variable)
+//! - Secondary location support for multi-location errors
+//!
+//! Example output:
+//!   error: Unknown identifier
+//!   --> example.lazy:5:12
+//!   5 |   let result = unknownVar + 42
+//!                    ^^^^^^^^^^
+//!   Identifier `unknownVar` is not defined in the current scope.
+//!   help: Check the spelling or define this variable before using it.
+//!
+//! The reporter works with ErrorInfo structures that contain:
+//! - Error title and message
+//! - Source location(s)
+//! - Helpful suggestions
+//!
+//! Color support can be disabled by setting the NO_COLOR environment variable.
+
 const std = @import("std");
 
 /// Check if colors should be used in error output

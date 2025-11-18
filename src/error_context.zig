@@ -1,3 +1,25 @@
+//! Error context tracking for detailed error messages.
+//!
+//! Zig's error system doesn't allow attaching data to errors, so this module
+//! provides a workaround by storing error context in a separate structure.
+//!
+//! Key features:
+//! - Source location tracking (line, column, offset, length)
+//! - Secondary location support for multi-location errors (e.g., cyclic refs)
+//! - Error-specific data (unknown field names, type mismatches, etc.)
+//! - Source file mapping for multi-file error reporting
+//! - Identifier registry for "did you mean" suggestions
+//! - Levenshtein distance for fuzzy identifier matching
+//!
+//! Usage pattern:
+//!   1. Create ErrorContext at start of parsing/evaluation
+//!   2. Call setErrorLocation() before returning an error
+//!   3. Call setErrorData() to attach error-specific information
+//!   4. Error reporter reads context to generate helpful messages
+//!
+//! The context is passed through the call stack and updated at error sites
+//! to provide precise location information and helpful suggestions.
+
 const std = @import("std");
 const error_reporter = @import("error_reporter.zig");
 

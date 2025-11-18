@@ -1,3 +1,23 @@
+//! Native builtin functions for Lazylang.
+//!
+//! This module implements native functions that are exposed to Lazylang code
+//! via the builtin environment. Functions are prefixed with __ in the environment
+//! and typically wrapped by stdlib modules (Array.lazy, String.lazy, etc.).
+//!
+//! Categories:
+//! - Array operations: length, get, fold, reverse
+//! - String operations: length, concat, split, toUpperCase, toLowerCase, etc.
+//! - Math operations: round, floor, ceil, abs, sqrt, pow, mod, rem
+//! - Object operations: get
+//! - Error handling: crash
+//!
+//! All functions follow the signature:
+//!   fn(arena: Allocator, args: []const Value) EvalError!Value
+//!
+//! The arena allocator is used for all allocations - memory is freed in bulk
+//! when evaluation completes. Functions validate argument counts and types,
+//! returning appropriate errors for invalid inputs.
+
 const std = @import("std");
 const eval = @import("eval.zig");
 const yaml = @import("yaml.zig");
