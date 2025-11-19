@@ -1,0 +1,36 @@
+{ describe, it, mustEq } = import 'Spec'
+Basics = import 'Basics'
+
+describe "Basics" [
+  describe "isInteger" [
+    it "returns true for integers" do
+      mustEq true (Basics.isInteger 42)
+
+    it "returns false for strings" do
+      mustEq false (Basics.isInteger "hello")
+  ]
+
+  describe "isString" [
+    it "returns true for strings" do
+      mustEq true (Basics.isString "hello")
+
+    it "returns false for integers" do
+      mustEq false (Basics.isString 42)
+  ]
+
+  describe "isArray" [
+    it "returns true for arrays" do
+      mustEq true (Basics.isArray [1, 2, 3])
+
+    it "returns false for strings" do
+      mustEq false (Basics.isArray "hello")
+  ]
+
+  describe "isFunction" [
+    it "returns true for lambda functions" do
+      mustEq true (Basics.isFunction (x -> x + 1))
+
+    it "returns false for integers" do
+      mustEq false (Basics.isFunction 42)
+  ]
+]

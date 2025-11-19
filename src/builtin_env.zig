@@ -96,6 +96,18 @@ pub fn createBuiltinEnvironment(arena: std.mem.Allocator) !?*Environment {
     env = try addBuiltin(arena, env, "__math_mod", builtins.mathMod);
     env = try addBuiltin(arena, env, "__math_rem", builtins.mathRem);
 
+    // Type predicate builtins
+    env = try addBuiltin(arena, env, "__is_integer", builtins.isInteger);
+    env = try addBuiltin(arena, env, "__is_float", builtins.isFloat);
+    env = try addBuiltin(arena, env, "__is_boolean", builtins.isBoolean);
+    env = try addBuiltin(arena, env, "__is_null", builtins.isNull);
+    env = try addBuiltin(arena, env, "__is_symbol", builtins.isSymbol);
+    env = try addBuiltin(arena, env, "__is_string", builtins.isString);
+    env = try addBuiltin(arena, env, "__is_array", builtins.isArray);
+    env = try addBuiltin(arena, env, "__is_tuple", builtins.isTuple);
+    env = try addBuiltin(arena, env, "__is_object", builtins.isObject);
+    env = try addBuiltin(arena, env, "__is_function", builtins.isFunction);
+
     return env;
 }
 
