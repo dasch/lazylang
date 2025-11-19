@@ -1512,17 +1512,92 @@ pub fn evaluateExpression(
                     // The left side is the value, the right side is the function
                     switch (right_value) {
                         .function => |function_ptr| {
-                            const bound_env = try matchPattern(arena, function_ptr.param, left_value, function_ptr.env, ctx);
-                            break :blk2 try evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx);
+                            const bound_env = matchPattern(arena, function_ptr.param, left_value, function_ptr.env, ctx) catch |err| {
+                                if (ctx.error_ctx) |err_ctx| {
+                                    err_ctx.captureStackTrace() catch {};
+                                }
+                                return err;
+                            };
+
+                            // Push stack frame for pipeline function call
+                            const function_name = switch (binary.right.data) {
+                                .identifier => |name| name,
+                                else => null,
+                            };
+
+                            if (ctx.error_ctx) |err_ctx| {
+                                err_ctx.pushStackFrame(
+                                    function_name,
+                                    err_ctx.current_file,
+                                    binary.right.location.line,
+                                    binary.right.location.column,
+                                    binary.right.location.offset,
+                                    binary.right.location.length,
+                                    false,
+                                ) catch {};
+                            }
+
+                            const result = evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx) catch |err| {
+                                if (ctx.error_ctx) |err_ctx| {
+                                    if (err_ctx.stack_trace == null) {
+                                        err_ctx.captureStackTrace() catch {};
+                                    }
+                                }
+                                if (ctx.error_ctx) |err_ctx| {
+                                    err_ctx.popStackFrame();
+                                }
+                                return err;
+                            };
+
+                            if (ctx.error_ctx) |err_ctx| {
+                                err_ctx.popStackFrame();
+                            }
+
+                            break :blk2 result;
                         },
                         .native_fn => |native_fn| {
+                            // Push stack frame for native function call
+                            const function_name = switch (binary.right.data) {
+                                .identifier => |name| name,
+                                else => null,
+                            };
+
+                            if (ctx.error_ctx) |err_ctx| {
+                                err_ctx.pushStackFrame(
+                                    function_name,
+                                    err_ctx.current_file,
+                                    binary.right.location.line,
+                                    binary.right.location.column,
+                                    binary.right.location.offset,
+                                    binary.right.location.length,
+                                    true,
+                                ) catch {};
+                            }
+
                             const args = [_]Value{left_value};
-                            break :blk2 try native_fn(arena, &args);
+                            const result = native_fn(arena, &args) catch |err| {
+                                if (ctx.error_ctx) |err_ctx| {
+                                    if (err_ctx.stack_trace == null) {
+                                        err_ctx.captureStackTrace() catch {};
+                                    }
+                                }
+                                if (ctx.error_ctx) |err_ctx| {
+                                    err_ctx.popStackFrame();
+                                }
+                                return err;
+                            };
+
+                            if (ctx.error_ctx) |err_ctx| {
+                                err_ctx.popStackFrame();
+                            }
+
+                            break :blk2 result;
                         },
                         else => {
                             // Point to the right operand (function) that isn't actually a function
                             if (ctx.error_ctx) |err_ctx| {
                                 err_ctx.setErrorLocation(binary.right.location.line, binary.right.location.column, binary.right.location.offset, binary.right.location.length);
+                                err_ctx.captureStackTrace() catch {};
                             }
                             return error.ExpectedFunction;
                         },
@@ -1621,20 +1696,99 @@ pub fn evaluateExpression(
                                     }
                                 }
                             }
+                            // Capture stack trace on error
+                            err_ctx.captureStackTrace() catch {};
                         }
                         return err;
                     };
-                    break :blk try evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx);
+
+                    // Push stack frame for function call
+                    const function_name = switch (application.function.data) {
+                        .identifier => |name| name,
+                        else => null,
+                    };
+
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.pushStackFrame(
+                            function_name,
+                            err_ctx.current_file,
+                            application.function.location.line,
+                            application.function.location.column,
+                            application.function.location.offset,
+                            application.function.location.length,
+                            false, // Not a native function
+                        ) catch {};
+                    }
+
+                    // Evaluate function body
+                    const result = evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx) catch |err| {
+                        // Capture stack trace on error (only if not already captured)
+                        if (ctx.error_ctx) |err_ctx| {
+                            if (err_ctx.stack_trace == null) {
+                                err_ctx.captureStackTrace() catch {};
+                            }
+                        }
+                        // Pop stack frame before returning error
+                        if (ctx.error_ctx) |err_ctx| {
+                            err_ctx.popStackFrame();
+                        }
+                        return err;
+                    };
+
+                    // Pop stack frame after successful evaluation
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.popStackFrame();
+                    }
+
+                    break :blk result;
                 },
                 .native_fn => |native_fn| {
+                    // Push stack frame for native function call
+                    const function_name = switch (application.function.data) {
+                        .identifier => |name| name,
+                        else => null,
+                    };
+
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.pushStackFrame(
+                            function_name,
+                            err_ctx.current_file,
+                            application.function.location.line,
+                            application.function.location.column,
+                            application.function.location.offset,
+                            application.function.location.length,
+                            true, // Native function
+                        ) catch {};
+                    }
+
                     // Native functions receive a single argument (could be a tuple for multiple args)
                     const args = [_]Value{argument_value};
-                    break :blk try native_fn(arena, &args);
+                    const result = native_fn(arena, &args) catch |err| {
+                        // Capture stack trace on error (only if not already captured)
+                        if (ctx.error_ctx) |err_ctx| {
+                            if (err_ctx.stack_trace == null) {
+                                err_ctx.captureStackTrace() catch {};
+                            }
+                        }
+                        // Pop stack frame before returning error
+                        if (ctx.error_ctx) |err_ctx| {
+                            err_ctx.popStackFrame();
+                        }
+                        return err;
+                    };
+
+                    // Pop stack frame after successful evaluation
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.popStackFrame();
+                    }
+
+                    break :blk result;
                 },
                 else => {
                     // Point to the function expression that isn't actually a function
                     if (ctx.error_ctx) |err_ctx| {
                         err_ctx.setErrorLocation(application.function.location.line, application.function.location.column, application.function.location.offset, application.function.location.length);
+                        err_ctx.captureStackTrace() catch {};
                     }
                     return error.ExpectedFunction;
                 },
@@ -2417,13 +2571,14 @@ fn evalSourceWithContext(
     source: []const u8,
     current_dir: ?[]const u8,
 ) EvalError!EvalResult {
-    return evalSourceWithFormat(allocator, source, current_dir, .pretty);
+    return evalSourceWithFormat(allocator, source, current_dir, null, .pretty);
 }
 
 fn evalSourceWithFormat(
     allocator: std.mem.Allocator,
     source: []const u8,
     current_dir: ?[]const u8,
+    filename: ?[]const u8,
     format: FormatStyle,
 ) EvalError!EvalResult {
     var arena = std.heap.ArenaAllocator.init(allocator);
@@ -2433,6 +2588,12 @@ fn evalSourceWithFormat(
     var err_ctx = error_context.ErrorContext.init(allocator);
     errdefer err_ctx.deinit();
     err_ctx.setSource(source);
+
+    // Set current file if provided
+    if (filename) |fname| {
+        err_ctx.registerSource(fname, source) catch {};
+        err_ctx.setCurrentFile(fname);
+    }
 
     const context = EvalContext{
         .allocator = allocator,
@@ -2508,7 +2669,7 @@ pub fn evalInlineWithContext(allocator: std.mem.Allocator, source: []const u8) E
 }
 
 pub fn evalInlineWithFormat(allocator: std.mem.Allocator, source: []const u8, format: FormatStyle) EvalError!EvalResult {
-    return try evalSourceWithFormat(allocator, source, null, format);
+    return try evalSourceWithFormat(allocator, source, null, null, format);
 }
 
 pub fn evalFileWithContext(allocator: std.mem.Allocator, path: []const u8) EvalError!EvalResult {
@@ -2530,17 +2691,7 @@ pub fn evalFileWithFormat(allocator: std.mem.Allocator, path: []const u8, format
     defer allocator.free(contents);
 
     const directory = std.fs.path.dirname(path);
-    var result = try evalSourceWithFormat(allocator, contents, directory, format);
-
-    // Register the main file for error reporting
-    if (result.err != null) {
-        result.error_ctx.registerSource(path, contents) catch {};
-        if (result.error_ctx.current_file.len == 0) {
-            result.error_ctx.setCurrentFile(path);
-        }
-    }
-
-    return result;
+    return try evalSourceWithFormat(allocator, contents, directory, path, format);
 }
 
 pub const EvalValueResult = struct {
