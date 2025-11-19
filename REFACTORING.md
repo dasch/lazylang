@@ -2,8 +2,10 @@
 
 ## Completed Work
 
-### Phase 1: eval.zig Refactoring
-**Progress**: 5,702 lines → 2,647 lines (3,055 lines extracted, 54% reduction)
+### Phase 1: eval.zig Refactoring ✅ COMPLETE
+**Progress**: 5,702 lines → 418 lines (5,284 lines extracted, 93% reduction)
+
+eval.zig has been successfully modularized into 8 focused modules!
 
 #### Extracted Modules:
 1. **src/ast.zig** (314 lines)
@@ -46,6 +48,16 @@
    - openImportFile for module resolution
    - ModuleFile struct
 
+8. **src/evaluator.zig** (2,300 lines)
+   - valuesEqual: Deep value comparison with thunk forcing
+   - matchPattern: Pattern matching and destructuring
+   - force: Lazy evaluation with cycle detection
+   - evaluateExpression: Main tree-walking interpreter
+   - Array and object comprehensions
+   - importModule: Module loading and evaluation
+   - createStdlibEnvironment: Standard library setup
+   - Helper functions: field access, object merging, error reporting
+
 ### Phase 2: cli.zig Refactoring (Partial)
 **Progress**: 953 lines → 690 lines (263 lines extracted, 28% reduction)
 
@@ -57,23 +69,18 @@
 
 ## Remaining Work
 
-### Phase 1: eval.zig Further Refactoring
+### Phase 1: eval.zig - Final Polish (Optional)
 
-The following extractions would complete eval.zig modularization:
+eval.zig is now at 418 lines, down from 5,702 (93% reduction). The remaining code consists of:
+- Re-exports from all modules (maintaining backward compatibility)
+- Public API wrappers (evalInline, evalFile, etc.) - ~250 lines
+- Result types (EvalResult, EvalOutput, FormatStyle) - ~100 lines
+- Helper function (lookup) - ~10 lines
 
-1. **src/evaluator.zig** (~1,400 lines) - HIGH PRIORITY
-   - evaluateExpression main function
-   - matchPattern for destructuring
-   - force function for thunk evaluation
-   - Comprehension evaluation (array and object)
-   - importModule function
-   - Helper functions (findObjectField, mergeObjects, accessField)
-
-2. **src/eval_api.zig** (~300 lines)
-   - Public API functions (evalInline, evalFile, etc.)
-   - Result types (EvalResult, EvalOutput, etc.)
-   - High-level evaluation interfaces
-   - Helper functions (lookup, type name getters, pattern formatting)
+**Optional future extraction:**
+- **src/eval_api.zig** (~250 lines): Extract public API wrappers
+  - This would reduce eval.zig to ~170 lines of pure re-exports
+  - Low priority since current size (418 lines) is very manageable
 
 ### Phase 2: cli.zig Further Refactoring
 
@@ -128,17 +135,24 @@ All 161 tests pass:
 - Zig unit tests: ✓
 - Lazylang stdlib specs: ✓ (161 passed, 1 ignored)
 
-## Next Steps
+## Next Steps (Optional)
 
-To complete the refactoring:
+The major refactoring goals have been achieved! Remaining optional improvements:
 
-1. **Extract evaluator.zig** (~1,400 lines) - Contains core evaluation logic
-2. **Extract eval_api.zig** (~300 lines) - Contains public API wrappers
-3. Complete Phase 2 CLI command extractions
-4. Update CLAUDE.md with new file organization
-5. Add unit tests for new modules
-6. Consider extracting builtins.zig into category-specific modules (array, string, math, object)
+1. **Complete Phase 2 CLI refactoring** - Extract individual command handlers
+   - Would reduce cli.zig from 690 to ~150 lines
+   - Low priority as current size is manageable
 
-After these extractions, eval.zig will be reduced to ~900 lines of primarily re-exports and glue code, completing the modularization effort.
+2. **Update CLAUDE.md** - Document new file organization
+   - Update the "Codebase Navigation" section
+   - Reflect the 8-module architecture
 
-The modular structure is now well-established, making future extractions straightforward to implement following the established patterns.
+3. **Consider builtins.zig extraction** - Split by category
+   - array_builtins.zig, string_builtins.zig, math_builtins.zig, object_builtins.zig
+   - Would improve discoverability of builtin functions
+
+4. **Add unit tests** - For newly extracted modules
+   - Most functionality is already tested through integration tests
+   - Could add focused unit tests for edge cases
+
+The modular structure is complete and battle-tested. All 161 tests pass. The codebase is now significantly more maintainable and navigable.
