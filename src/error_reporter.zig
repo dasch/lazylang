@@ -23,6 +23,7 @@
 //! Color support can be disabled by setting the NO_COLOR environment variable.
 
 const std = @import("std");
+const error_context = @import("error_context.zig");
 
 /// Check if colors should be used in error output
 /// Respects NO_COLOR environment variable (https://no-color.org/)
@@ -89,6 +90,7 @@ pub const ErrorInfo = struct {
     secondary_label: ?[]const u8 = null,
     message: []const u8,
     suggestion: ?[]const u8,
+    stack_trace: ?[]error_context.StackFrame = null,
 };
 
 /// Report an error with full context to any writer
@@ -161,6 +163,39 @@ pub fn reportError(writer: anytype, source: []const u8, filename: []const u8, in
         try w.writeAll(" ");
         try w.writeAll(suggestion);
         try w.writeAll("\n");
+    }
+
+    // Print stack trace if available
+    if (info.stack_trace) |stack_trace| {
+        if (stack_trace.len > 0) {
+            try w.writeAll("\n");
+            try bold(w, "Stack trace:", use_colors);
+            try w.writeAll("\n");
+            try showStackTrace(w, stack_trace, use_colors);
+        }
+    }
+}
+
+/// Display a stack trace
+fn showStackTrace(writer: anytype, stack_trace: []error_context.StackFrame, use_colors: bool) !void {
+    const w = writer;
+
+    for (stack_trace, 0..) |frame, i| {
+        try w.print("  {d}: ", .{i});
+
+        if (frame.is_native) {
+            try boldCyan(w, "[native] ", use_colors);
+        }
+
+        if (frame.function_name) |name| {
+            try bold(w, name, use_colors);
+        } else {
+            try w.writeAll("<anonymous>");
+        }
+
+        try w.writeAll("\n     at ");
+        try w.writeAll(frame.filename);
+        try w.print(":{d}:{d}\n", .{ frame.location.line, frame.location.column });
     }
 }
 

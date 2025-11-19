@@ -23,6 +23,36 @@
 const std = @import("std");
 const error_reporter = @import("error_reporter.zig");
 
+/// A single stack frame in the call stack
+pub const StackFrame = struct {
+    function_name: ?[]const u8,
+    location: error_reporter.SourceLocation,
+    filename: []const u8,
+    is_native: bool,
+
+    pub fn init(
+        function_name: ?[]const u8,
+        filename: []const u8,
+        line: usize,
+        column: usize,
+        offset: usize,
+        length: usize,
+        is_native: bool,
+    ) StackFrame {
+        return .{
+            .function_name = function_name,
+            .location = .{
+                .line = line,
+                .column = column,
+                .offset = offset,
+                .length = length,
+            },
+            .filename = filename,
+            .is_native = is_native,
+        };
+    }
+};
+
 /// Additional context data for specific error types
 pub const ErrorData = union(enum) {
     unknown_field: struct {
@@ -65,12 +95,17 @@ pub const ErrorContext = struct {
     /// Whether current_file is an owned copy that needs to be freed
     current_file_owned: bool = false,
     identifiers: std.ArrayList([]const u8),
+    /// Call stack for runtime error traces
+    call_stack: std.ArrayList(StackFrame),
+    /// Captured stack trace at the time of error
+    stack_trace: ?[]StackFrame = null,
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) ErrorContext {
         return .{
             .identifiers = std.ArrayList([]const u8){},
             .source_map = std.StringHashMap([]const u8).init(allocator),
+            .call_stack = std.ArrayList(StackFrame){},
             .allocator = allocator,
         };
     }
@@ -98,6 +133,20 @@ pub const ErrorContext = struct {
 
         // Free ErrorData memory
         self.freeErrorData();
+
+        // Free call stack
+        self.call_stack.deinit(self.allocator);
+
+        // Free captured stack trace
+        if (self.stack_trace) |trace| {
+            for (trace) |frame| {
+                if (frame.function_name) |name| {
+                    self.allocator.free(name);
+                }
+                self.allocator.free(frame.filename);
+            }
+            self.allocator.free(trace);
+        }
     }
 
     pub fn setSource(self: *ErrorContext, source: []const u8) void {
@@ -267,6 +316,75 @@ pub const ErrorContext = struct {
         self.last_error_secondary_label = null;
         self.last_error_token_lexeme = null;
         self.last_error_data = .none;
+
+        // Clear stack trace
+        if (self.stack_trace) |trace| {
+            for (trace) |frame| {
+                if (frame.function_name) |name| {
+                    self.allocator.free(name);
+                }
+                self.allocator.free(frame.filename);
+            }
+            self.allocator.free(trace);
+            self.stack_trace = null;
+        }
+    }
+
+    /// Push a stack frame onto the call stack
+    pub fn pushStackFrame(
+        self: *ErrorContext,
+        function_name: ?[]const u8,
+        filename: []const u8,
+        line: usize,
+        column: usize,
+        offset: usize,
+        length: usize,
+        is_native: bool,
+    ) !void {
+        const frame = StackFrame.init(function_name, filename, line, column, offset, length, is_native);
+        try self.call_stack.append(self.allocator, frame);
+    }
+
+    /// Pop a stack frame from the call stack
+    pub fn popStackFrame(self: *ErrorContext) void {
+        if (self.call_stack.items.len > 0) {
+            _ = self.call_stack.pop();
+        }
+    }
+
+    /// Capture the current call stack as a stack trace
+    /// Makes deep copies of all strings so they remain valid after arena deallocation
+    pub fn captureStackTrace(self: *ErrorContext) !void {
+        // Free old stack trace if any
+        if (self.stack_trace) |old_trace| {
+            // Free the strings in the old trace
+            for (old_trace) |frame| {
+                if (frame.function_name) |name| {
+                    self.allocator.free(name);
+                }
+                self.allocator.free(frame.filename);
+            }
+            self.allocator.free(old_trace);
+        }
+
+        // Make a deep copy of the current call stack
+        if (self.call_stack.items.len > 0) {
+            const frames = try self.allocator.alloc(StackFrame, self.call_stack.items.len);
+            for (self.call_stack.items, 0..) |src_frame, i| {
+                frames[i] = StackFrame{
+                    .function_name = if (src_frame.function_name) |name|
+                        try self.allocator.dupe(u8, name)
+                    else
+                        null,
+                    .location = src_frame.location,
+                    .filename = try self.allocator.dupe(u8, src_frame.filename),
+                    .is_native = src_frame.is_native,
+                };
+            }
+            self.stack_trace = frames;
+        } else {
+            self.stack_trace = null;
+        }
     }
 
     /// Find similar identifiers using Levenshtein distance

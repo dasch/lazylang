@@ -41,6 +41,7 @@ pub fn reportErrorWithContext(
             .location = null,
             .message = crash_message,
             .suggestion = null,
+            .stack_trace = err_ctx.stack_trace,
         };
         try error_reporter.reportError(stderr, source, filename, error_info, use_colors);
         evaluator.clearUserCrashMessage();
@@ -60,12 +61,14 @@ pub fn reportErrorWithContext(
             .location = loc,
             .message = "An error occurred at this location.",
             .suggestion = null,
+            .stack_trace = err_ctx.stack_trace,
         };
     } else error_reporter.ErrorInfo{
         .title = "Error",
         .location = null,
         .message = "An error occurred during evaluation.",
         .suggestion = null,
+        .stack_trace = err_ctx.stack_trace,
     };
 
     try error_reporter.reportError(stderr, source, filename, error_info, use_colors);
@@ -86,6 +89,7 @@ pub fn reportError(
     const arena_allocator = arena.allocator();
 
     const location = if (err_ctx) |ctx| ctx.last_error_location else null;
+    const stack_trace = if (err_ctx) |ctx| ctx.stack_trace else null;
 
     const error_info = switch (err) {
         error.UnexpectedCharacter => error_reporter.ErrorInfo{
@@ -93,18 +97,21 @@ pub fn reportError(
             .location = location,
             .message = "Found an unexpected character in the source code.",
             .suggestion = "Remove the invalid character or check for typos.",
+            .stack_trace = stack_trace,
         },
         error.UnterminatedString => error_reporter.ErrorInfo{
             .title = "Unterminated string",
             .location = location,
             .message = error_reporter.ErrorMessages.unterminatedString(),
             .suggestion = error_reporter.ErrorSuggestions.unterminatedString(),
+            .stack_trace = stack_trace,
         },
         error.ExpectedExpression => error_reporter.ErrorInfo{
             .title = "Expected expression",
             .location = location,
             .message = error_reporter.ErrorMessages.expectedExpression(),
             .suggestion = "Add an expression here.",
+            .stack_trace = stack_trace,
         },
         error.UnexpectedToken => blk: {
             if (err_ctx) |ctx| {
@@ -122,6 +129,7 @@ pub fn reportError(
                             .location = location,
                             .message = message,
                             .suggestion = suggestion,
+                            .stack_trace = stack_trace,
                         };
                     },
                     else => {},
@@ -134,6 +142,7 @@ pub fn reportError(
                         .location = location,
                         .message = message,
                         .suggestion = "Check the syntax at this location.",
+                        .stack_trace = stack_trace,
                     };
                 }
             }
@@ -142,6 +151,7 @@ pub fn reportError(
                 .location = location,
                 .message = "Found an unexpected token.",
                 .suggestion = "Check the syntax at this location.",
+                .stack_trace = stack_trace,
             };
         },
         error.UnknownIdentifier => blk: {
@@ -161,6 +171,7 @@ pub fn reportError(
                             .location = location,
                             .message = message,
                             .suggestion = suggestion,
+                            .stack_trace = stack_trace,
                         };
                     },
                     else => {},
@@ -172,6 +183,7 @@ pub fn reportError(
                 .location = location,
                 .message = "This identifier is not defined in the current scope.",
                 .suggestion = "Check the spelling or define this variable before using it.",
+                .stack_trace = stack_trace,
             };
         },
         error.TypeMismatch => blk: {
@@ -197,6 +209,7 @@ pub fn reportError(
                             .location = location,
                             .message = message,
                             .suggestion = "Make sure you're using compatible types for this operation.",
+                            .stack_trace = stack_trace,
                         };
                     },
                     else => {},
@@ -208,6 +221,7 @@ pub fn reportError(
                 .location = location,
                 .message = "This operation cannot be performed on values of incompatible types.",
                 .suggestion = "Make sure you're using compatible types (e.g., numbers with numbers, strings with strings).",
+                .stack_trace = stack_trace,
             };
         },
         error.ExpectedFunction => error_reporter.ErrorInfo{
@@ -215,6 +229,7 @@ pub fn reportError(
             .location = location,
             .message = "Attempted to call a value that is not a function.",
             .suggestion = "Only functions can be called with arguments. Make sure this value is a function.",
+            .stack_trace = stack_trace,
         },
         error.ModuleNotFound => blk: {
             if (err_ctx) |ctx| {
@@ -226,6 +241,7 @@ pub fn reportError(
                             .location = location,
                             .message = message,
                             .suggestion = "Check that the module path is correct and the file exists. Module paths are searched in LAZYLANG_PATH and stdlib/lib.",
+                            .stack_trace = stack_trace,
                         };
                     },
                     else => {},
@@ -237,6 +253,7 @@ pub fn reportError(
                 .location = location,
                 .message = "Could not find the imported module file.",
                 .suggestion = "Check that the module path is correct and the file exists. Module paths are searched in LAZYLANG_PATH and stdlib/lib.",
+                .stack_trace = stack_trace,
             };
         },
         error.WrongNumberOfArguments => error_reporter.ErrorInfo{
@@ -244,12 +261,14 @@ pub fn reportError(
             .location = location,
             .message = "Function was called with the wrong number of arguments.",
             .suggestion = "Check the function signature and provide the correct number of arguments.",
+            .stack_trace = stack_trace,
         },
         error.InvalidArgument => error_reporter.ErrorInfo{
             .title = "Invalid argument",
             .location = location,
             .message = "An argument has an invalid value for this operation.",
             .suggestion = "Check that argument values are within valid ranges (e.g., array indices must be non-negative).",
+            .stack_trace = stack_trace,
         },
         error.UnknownField => blk: {
             if (err_ctx) |ctx| {
@@ -274,6 +293,7 @@ pub fn reportError(
                             .location = location,
                             .message = message,
                             .suggestion = "Check the field name for typos.",
+                            .stack_trace = stack_trace,
                         };
                     },
                     else => {},
@@ -285,6 +305,7 @@ pub fn reportError(
                 .location = location,
                 .message = "Attempted to access a field that doesn't exist on this object.",
                 .suggestion = "Check the field name for typos or verify the object structure.",
+                .stack_trace = stack_trace,
             };
         },
         error.Overflow => error_reporter.ErrorInfo{
@@ -292,6 +313,7 @@ pub fn reportError(
             .location = location,
             .message = "An arithmetic operation resulted in a value that's too large to represent.",
             .suggestion = "Use smaller numbers or break the calculation into smaller steps.",
+            .stack_trace = stack_trace,
         },
         error.UserCrash => blk: {
             const crash_message = evaluator.getUserCrashMessage() orelse "Program crashed with no message.";
@@ -300,6 +322,7 @@ pub fn reportError(
                 .location = null,
                 .message = crash_message,
                 .suggestion = null,
+                .stack_trace = stack_trace,
             };
         },
         error.CyclicReference => blk: {
@@ -315,6 +338,7 @@ pub fn reportError(
                 .secondary_label = secondary_label,
                 .message = "",
                 .suggestion = "Break the circular dependency by using a non-recursive value.",
+                .stack_trace = stack_trace,
             };
         },
         error.DivisionByZero => error_reporter.ErrorInfo{
@@ -322,12 +346,14 @@ pub fn reportError(
             .location = location,
             .message = "Cannot divide by zero.",
             .suggestion = "Ensure the divisor is not zero before performing division.",
+            .stack_trace = stack_trace,
         },
         else => error_reporter.ErrorInfo{
             .title = "Error",
             .location = null,
             .message = @errorName(err),
             .suggestion = null,
+            .stack_trace = stack_trace,
         },
     };
 

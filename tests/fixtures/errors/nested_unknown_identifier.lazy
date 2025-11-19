@@ -1,12 +1,16 @@
 // error: Unknown identifier
-//   --> tests/fixtures/errors/nested_unknown_identifier.lazy:18:20
+//   --> tests/fixtures/errors/nested_unknown_identifier.lazy:22:20
 //    |
-// 18 |   result = inner + unknownNested;
+// 22 |   result = inner + unknownNested;
 //    |                    ^------------
 //
 // Identifier `unknownNested` is not defined in the current scope.
 //
 // help: Check the spelling or define this variable before using it.
+//
+// Stack trace:
+//   0: f
+//      at tests/fixtures/errors/nested_unknown_identifier.lazy:25:1
 
 outer = 10
 f = x -> (
