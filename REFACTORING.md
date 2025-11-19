@@ -2,27 +2,55 @@
 
 ## Completed Work
 
-### Phase 1: eval.zig Refactoring (Partial)
-**Progress**: 5,702 lines → 4,939 lines (763 lines extracted, 13% reduction)
+### Phase 1: eval.zig Refactoring
+**Progress**: 5,702 lines → 2,647 lines (3,055 lines extracted, 54% reduction)
 
 #### Extracted Modules:
-1. **src/ast.zig** (~350 lines)
+1. **src/ast.zig** (314 lines)
    - Token, TokenKind definitions
    - Expression and all variants (Lambda, Let, Binary, etc.)
    - Pattern and all variants
    - All AST node types
 
-2. **src/tokenizer.zig** (~520 lines)
+2. **src/tokenizer.zig** (535 lines)
    - Tokenizer struct with all lexical analysis logic
    - Token generation and whitespace handling
    - Doc comment processing
    - String, number, symbol, and identifier parsing
 
+3. **src/parser.zig** (1,635 lines)
+   - Parser struct and all parsing methods
+   - Expression parsing (binary, unary, primary, etc.)
+   - Pattern parsing
+   - Precedence handling
+
+4. **src/value_format.zig** (705 lines)
+   - formatValue, formatValueAsJson, formatValueAsYaml
+   - Value printing and serialization
+   - Helper formatting functions
+
+5. **src/builtin_env.zig** (124 lines)
+   - createBuiltinEnvironment
+   - Builtin registration
+
+6. **src/value.zig** (154 lines)
+   - Value union type and all variants
+   - Environment, Thunk, ThunkState types
+   - Runtime type definitions
+   - EvalError and EvalContext
+   - User crash message management
+
+7. **src/module_resolver.zig** (125 lines)
+   - collectLazyPaths for LAZYLANG_PATH parsing
+   - normalizedImportPath for path normalization
+   - openImportFile for module resolution
+   - ModuleFile struct
+
 ### Phase 2: cli.zig Refactoring (Partial)
-**Progress**: 953 lines → 661 lines (292 lines extracted, 31% reduction)
+**Progress**: 953 lines → 690 lines (263 lines extracted, 28% reduction)
 
 #### Extracted Modules:
-1. **src/cli_error_reporting.zig** (~290 lines)
+1. **src/cli_error_reporting.zig** (~263 lines)
    - reportError function with comprehensive error formatting
    - reportErrorWithContext for contextual error reporting
    - All error type handlers (UnexpectedToken, TypeMismatch, etc.)
@@ -31,43 +59,21 @@
 
 ### Phase 1: eval.zig Further Refactoring
 
-The following extractions would further improve eval.zig organization:
+The following extractions would complete eval.zig modularization:
 
-1. **src/value.zig** (~200 lines)
-   - Value union type and all variants
-   - Environment, Thunk, ThunkState types
-   - Runtime type definitions
-
-2. **src/parser.zig** (~1,600 lines)
-   - Parser struct and all parsing methods
-   - Expression parsing (binary, unary, primary, etc.)
-   - Pattern parsing
-   - Precedence handling
-
-3. **src/evaluator.zig** (~1,400 lines)
+1. **src/evaluator.zig** (~1,400 lines) - HIGH PRIORITY
    - evaluateExpression main function
    - matchPattern for destructuring
    - force function for thunk evaluation
-   - Comprehension evaluation
-
-4. **src/module_resolver.zig** (~200 lines)
+   - Comprehension evaluation (array and object)
    - importModule function
-   - Module path resolution
-   - LAZYLANG_PATH handling
+   - Helper functions (findObjectField, mergeObjects, accessField)
 
-5. **src/value_format.zig** (~800 lines)
-   - formatValue, formatValueAsJson, formatValueAsYaml
-   - Value printing and serialization
-   - Helper formatting functions
-
-6. **src/builtin_env.zig** (~100 lines)
-   - createBuiltinEnvironment
-   - Builtin registration
-
-7. **src/eval_api.zig** (~300 lines)
+2. **src/eval_api.zig** (~300 lines)
    - Public API functions (evalInline, evalFile, etc.)
    - Result types (EvalResult, EvalOutput, etc.)
    - High-level evaluation interfaces
+   - Helper functions (lookup, type name getters, pattern formatting)
 
 ### Phase 2: cli.zig Further Refactoring
 
@@ -126,10 +132,13 @@ All 161 tests pass:
 
 To complete the refactoring:
 
-1. Continue Phase 1 extractions (parser, evaluator, etc.)
-2. Complete Phase 2 CLI command extractions
-3. Update CLAUDE.md with new file organization
-4. Add unit tests for new modules
-5. Consider extracting builtins.zig into category-specific modules (array, string, math, object)
+1. **Extract evaluator.zig** (~1,400 lines) - Contains core evaluation logic
+2. **Extract eval_api.zig** (~300 lines) - Contains public API wrappers
+3. Complete Phase 2 CLI command extractions
+4. Update CLAUDE.md with new file organization
+5. Add unit tests for new modules
+6. Consider extracting builtins.zig into category-specific modules (array, string, math, object)
 
-The modular structure is now in place, making future extractions straightforward to implement following the established patterns.
+After these extractions, eval.zig will be reduced to ~900 lines of primarily re-exports and glue code, completing the modularization effort.
+
+The modular structure is now well-established, making future extractions straightforward to implement following the established patterns.

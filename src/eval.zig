@@ -35,6 +35,8 @@ const tokenizer_mod = @import("tokenizer.zig");
 const parser_mod = @import("parser.zig");
 const builtin_env = @import("builtin_env.zig");
 const value_format = @import("value_format.zig");
+const value_mod = @import("value.zig");
+const module_resolver = @import("module_resolver.zig");
 
 // Re-export error_context for use by other modules
 pub const ErrorContext = error_context.ErrorContext;
@@ -47,6 +49,23 @@ pub const TokenizerError = tokenizer_mod.TokenizerError;
 // Re-export parser types
 pub const Parser = parser_mod.Parser;
 pub const ParseError = parser_mod.ParseError;
+
+// Re-export value types and functions
+pub const Environment = value_mod.Environment;
+pub const FunctionValue = value_mod.FunctionValue;
+pub const NativeFn = value_mod.NativeFn;
+pub const ThunkState = value_mod.ThunkState;
+pub const Thunk = value_mod.Thunk;
+pub const Value = value_mod.Value;
+pub const ArrayValue = value_mod.ArrayValue;
+pub const TupleValue = value_mod.TupleValue;
+pub const ObjectFieldValue = value_mod.ObjectFieldValue;
+pub const ObjectValue = value_mod.ObjectValue;
+pub const EvalError = value_mod.EvalError;
+pub const EvalContext = value_mod.EvalContext;
+pub const setUserCrashMessage = value_mod.setUserCrashMessage;
+pub const getUserCrashMessage = value_mod.getUserCrashMessage;
+pub const clearUserCrashMessage = value_mod.clearUserCrashMessage;
 
 // Re-export value formatting functions
 pub const formatValue = value_format.formatValue;
@@ -99,87 +118,11 @@ pub const ArrayPattern = ast.ArrayPattern;
 pub const ObjectPattern = ast.ObjectPattern;
 pub const ObjectPatternField = ast.ObjectPatternField;
 
-/// Thread-local storage for user crash messages
-threadlocal var user_crash_message: ?[]const u8 = null;
+// Re-export module resolver functions
+pub const collectLazyPaths = module_resolver.collectLazyPaths;
+pub const ModuleFile = module_resolver.ModuleFile;
 
-pub fn setUserCrashMessage(message: []const u8) void {
-    user_crash_message = message;
-}
-
-pub fn getUserCrashMessage() ?[]const u8 {
-    return user_crash_message;
-}
-
-pub fn clearUserCrashMessage() void {
-    if (user_crash_message) |msg| {
-        std.heap.page_allocator.free(msg);
-    }
-    user_crash_message = null;
-}
-
-pub const Environment = struct {
-    parent: ?*Environment,
-    name: []const u8,
-    value: Value,
-};
-
-pub const FunctionValue = struct {
-    param: *Pattern,
-    body: *Expression,
-    env: ?*Environment,
-};
-
-pub const NativeFn = *const fn (arena: std.mem.Allocator, args: []const Value) EvalError!Value;
-
-pub const ThunkState = union(enum) {
-    unevaluated,
-    evaluating, // For cycle detection
-    evaluated: Value,
-};
-
-pub const Thunk = struct {
-    expr: *Expression,
-    env: ?*Environment,
-    current_dir: ?[]const u8,
-    ctx: *const EvalContext,
-    state: ThunkState,
-    field_key_location: ?error_reporter.SourceLocation, // For object field thunks, to show cyclic reference span
-};
-
-pub const Value = union(enum) {
-    integer: i64,
-    float: f64,
-    boolean: bool,
-    null_value,
-    symbol: []const u8,
-    function: *FunctionValue,
-    native_fn: NativeFn,
-    array: ArrayValue,
-    tuple: TupleValue,
-    object: ObjectValue,
-    string: []const u8,
-    thunk: *Thunk,
-};
-
-pub const ArrayValue = struct {
-    elements: []Value,
-};
-
-pub const TupleValue = struct {
-    elements: []Value,
-};
-
-pub const ObjectFieldValue = struct {
-    key: []const u8,
-    value: Value,
-    is_patch: bool, // true if field should be deep-merged (written as `field { ... }` without colon)
-};
-
-pub const ObjectValue = struct {
-    fields: []ObjectFieldValue,
-    module_doc: ?[]const u8, // Module-level documentation
-};
-
+// Value comparison helper (depends on force, so kept here)
 fn valuesEqual(arena: std.mem.Allocator, a: Value, b: Value) bool {
     // Force thunks before comparison
     const a_forced = force(arena, a) catch a;
@@ -252,115 +195,6 @@ fn valuesEqual(arena: std.mem.Allocator, a: Value, b: Value) bool {
             else => false,
         },
     };
-}
-
-pub const EvalError = ParseError || std.mem.Allocator.Error || std.process.GetEnvVarOwnedError || std.fs.File.OpenError || std.fs.File.ReadError || error{
-    UnknownIdentifier,
-    TypeMismatch,
-    ExpectedFunction,
-    ModuleNotFound,
-    Overflow,
-    FileTooBig,
-    WrongNumberOfArguments,
-    InvalidArgument,
-    UnknownField,
-    UserCrash,
-    CyclicReference,
-    DivisionByZero,
-    IndexOutOfBounds,
-    FieldNotFound,
-};
-
-pub const EvalContext = struct {
-    allocator: std.mem.Allocator,
-    lazy_paths: [][]const u8,
-    error_ctx: ?*error_context.ErrorContext = null,
-};
-
-const ModuleFile = struct {
-    path: []u8,
-    file: std.fs.File,
-};
-
-fn collectLazyPaths(arena: std.mem.Allocator) EvalError![][]const u8 {
-    var list = std.ArrayList([]const u8){};
-    defer list.deinit(arena);
-
-    // Always include ./stdlib/lib as a default search path
-    const default_lib = try arena.dupe(u8, "stdlib/lib");
-    try list.append(arena, default_lib);
-
-    const env_value = std.process.getEnvVarOwned(arena, "LAZYLANG_PATH") catch |err| switch (err) {
-        error.EnvironmentVariableNotFound => return try list.toOwnedSlice(arena),
-        else => return err,
-    };
-
-    if (env_value.len == 0) {
-        return try list.toOwnedSlice(arena);
-    }
-
-    var parts = std.mem.splitScalar(u8, env_value, std.fs.path.delimiter);
-    while (parts.next()) |part| {
-        if (part.len == 0) continue;
-        const copy = try arena.dupe(u8, part);
-        try list.append(arena, copy);
-    }
-
-    return try list.toOwnedSlice(arena);
-}
-
-fn normalizedImportPath(allocator: std.mem.Allocator, import_path: []const u8) ![]u8 {
-    if (std.fs.path.extension(import_path).len == 0) {
-        return try std.fmt.allocPrint(allocator, "{s}.lazy", .{import_path});
-    }
-    return try allocator.dupe(u8, import_path);
-}
-
-fn openImportFile(ctx: *const EvalContext, import_path: []const u8, current_dir: ?[]const u8) EvalError!ModuleFile {
-    const normalized = try normalizedImportPath(ctx.allocator, import_path);
-    errdefer ctx.allocator.free(normalized);
-
-    if (current_dir) |dir| {
-        const candidate = try std.fs.path.join(ctx.allocator, &.{ dir, normalized });
-        const maybe_file = std.fs.cwd().openFile(candidate, .{}) catch |err| switch (err) {
-            error.FileNotFound => null,
-            else => return err,
-        };
-        if (maybe_file) |file| {
-            ctx.allocator.free(normalized);
-            return .{ .path = candidate, .file = file };
-        }
-        ctx.allocator.free(candidate);
-    }
-
-    const relative_file = std.fs.cwd().openFile(normalized, .{}) catch |err| switch (err) {
-        error.FileNotFound => null,
-        else => return err,
-    };
-    if (relative_file) |file| {
-        return .{ .path = normalized, .file = file };
-    }
-
-    for (ctx.lazy_paths) |base| {
-        const candidate = try std.fs.path.join(ctx.allocator, &.{ base, normalized });
-        const maybe_file = std.fs.cwd().openFile(candidate, .{}) catch |err| switch (err) {
-            error.FileNotFound => null,
-            else => return err,
-        };
-        if (maybe_file) |file| {
-            ctx.allocator.free(normalized);
-            return .{ .path = candidate, .file = file };
-        }
-        ctx.allocator.free(candidate);
-    }
-
-    // Set error context with module name
-    if (ctx.error_ctx) |err_ctx| {
-        const module_name_copy = try err_ctx.allocator.dupe(u8, import_path);
-        err_ctx.setErrorData(.{ .module_not_found = .{ .module_name = module_name_copy } });
-    }
-
-    return error.ModuleNotFound;
 }
 
 pub fn matchPattern(
@@ -2364,7 +2198,7 @@ fn importModule(
     current_dir: ?[]const u8,
     ctx: *const EvalContext,
 ) EvalError!Value {
-    var module_file = try openImportFile(ctx, import_path, current_dir);
+    var module_file = try module_resolver.openImportFile(ctx, import_path, current_dir);
     defer module_file.file.close();
     defer ctx.allocator.free(module_file.path);
 
