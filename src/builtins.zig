@@ -1293,3 +1293,75 @@ pub fn mathRem(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalErro
         return eval.Value{ .integer = @rem(a, b) };
     }
 }
+
+// Type predicate builtins
+
+/// Check if a value is an integer
+pub fn isInteger(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+    return eval.Value{ .boolean = args[0] == .integer };
+}
+
+/// Check if a value is a float
+pub fn isFloat(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+    return eval.Value{ .boolean = args[0] == .float };
+}
+
+/// Check if a value is a boolean
+pub fn isBoolean(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+    return eval.Value{ .boolean = args[0] == .boolean };
+}
+
+/// Check if a value is null
+pub fn isNull(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+    return eval.Value{ .boolean = args[0] == .null_value };
+}
+
+/// Check if a value is a symbol
+pub fn isSymbol(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+    return eval.Value{ .boolean = args[0] == .symbol };
+}
+
+/// Check if a value is a string
+pub fn isString(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+    return eval.Value{ .boolean = args[0] == .string };
+}
+
+/// Check if a value is an array
+pub fn isArray(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+    return eval.Value{ .boolean = args[0] == .array };
+}
+
+/// Check if a value is a tuple
+pub fn isTuple(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+    return eval.Value{ .boolean = args[0] == .tuple };
+}
+
+/// Check if a value is an object
+pub fn isObject(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+    return eval.Value{ .boolean = args[0] == .object };
+}
+
+/// Check if a value is a function (either Lazylang function or native function)
+pub fn isFunction(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+    return eval.Value{ .boolean = args[0] == .function or args[0] == .native_fn };
+}

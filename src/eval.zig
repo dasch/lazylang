@@ -2260,7 +2260,7 @@ pub fn createStdlibEnvironment(
     var env = try builtin_env.createBuiltinEnvironment(arena);
 
     // Import standard library modules (if available)
-    const stdlib_modules = [_][]const u8{ "Array", "Float", "Math", "Object", "String" };
+    const stdlib_modules = [_][]const u8{ "Array", "Basics", "Float", "Math", "Object", "String" };
     for (stdlib_modules) |module_name| {
         // Try to import the module, but continue if it's not found
         const module_value = importModule(arena, module_name, current_dir, ctx) catch |err| {
@@ -2270,6 +2270,28 @@ pub fn createStdlibEnvironment(
             }
             return err;
         };
+
+        // Special handling for Basics: expose all fields unqualified
+        if (std.mem.eql(u8, module_name, "Basics")) {
+            const basics_obj = switch (module_value) {
+                .object => |obj| obj,
+                else => return error.TypeMismatch,
+            };
+
+            // Add each field from Basics to the environment
+            for (basics_obj.fields) |field| {
+                const field_value = try force(arena, field.value);
+                const field_env = try arena.create(Environment);
+                field_env.* = .{
+                    .parent = env,
+                    .name = field.key,
+                    .value = field_value,
+                };
+                env = field_env;
+            }
+        }
+
+        // Add the module itself to the environment
         const new_env = try arena.create(Environment);
         new_env.* = .{
             .parent = env,

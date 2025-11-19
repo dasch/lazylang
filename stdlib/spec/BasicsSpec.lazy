@@ -1,0 +1,97 @@
+{ describe, it, mustEq } = import 'Spec'
+
+describe "Basics" [
+  describe "isInteger" [
+    it "returns true for integers" do
+      mustEq true (isInteger 42)
+
+    it "returns false for strings" do
+      mustEq false (isInteger "hello")
+
+    it "returns false for floats" do
+      mustEq false (isInteger 3.14)
+  ]
+
+  describe "isFloat" [
+    it "returns true for floats" do
+      mustEq true (isFloat 3.14)
+
+    it "returns false for integers" do
+      mustEq false (isFloat 42)
+  ]
+
+  describe "isBoolean" [
+    it "returns true for true" do
+      mustEq true (isBoolean true)
+
+    it "returns true for false" do
+      mustEq true (isBoolean false)
+
+    it "returns false for integers" do
+      mustEq false (isBoolean 1)
+  ]
+
+  describe "isNull" [
+    it "returns true for null" do
+      mustEq true (isNull null)
+
+    it "returns false for zero" do
+      mustEq false (isNull 0)
+  ]
+
+  describe "isSymbol" [
+    it "returns true for symbols" do
+      mustEq true (isSymbol #ok)
+
+    it "returns false for strings" do
+      mustEq false (isSymbol "ok")
+  ]
+
+  describe "isString" [
+    it "returns true for strings" do
+      mustEq true (isString "hello")
+
+    it "returns false for integers" do
+      mustEq false (isString 42)
+  ]
+
+  describe "isArray" [
+    it "returns true for arrays" do
+      mustEq true (isArray [1, 2, 3])
+
+    it "returns false for tuples" do
+      mustEq false (isArray (1, 2, 3))
+  ]
+
+  describe "isTuple" [
+    it "returns true for tuples" do
+      mustEq true (isTuple (1, 2))
+
+    it "returns false for arrays" do
+      mustEq false (isTuple [1, 2, 3])
+  ]
+
+  describe "isObject" [
+    it "returns true for objects" do
+      mustEq true (isObject { x: 1 })
+
+    it "returns false for arrays" do
+      mustEq false (isObject [1, 2, 3])
+  ]
+
+  describe "isFunction" [
+    it "returns true for lambda functions" do
+      mustEq true (isFunction (x -> x + 1))
+
+    it "returns true for native functions" do
+      mustEq true (isFunction isString)
+
+    it "returns false for integers" do
+      mustEq false (isFunction 42)
+  ]
+
+  describe "crash" [
+    it "is a function" do
+      mustEq true (isFunction crash)
+  ]
+]

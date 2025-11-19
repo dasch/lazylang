@@ -1,0 +1,191 @@
+/// Provides fundamental utilities and type predicates for Lazylang.
+///
+/// This module includes functions for:
+/// - **Type Checking**: [isInteger], [isFloat], [isBoolean], [isNull], [isSymbol],
+///   [isString], [isArray], [isTuple], [isObject], [isFunction]
+/// - **Error Handling**: [crash]
+///
+/// The functions in this module are typically available without qualification
+/// in Lazylang programs (e.g., you can use `isString` instead of `Basics.isString`).
+///
+/// ## Examples
+///
+/// ```
+/// // Type checking
+/// isString "hello"    // Returns true
+/// isInteger "hello"   // Returns false
+/// isArray [1, 2, 3]   // Returns true
+///
+/// // Error handling
+/// crash "Something went wrong!"
+/// ```
+/// ---
+{
+  /// Checks if a value is an integer.
+  ///
+  /// **Parameter:**
+  /// - `value`: The value to check
+  ///
+  /// **Returns:** `true` if the value is an integer, `false` otherwise
+  ///
+  /// **Example:**
+  /// ```
+  /// isInteger 42        // Returns true
+  /// isInteger 3.14      // Returns false
+  /// isInteger "hello"   // Returns false
+  /// ```
+  isInteger: value -> __is_integer value
+
+  /// Checks if a value is a float (floating-point number).
+  ///
+  /// **Parameter:**
+  /// - `value`: The value to check
+  ///
+  /// **Returns:** `true` if the value is a float, `false` otherwise
+  ///
+  /// **Example:**
+  /// ```
+  /// isFloat 3.14        // Returns true
+  /// isFloat 42          // Returns false
+  /// isFloat "hello"     // Returns false
+  /// ```
+  isFloat: value -> __is_float value
+
+  /// Checks if a value is a boolean.
+  ///
+  /// **Parameter:**
+  /// - `value`: The value to check
+  ///
+  /// **Returns:** `true` if the value is a boolean, `false` otherwise
+  ///
+  /// **Example:**
+  /// ```
+  /// isBoolean true      // Returns true
+  /// isBoolean false     // Returns true
+  /// isBoolean 1         // Returns false
+  /// ```
+  isBoolean: value -> __is_boolean value
+
+  /// Checks if a value is null.
+  ///
+  /// **Parameter:**
+  /// - `value`: The value to check
+  ///
+  /// **Returns:** `true` if the value is null, `false` otherwise
+  ///
+  /// **Example:**
+  /// ```
+  /// isNull null         // Returns true
+  /// isNull 0            // Returns false
+  /// isNull ""           // Returns false
+  /// ```
+  isNull: value -> __is_null value
+
+  /// Checks if a value is a symbol.
+  ///
+  /// **Parameter:**
+  /// - `value`: The value to check
+  ///
+  /// **Returns:** `true` if the value is a symbol, `false` otherwise
+  ///
+  /// **Example:**
+  /// ```
+  /// isSymbol #ok        // Returns true
+  /// isSymbol "ok"       // Returns false
+  /// isSymbol 42         // Returns false
+  /// ```
+  isSymbol: value -> __is_symbol value
+
+  /// Checks if a value is a string.
+  ///
+  /// **Parameter:**
+  /// - `value`: The value to check
+  ///
+  /// **Returns:** `true` if the value is a string, `false` otherwise
+  ///
+  /// **Example:**
+  /// ```
+  /// isString "hello"    // Returns true
+  /// isString 42         // Returns false
+  /// isString [1, 2, 3]  // Returns false
+  /// ```
+  isString: value -> __is_string value
+
+  /// Checks if a value is an array.
+  ///
+  /// **Parameter:**
+  /// - `value`: The value to check
+  ///
+  /// **Returns:** `true` if the value is an array, `false` otherwise
+  ///
+  /// **Example:**
+  /// ```
+  /// isArray [1, 2, 3]   // Returns true
+  /// isArray (1, 2, 3)   // Returns false (tuple)
+  /// isArray "hello"     // Returns false
+  /// ```
+  isArray: value -> __is_array value
+
+  /// Checks if a value is a tuple.
+  ///
+  /// **Parameter:**
+  /// - `value`: The value to check
+  ///
+  /// **Returns:** `true` if the value is a tuple, `false` otherwise
+  ///
+  /// **Example:**
+  /// ```
+  /// isTuple (1, 2, 3)   // Returns true
+  /// isTuple [1, 2, 3]   // Returns false (array)
+  /// isTuple "hello"     // Returns false
+  /// ```
+  isTuple: value -> __is_tuple value
+
+  /// Checks if a value is an object.
+  ///
+  /// **Parameter:**
+  /// - `value`: The value to check
+  ///
+  /// **Returns:** `true` if the value is an object, `false` otherwise
+  ///
+  /// **Example:**
+  /// ```
+  /// isObject { x: 1, y: 2 }   // Returns true
+  /// isObject [1, 2, 3]        // Returns false
+  /// isObject "hello"          // Returns false
+  /// ```
+  isObject: value -> __is_object value
+
+  /// Checks if a value is a function (either a Lazylang function or native function).
+  ///
+  /// **Parameter:**
+  /// - `value`: The value to check
+  ///
+  /// **Returns:** `true` if the value is a function, `false` otherwise
+  ///
+  /// **Example:**
+  /// ```
+  /// isFunction (x -> x + 1)   // Returns true
+  /// isFunction 42             // Returns false
+  /// isFunction "hello"        // Returns false
+  /// ```
+  isFunction: value -> __is_function value
+
+  /// Terminates program execution with a custom error message.
+  ///
+  /// This function causes the program to crash immediately with the provided
+  /// message. It's useful for indicating unrecoverable errors or invalid states.
+  ///
+  /// **Parameter:**
+  /// - `message`: Error message to display
+  ///
+  /// **Example:**
+  /// ```
+  /// validateInput = input ->
+  ///   if isString input then
+  ///     input
+  ///   else
+  ///     crash "Input must be a string"
+  /// ```
+  crash: crash
+}
