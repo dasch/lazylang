@@ -1,5 +1,4 @@
 { describe, it, mustEq } = import 'Spec'
-Basics = import 'Basics'
 
 describe "Basics" [
   describe "isInteger" [
@@ -8,6 +7,38 @@ describe "Basics" [
 
     it "returns false for strings" do
       mustEq false (Basics.isInteger "hello")
+  ]
+
+  describe "isFloat" [
+    it "returns true for floats" do
+      mustEq true (Basics.isFloat 3.14)
+
+    it "returns false for integers" do
+      mustEq false (Basics.isFloat 42)
+  ]
+
+  describe "isBoolean" [
+    it "returns true for booleans" do
+      mustEq true (Basics.isBoolean true)
+
+    it "returns false for integers" do
+      mustEq false (Basics.isBoolean 1)
+  ]
+
+  describe "isNull" [
+    it "returns true for null" do
+      mustEq true (Basics.isNull null)
+
+    it "returns false for zero" do
+      mustEq false (Basics.isNull 0)
+  ]
+
+  describe "isSymbol" [
+    it "returns true for symbols" do
+      mustEq true (Basics.isSymbol #ok)
+
+    it "returns false for strings" do
+      mustEq false (Basics.isSymbol "ok")
   ]
 
   describe "isString" [
@@ -22,15 +53,39 @@ describe "Basics" [
     it "returns true for arrays" do
       mustEq true (Basics.isArray [1, 2, 3])
 
-    it "returns false for strings" do
-      mustEq false (Basics.isArray "hello")
+    it "returns false for tuples" do
+      mustEq false (Basics.isArray (1, 2, 3))
+  ]
+
+  describe "isTuple" [
+    it "returns true for tuples" do
+      mustEq true (Basics.isTuple (1, 2))
+
+    it "returns false for arrays" do
+      mustEq false (Basics.isTuple [1, 2, 3])
+  ]
+
+  describe "isObject" [
+    it "returns true for objects" do
+      mustEq true (Basics.isObject { x: 1 })
+
+    it "returns false for arrays" do
+      mustEq false (Basics.isObject [1, 2, 3])
   ]
 
   describe "isFunction" [
     it "returns true for lambda functions" do
       mustEq true (Basics.isFunction (x -> x + 1))
 
+    it "returns true for native functions" do
+      mustEq true (Basics.isFunction Basics.isString)
+
     it "returns false for integers" do
       mustEq false (Basics.isFunction 42)
+  ]
+
+  describe "crash" [
+    it "is a function" do
+      mustEq true (Basics.isFunction Basics.crash)
   ]
 ]
