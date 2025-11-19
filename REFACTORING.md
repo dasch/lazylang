@@ -58,55 +58,73 @@ eval.zig has been successfully modularized into 8 focused modules!
    - createStdlibEnvironment: Standard library setup
    - Helper functions: field access, object merging, error reporting
 
-### Phase 2: cli.zig Refactoring (Partial)
-**Progress**: 953 lines → 690 lines (263 lines extracted, 28% reduction)
+### Phase 2: cli.zig Refactoring ✅ COMPLETE
+**Progress**: 953 lines → 60 lines (893 lines extracted, 94% reduction)
+
+cli.zig has been successfully modularized into 7 focused modules!
 
 #### Extracted Modules:
-1. **src/cli_error_reporting.zig** (~263 lines)
+1. **src/cli_types.zig** (5 lines)
+   - Shared CommandResult type for all command modules
+
+2. **src/cli_error_reporting.zig** (361 lines)
    - reportError function with comprehensive error formatting
    - reportErrorWithContext for contextual error reporting
    - All error type handlers (UnexpectedToken, TypeMismatch, etc.)
 
-## Remaining Work
+3. **src/cli_eval_cmd.zig** (304 lines)
+   - runEval: Evaluates Lazylang files or inline expressions
+   - writeManifestFiles helper for --manifest mode
+   - Supports --json, --yaml output formats
+   - Color output control
 
-### Phase 1: eval.zig - Final Polish (Optional)
+4. **src/cli_run_cmd.zig** (165 lines)
+   - runRun: Executes Lazylang programs with system args/env
+   - Constructs system object with args and environment variables
 
-eval.zig is now at 418 lines, down from 5,702 (93% reduction). The remaining code consists of:
-- Re-exports from all modules (maintaining backward compatibility)
-- Public API wrappers (evalInline, evalFile, etc.) - ~250 lines
-- Result types (EvalResult, EvalOutput, FormatStyle) - ~100 lines
-- Helper function (lookup) - ~10 lines
+5. **src/cli_spec_cmd.zig** (84 lines)
+   - runSpec: Runs Lazylang test files
+   - Supports line number filtering and directory mode
 
-**Optional future extraction:**
-- **src/eval_api.zig** (~250 lines): Extract public API wrappers
-  - This would reduce eval.zig to ~170 lines of pure re-exports
-  - Low priority since current size (418 lines) is very manageable
+6. **src/cli_format_cmd.zig** (42 lines)
+   - runFormat: Formats Lazylang source code
 
-### Phase 2: cli.zig Further Refactoring
+7. **src/cli_docs_cmd.zig** (103 lines)
+   - runDocs: Generates HTML documentation from doc comments
 
-The CLI commands could be extracted to individual modules:
+## Summary
 
-1. **src/cli_eval_cmd.zig** (~200 lines)
-   - runEval function
-   - Manifest mode handling
-   - writeManifestFiles helper
+Both major refactoring phases are now **COMPLETE**! 🎉
 
-2. **src/cli_run_cmd.zig** (~140 lines)
-   - runRun function
-   - System object construction
+### Phase 1: eval.zig Refactoring ✅
+- **Before**: 5,702 lines (monolithic)
+- **After**: 418 lines (93% reduction)
+- **Result**: 8 focused modules
 
-3. **src/cli_spec_cmd.zig** (~65 lines)
-   - runSpec function
-   - Test directory handling
+### Phase 2: cli.zig Refactoring ✅
+- **Before**: 953 lines
+- **After**: 60 lines (94% reduction)
+- **Result**: 7 focused modules
 
-4. **src/cli_format_cmd.zig** (~30 lines)
-   - runFormat function
+### Total Impact
+- **15 new modules** extracted with clear responsibilities
+- **File sizes**: Now 40-2,300 lines (manageable)
+- **Maintainability**: Dramatically improved
+- **All tests passing**: 161 specs ✓
 
-5. **src/cli_docs_cmd.zig** (~85 lines)
-   - runDocs function
-   - Documentation generation
+## Remaining Work (Optional)
 
-After these extractions, cli.zig would become a pure dispatcher (~80 lines).
+### Further Optional Improvements
+
+The refactoring goals are fully achieved! Optional future work:
+
+1. **Extract eval_api.zig** (~250 lines)
+   - Would reduce eval.zig from 418 to ~170 lines
+   - Low priority - current size is manageable
+
+2. **Split builtins.zig by category**
+   - array_builtins.zig, string_builtins.zig, etc.
+   - Would improve builtin function discoverability
 
 ## Benefits Achieved
 
@@ -137,22 +155,25 @@ All 161 tests pass:
 
 ## Next Steps (Optional)
 
-The major refactoring goals have been achieved! Remaining optional improvements:
+The refactoring is **COMPLETE**! The codebase has been transformed from two monolithic files into a well-organized modular architecture.
 
-1. **Complete Phase 2 CLI refactoring** - Extract individual command handlers
-   - Would reduce cli.zig from 690 to ~150 lines
-   - Low priority as current size is manageable
+Optional future improvements:
 
-2. **Update CLAUDE.md** - Document new file organization
+1. **Update CLAUDE.md** - Document new file organization
    - Update the "Codebase Navigation" section
-   - Reflect the 8-module architecture
+   - Reflect the 15-module architecture
+   - Add guidance for new contributors
 
-3. **Consider builtins.zig extraction** - Split by category
-   - array_builtins.zig, string_builtins.zig, math_builtins.zig, object_builtins.zig
-   - Would improve discoverability of builtin functions
-
-4. **Add unit tests** - For newly extracted modules
+2. **Add unit tests** - For newly extracted modules
    - Most functionality is already tested through integration tests
    - Could add focused unit tests for edge cases
 
-The modular structure is complete and battle-tested. All 161 tests pass. The codebase is now significantly more maintainable and navigable.
+3. **Extract eval_api.zig** - Public API wrappers
+   - Would further reduce eval.zig to ~170 lines
+   - Very low priority - current size is manageable
+
+4. **Split builtins.zig** - By category
+   - array_builtins.zig, string_builtins.zig, etc.
+   - Would improve builtin function discoverability
+
+The modular structure is complete, battle-tested, and production-ready. All 161 tests pass. The codebase is significantly more maintainable and navigable!
