@@ -1,92 +1,97 @@
 { describe, it, mustEq } = import 'Spec'
-B = import 'Basics'
 
 describe "Basics" [
   describe "isInteger" [
     it "returns true for integers" do
-      mustEq true (B.isInteger 42)
+      mustEq true (isInteger 42)
 
     it "returns false for strings" do
-      mustEq false (B.isInteger "hello")
+      mustEq false (isInteger "hello")
+
+    it "returns false for floats" do
+      mustEq false (isInteger 3.14)
   ]
 
   describe "isFloat" [
     it "returns true for floats" do
-      mustEq true (B.isFloat 3.14)
+      mustEq true (isFloat 3.14)
 
     it "returns false for integers" do
-      mustEq false (B.isFloat 42)
+      mustEq false (isFloat 42)
   ]
 
   describe "isBoolean" [
-    it "returns true for booleans" do
-      mustEq true (B.isBoolean true)
+    it "returns true for true" do
+      mustEq true (isBoolean true)
+
+    it "returns true for false" do
+      mustEq true (isBoolean false)
 
     it "returns false for integers" do
-      mustEq false (B.isBoolean 1)
+      mustEq false (isBoolean 1)
   ]
 
   describe "isNull" [
     it "returns true for null" do
-      mustEq true (B.isNull null)
+      mustEq true (isNull null)
 
     it "returns false for zero" do
-      mustEq false (B.isNull 0)
+      mustEq false (isNull 0)
   ]
 
   describe "isSymbol" [
     it "returns true for symbols" do
-      mustEq true (B.isSymbol #ok)
+      mustEq true (isSymbol #ok)
 
     it "returns false for strings" do
-      mustEq false (B.isSymbol "ok")
+      mustEq false (isSymbol "ok")
   ]
 
   describe "isString" [
     it "returns true for strings" do
-      mustEq true (B.isString "hello")
+      mustEq true (isString "hello")
 
     it "returns false for integers" do
-      mustEq false (B.isString 42)
+      mustEq false (isString 42)
   ]
 
   describe "isArray" [
     it "returns true for arrays" do
-      mustEq true (B.isArray [1, 2, 3])
+      mustEq true (isArray [1, 2, 3])
 
     it "returns false for tuples" do
-      mustEq false (B.isArray (1, 2, 3))
+      mustEq false (isArray (1, 2, 3))
   ]
 
   describe "isTuple" [
     it "returns true for tuples" do
-      mustEq true (B.isTuple (1, 2))
+      mustEq true (isTuple (1, 2))
 
     it "returns false for arrays" do
-      mustEq false (B.isTuple [1, 2, 3])
+      mustEq false (isTuple [1, 2, 3])
   ]
 
   describe "isObject" [
     it "returns true for objects" do
-      mustEq true (B.isObject { x: 1 })
+      mustEq true (isObject { x: 1 })
 
     it "returns false for arrays" do
-      mustEq false (B.isObject [1, 2, 3])
+      mustEq false (isObject [1, 2, 3])
   ]
 
   describe "isFunction" [
     it "returns true for lambda functions" do
-      mustEq true (B.isFunction (x -> x + 1))
+      mustEq true (isFunction (x -> x + 1))
 
     it "returns true for native functions" do
-      mustEq true (B.isFunction B.isString)
+      mustEq true (isFunction isString)
 
     it "returns false for integers" do
-      mustEq false (B.isFunction 42)
+      mustEq false (isFunction 42)
   ]
 
   describe "crash" [
     it "is a function" do
-      mustEq true (B.isFunction B.crash)
+      mustEq true (isFunction crash)
   ]
 ]
