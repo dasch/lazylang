@@ -187,5 +187,5 @@
   ///   else
   ///     crash "Input must be a string"
   /// ```
-  crash: message -> crash message
+  crash: crash
 }
