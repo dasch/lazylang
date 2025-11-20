@@ -1,0 +1,72 @@
+{ describe, it, mustEq } = import "Spec"
+
+describe "Result" [
+  describe "ok" [
+    it "creates a success result with an integer" do
+      result = Result.ok 42
+      mustEq (#ok, 42) result
+
+    it "creates a success result with a string" do
+      result = Result.ok "hello"
+      mustEq (#ok, "hello") result
+
+    it "creates a success result with null" do
+      result = Result.ok null
+      mustEq (#ok, null) result
+
+    it "creates a success result with an array" do
+      result = Result.ok [1, 2, 3]
+      mustEq (#ok, [1, 2, 3]) result
+  ]
+
+  describe "error" [
+    it "creates an error result with a string" do
+      result = Result.error "not found"
+      mustEq (#error, "not found") result
+
+    it "creates an error result with an integer" do
+      result = Result.error 404
+      mustEq (#error, 404) result
+
+    it "creates an error result with null" do
+      result = Result.error null
+      mustEq (#error, null) result
+  ]
+
+  describe "orDefault" [
+    it "returns the value when result is ok" do
+      result = (#ok, 42)
+      mustEq 42 (Result.orDefault 0 result)
+
+    it "returns the default when result is an error" do
+      result = (#error, "failed")
+      mustEq 0 (Result.orDefault 0 result)
+
+    it "returns the default for a symbol error" do
+      mustEq 0 (Result.orDefault 0 #notFound)
+
+    it "works with Array.get for valid index" do
+      arr = [10, 20, 30]
+      mustEq 20 (Result.orDefault 0 (Array.get 1 arr))
+
+    it "works with Array.get for invalid index" do
+      arr = [10, 20, 30]
+      mustEq 0 (Result.orDefault 0 (Array.get 99 arr))
+
+    it "works with Object.get for valid key" do
+      obj = { name: "Alice", age: 30 }
+      mustEq "Alice" (Result.orDefault "Unknown" (Object.get "name" obj))
+
+    it "works with Object.get for invalid key" do
+      obj = { name: "Alice", age: 30 }
+      mustEq "Unknown" (Result.orDefault "Unknown" (Object.get "email" obj))
+
+    it "preserves different value types" do
+      result = (#ok, [1, 2, 3])
+      mustEq [1, 2, 3] (Result.orDefault [] result)
+
+    it "uses default of different value type" do
+      result = (#error, "failed")
+      mustEq "default" (Result.orDefault "default" result)
+  ]
+]

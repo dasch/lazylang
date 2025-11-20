@@ -35,6 +35,7 @@
 /// // Using in for loops
 /// [x * 2 for x in 1..5]    // [2, 4, 6, 8, 10]
 /// ```
+Result = import 'Result'
 {
   /// Creates an inclusive range from start to end.
   /// The end value is included in the range.
@@ -138,15 +139,8 @@
     len1 = __array_length arr1;
     len2 = __array_length arr2;
     maxLen = if len1 > len2 then len1 else len2;
-    getOrNull = idx -> arr -> len ->
-      if idx < len then
-        when __array_get (arr, idx) matches
-          (#ok, val) then val
-          otherwise null
-      else
-        null;
     [
-      (getOrNull i arr1 len1, getOrNull i arr2 len2)
+      (Result.orDefault null (__array_get (arr1, i)), Result.orDefault null (__array_get (arr2, i)))
       for i in 0...maxLen
     ]
 }

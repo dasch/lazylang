@@ -1,0 +1,86 @@
+/// Provides utilities for working with result values in Lazylang.
+///
+/// Results are tuples that represent either success `(#ok, value)` or failure `(#error, error)`.
+/// This module provides helper functions for constructing and working with result values.
+///
+/// ## Constructing Results
+///
+/// - `Result.ok value`: Creates a success result `(#ok, value)`
+/// - `Result.error error`: Creates an error result `(#error, error)`
+///
+/// ## Working with Results
+///
+/// - `Result.orDefault default result`: Returns the value if result is ok, otherwise returns default
+///
+/// ## Examples
+///
+/// ```
+/// // Create results
+/// success = Result.ok 42             // (#ok, 42)
+/// failure = Result.error "not found" // (#error, "not found")
+///
+/// // Extract values with defaults
+/// Result.orDefault 0 success         // 42
+/// Result.orDefault 0 failure         // 0
+///
+/// // Useful with Array.get
+/// arr = [10, 20, 30]
+/// Result.orDefault 0 (Array.get 1 arr)  // 20
+/// Result.orDefault 0 (Array.get 99 arr) // 0
+/// ```
+{
+  /// Creates a success result.
+  ///
+  /// **Parameter:**
+  /// - `value`: The value to wrap in a success result
+  ///
+  /// **Returns:**
+  /// A tuple `(#ok, value)`
+  ///
+  /// **Example:**
+  /// ```
+  /// Result.ok 42        // Returns (#ok, 42)
+  /// Result.ok "hello"   // Returns (#ok, "hello")
+  /// ```
+  ok: value -> (#ok, value)
+
+  /// Creates an error result.
+  ///
+  /// **Parameter:**
+  /// - `error`: The error value to wrap in an error result
+  ///
+  /// **Returns:**
+  /// A tuple `(#error, error)`
+  ///
+  /// **Example:**
+  /// ```
+  /// Result.error "not found"     // Returns (#error, "not found")
+  /// Result.error 404             // Returns (#error, 404)
+  /// ```
+  error: error -> (#error, error)
+
+  /// Returns the value from a result if it's ok, otherwise returns a default value.
+  ///
+  /// **Parameters:**
+  /// - `default`: The default value to return if the result is an error
+  /// - `result`: The result to extract a value from
+  ///
+  /// **Returns:**
+  /// The value if result is `(#ok, value)`, otherwise the default
+  ///
+  /// **Example:**
+  /// ```
+  /// Result.orDefault 0 (#ok, 42)           // Returns 42
+  /// Result.orDefault 0 (#error, "failed")  // Returns 0
+  /// Result.orDefault 0 #notFound           // Returns 0
+  ///
+  /// // Useful with Array.get
+  /// arr = [10, 20, 30]
+  /// Result.orDefault 0 (Array.get 1 arr)   // Returns 20
+  /// Result.orDefault 0 (Array.get 99 arr)  // Returns 0
+  /// ```
+  orDefault: default -> result ->
+    when result matches
+      (#ok, value) then value
+      otherwise default
+}
