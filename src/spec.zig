@@ -83,7 +83,11 @@ fn buildDescribePath(allocator: std.mem.Allocator, describe_stack: []const []con
 
     for (describe_stack, 0..) |desc, i| {
         if (i > 0) {
-            try path.appendSlice(allocator, " ");
+            // Use "." between consecutive symbols, " " otherwise
+            const prev_is_symbol = describe_stack[i - 1].len > 0 and describe_stack[i - 1][0] == '#';
+            const curr_is_symbol = desc.len > 0 and desc[0] == '#';
+            const separator = if (prev_is_symbol and curr_is_symbol) "." else " ";
+            try path.appendSlice(allocator, separator);
         }
         // Strip # prefix from symbols
         const desc_name = if (desc.len > 0 and desc[0] == '#')
@@ -138,7 +142,11 @@ fn recordFailedSpec(ctx: anytype, test_description: []const u8) !void {
 
     for (ctx.current_describe_stack.items, 0..) |desc, i| {
         if (i > 0) {
-            try describe_path.appendSlice(ctx.allocator, " ");
+            // Use "." between consecutive symbols, " " otherwise
+            const prev_is_symbol = ctx.current_describe_stack.items[i - 1].len > 0 and ctx.current_describe_stack.items[i - 1][0] == '#';
+            const curr_is_symbol = desc.len > 0 and desc[0] == '#';
+            const separator = if (prev_is_symbol and curr_is_symbol) "." else " ";
+            try describe_path.appendSlice(ctx.allocator, separator);
         }
         // Strip # prefix from symbols
         const desc_name = if (desc.len > 0 and desc[0] == '#')
