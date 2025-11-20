@@ -97,4 +97,35 @@
   /// ```
   slice: keys -> obj ->
     { [k]: v for (k, v) in obj when [key for key in keys when key == k] != [] }
+
+  /// Combines two objects into a new object with tuples as values, pairing values for each key.
+  /// If a key exists in only one object, the missing value is replaced with `null`.
+  ///
+  /// **Parameters:**
+  /// - `obj1`: The first object
+  /// - `obj2`: The second object
+  ///
+  /// **Returns:**
+  /// An object where each value is a tuple `(value from obj1, value from obj2)`
+  ///
+  /// **Example:**
+  /// ```
+  /// Object.zip { x: 1, y: 2 } { x: 3, y: 4, z: 5 }
+  /// // Returns { x: (1, 3), y: (2, 4), z: (null, 5) }
+  ///
+  /// Object.zip { a: "hello" } { b: "world" }
+  /// // Returns { a: ("hello", null), b: (null, "world") }
+  ///
+  /// Object.zip {} { x: 1 }
+  /// // Returns { x: (null, 1) }
+  /// ```
+  zip: obj1 -> obj2 ->
+    keys1 = __object_keys obj1;
+    keys2 = __object_keys obj2;
+    allKeys = __array_uniq [k for ks in [keys1, keys2] for k in ks];
+    getOrNull = key -> obj ->
+      when __object_get (obj, key) matches
+        (#ok, val) then val
+        otherwise null;
+    { [k]: (getOrNull k obj1, getOrNull k obj2) for k in allKeys }
 }

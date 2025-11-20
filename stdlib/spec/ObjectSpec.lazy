@@ -1,22 +1,68 @@
 { describe, it, mustEq } = import "Spec"
-{ get } = import "Object"
+Object = import "Object"
 
 describe "Object" [
   describe "get" [
     it "returns `(#ok, value)` when the key exists" do
       obj = { name: "Alice", age: 30 }
-      mustEq (#ok, "Alice") (get "name" obj)
+      mustEq (#ok, "Alice") (Object.get "name" obj)
 
     it "returns `(#ok, value)` for another key" do
       obj = { name: "Alice", age: 30 }
-      mustEq (#ok, 30) (get "age" obj)
+      mustEq (#ok, 30) (Object.get "age" obj)
 
     it "returns `#noSuchKey` when the key does *not* exist" do
       obj = { name: "Alice", age: 30 }
-      mustEq #noSuchKey (get "email" obj)
+      mustEq #noSuchKey (Object.get "email" obj)
 
     it "returns `(#ok, value)` for nested object values" do
       obj = { user: { name: "Bob" } }
-      mustEq (#ok, { name: "Bob" }) (get "user" obj)
+      mustEq (#ok, { name: "Bob" }) (Object.get "user" obj)
+  ]
+
+  describe "zip" [
+    it "pairs values for matching keys" do
+      obj1 = { x: 1, y: 2 }
+      obj2 = { x: 3, y: 4 }
+      result = Object.zip obj1 obj2
+      mustEq { x: (1, 3), y: (2, 4) } result
+
+    it "fills with null when key only in first object" do
+      obj1 = { x: 1, y: 2 }
+      obj2 = { x: 3 }
+      result = Object.zip obj1 obj2
+      mustEq { x: (1, 3), y: (2, null) } result
+
+    it "fills with null when key only in second object" do
+      obj1 = { x: 1 }
+      obj2 = { x: 3, y: 4, z: 5 }
+      result = Object.zip obj1 obj2
+      mustEq { x: (1, 3), y: (null, 4), z: (null, 5) } result
+
+    it "handles both objects empty" do
+      result = Object.zip {} {}
+      mustEq {} result
+
+    it "handles first object empty" do
+      obj2 = { a: 1, b: 2 }
+      result = Object.zip {} obj2
+      mustEq { a: (null, 1), b: (null, 2) } result
+
+    it "handles second object empty" do
+      obj1 = { a: 1, b: 2 }
+      result = Object.zip obj1 {}
+      mustEq { a: (1, null), b: (2, null) } result
+
+    it "handles disjoint key sets" do
+      obj1 = { a: "hello" }
+      obj2 = { b: "world" }
+      result = Object.zip obj1 obj2
+      mustEq { a: ("hello", null), b: (null, "world") } result
+
+    it "works with mixed value types" do
+      obj1 = { name: "Alice", age: 30 }
+      obj2 = { name: "Bob", age: 25, active: true }
+      result = Object.zip obj1 obj2
+      mustEq { name: ("Alice", "Bob"), age: (30, 25), active: (null, true) } result
   ]
 ]
