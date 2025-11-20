@@ -979,6 +979,7 @@ pub const Server = struct {
             "Math",
             "Object",
             "Result",
+            "Tuple",
             "JSON",
             "YAML",
             "Spec",

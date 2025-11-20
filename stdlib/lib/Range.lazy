@@ -36,6 +36,7 @@
 /// [x * 2 for x in 1..5]    // [2, 4, 6, 8, 10]
 /// ```
 Result = import 'Result'
+Tuple = import 'Tuple'
 {
   /// Creates an inclusive range from start to end.
   /// The end value is included in the range.
@@ -140,7 +141,7 @@ Result = import 'Result'
     len2 = __array_length arr2;
     maxLen = if len1 > len2 then len1 else len2;
     [
-      (Result.orDefault null (__array_get (arr1, i)), Result.orDefault null (__array_get (arr2, i)))
+      Tuple.mapBoth (Result.orDefault null) (__array_get (arr1, i), __array_get (arr2, i))
       for i in 0...maxLen
     ]
 }

@@ -18,6 +18,7 @@
 /// Object.merge { a: 1 } { b: 2 }  // Returns { a: 1, b: 2 }
 /// ```
 Result = import 'Result'
+Tuple = import 'Tuple'
 {
   /// Returns an array of all keys in an object.
   ///
@@ -124,5 +125,5 @@ Result = import 'Result'
     keys1 = __object_keys obj1;
     keys2 = __object_keys obj2;
     allKeys = __array_uniq [k for ks in [keys1, keys2] for k in ks];
-    { [k]: (Result.orDefault null (__object_get (obj1, k)), Result.orDefault null (__object_get (obj2, k))) for k in allKeys }
+    { [k]: Tuple.mapBoth (Result.orDefault null) (__object_get (obj1, k), __object_get (obj2, k)) for k in allKeys }
 }
