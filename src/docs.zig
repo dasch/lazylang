@@ -285,6 +285,7 @@ fn renderInlineMarkdown(allocator: std.mem.Allocator, result: *std.ArrayListUnma
     while (i < text.len) {
         // Check for inline code (`)
         if (text[i] == '`') {
+            const start_pos = i;
             const start = i + 1;
             i += 1;
             while (i < text.len and text[i] != '`') : (i += 1) {}
@@ -295,10 +296,13 @@ fn renderInlineMarkdown(allocator: std.mem.Allocator, result: *std.ArrayListUnma
                 i += 1;
                 continue;
             }
+            // No closing marker found, reset and treat as regular character
+            i = start_pos;
         }
 
         // Check for function references [functionname]
         if (text[i] == '[') {
+            const start_pos = i;
             const start = i + 1;
             i += 1;
             while (i < text.len and text[i] != ']') : (i += 1) {}
@@ -312,10 +316,13 @@ fn renderInlineMarkdown(allocator: std.mem.Allocator, result: *std.ArrayListUnma
                 i += 1;
                 continue;
             }
+            // No closing marker found, reset and treat as regular character
+            i = start_pos;
         }
 
         // Check for bold (**)
         if (i + 1 < text.len and text[i] == '*' and text[i + 1] == '*') {
+            const start_pos = i;
             const start = i + 2;
             i += 2;
             while (i + 1 < text.len and !(text[i] == '*' and text[i + 1] == '*')) : (i += 1) {}
@@ -326,6 +333,8 @@ fn renderInlineMarkdown(allocator: std.mem.Allocator, result: *std.ArrayListUnma
                 i += 2;
                 continue;
             }
+            // No closing marker found, reset and treat as regular character
+            i = start_pos;
         }
 
         // Regular character
