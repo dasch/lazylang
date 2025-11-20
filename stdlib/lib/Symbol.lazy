@@ -1,0 +1,18 @@
+/// # Symbol
+///
+/// Functions for working with symbols.
+///
+/// Symbols are unique identifiers prefixed with `#`, such as `#ok`, `#error`, or `#Array`.
+
+{
+  /// Convert a symbol to a string without the `#` prefix.
+  ///
+  /// ```
+  /// Symbol.toString #hello
+  /// // => "hello"
+  /// ```
+  toString: sym ->
+    str = __symbol_to_string sym
+    String.dropLeft 1 str
+}
+where String = import 'String'

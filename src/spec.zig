@@ -85,7 +85,12 @@ fn buildDescribePath(allocator: std.mem.Allocator, describe_stack: []const []con
         if (i > 0) {
             try path.appendSlice(allocator, " ");
         }
-        try path.appendSlice(allocator, desc);
+        // Strip # prefix from symbols
+        const desc_name = if (desc.len > 0 and desc[0] == '#')
+            desc[1..]
+        else
+            desc;
+        try path.appendSlice(allocator, desc_name);
     }
 
     try path.appendSlice(allocator, " ");
@@ -135,7 +140,12 @@ fn recordFailedSpec(ctx: anytype, test_description: []const u8) !void {
         if (i > 0) {
             try describe_path.appendSlice(ctx.allocator, " ");
         }
-        try describe_path.appendSlice(ctx.allocator, desc);
+        // Strip # prefix from symbols
+        const desc_name = if (desc.len > 0 and desc[0] == '#')
+            desc[1..]
+        else
+            desc;
+        try describe_path.appendSlice(ctx.allocator, desc_name);
     }
 
     // Add trailing space
@@ -394,8 +404,12 @@ fn runDescribe(ctx: anytype, desc: eval_module.ObjectValue) anyerror!void {
 
         // Format description based on type
         if (description_is_symbol) {
-            // Symbols are formatted like code (blue)
-            try ctx.writer.print("{s}{s}{s}\n", .{ Color.blue, description.?, Color.reset });
+            // Symbols are formatted like code (blue), strip the # prefix
+            const symbol_name = if (description.?.len > 0 and description.?[0] == '#')
+                description.?[1..]
+            else
+                description.?;
+            try ctx.writer.print("{s}{s}{s}\n", .{ Color.blue, symbol_name, Color.reset });
         } else {
             // Strings use the full markdown-light formatting (white/no color)
             const formatted_desc = try formatDescription(ctx.allocator, description.?);
