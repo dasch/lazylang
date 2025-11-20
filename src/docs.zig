@@ -60,7 +60,8 @@ fn writeHtmlFooter(file: anytype) !void {
 }
 
 // Helper function to write the sidebar HTML (used by both index and module pages)
-fn writeSidebar(file: anytype, modules: []const ModuleInfo, current_module: ?[]const u8, current_module_items: ?[]const DocItem) !void {
+// Always renders all functions for all modules, hidden by default unless it's the current module
+fn writeSidebar(file: anytype, modules: []const ModuleInfo, current_module: ?[]const u8) !void {
     try file.writeAll("  <div class=\"sidebar\">\n");
 
     // Search box at the top
@@ -78,39 +79,46 @@ fn writeSidebar(file: anytype, modules: []const ModuleInfo, current_module: ?[]c
 
     // Modules section
     try file.writeAll("    <h2>Modules</h2>\n");
-    try file.writeAll("    <ul>\n");
+    try file.writeAll("    <ul id=\"modules-list\">\n");
 
-    // List all modules
+    // List all modules with all their items (always rendered)
     for (modules) |module| {
         const is_current = if (current_module) |curr| std.mem.eql(u8, module.name, curr) else false;
 
-        try file.writeAll("      <li>\n");
+        try file.writeAll("      <li class=\"module-item\">\n");
         try file.writeAll("        <a href=\"");
         try file.writeAll(module.name);
         try file.writeAll(".html\" class=\"module-link");
         if (is_current) {
             try file.writeAll(" active");
         }
+        try file.writeAll("\" data-module=\"");
+        try file.writeAll(module.name);
         try file.writeAll("\">");
         try file.writeAll(module.name);
         try file.writeAll("</a>\n");
 
-        // If this is the current module and we have items, show nested list
-        if (is_current and current_module_items != null) {
-            try file.writeAll("        <ul class=\"nested\">\n");
-            for (current_module_items.?) |item| {
-                try file.writeAll("          <li><a href=\"#");
-                try file.writeAll(item.name);
-                try file.writeAll("\" data-module=\"");
-                try file.writeAll(module.name);
-                try file.writeAll("\" data-item=\"");
-                try file.writeAll(item.name);
-                try file.writeAll("\">");
-                try file.writeAll(item.name);
-                try file.writeAll("</a></li>\n");
-            }
-            try file.writeAll("        </ul>\n");
+        // Always include nested list for all modules (hidden by default with CSS)
+        const display_style = if (is_current) "" else " style=\"display: none;\"";
+        try file.writeAll("        <ul class=\"nested\"");
+        try file.writeAll(display_style);
+        try file.writeAll(">\n");
+        for (module.items) |item| {
+            try file.writeAll("          <li class=\"function-item\"><a href=\"");
+            try file.writeAll(module.name);
+            try file.writeAll(".html#");
+            try file.writeAll(item.name);
+            try file.writeAll("\" data-module=\"");
+            try file.writeAll(module.name);
+            try file.writeAll("\" data-item=\"");
+            try file.writeAll(item.name);
+            try file.writeAll("\" data-signature=\"");
+            try file.writeAll(item.signature);
+            try file.writeAll("\">");
+            try file.writeAll(item.name);
+            try file.writeAll("</a></li>\n");
         }
+        try file.writeAll("        </ul>\n");
 
         try file.writeAll("      </li>\n");
     }
@@ -118,6 +126,78 @@ fn writeSidebar(file: anytype, modules: []const ModuleInfo, current_module: ?[]c
     try file.writeAll("    </ul>\n");
     try file.writeAll("    </div>\n"); // Close sidebar-content
     try file.writeAll("  </div>\n"); // Close sidebar
+}
+
+// Helper function to write unified search JavaScript (works on all pages)
+fn writeSearchScript(file: anytype) !void {
+    try file.writeAll("  <script>\n");
+    try file.writeAll(
+        \\    const searchInput = document.getElementById('sidebar-search');
+        \\    const modulesList = document.getElementById('modules-list');
+        \\    const moduleItems = Array.from(modulesList.querySelectorAll('.module-item'));
+        \\
+        \\    // CMD+K / Ctrl+K to focus search
+        \\    document.addEventListener('keydown', (e) => {
+        \\      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        \\        e.preventDefault();
+        \\        searchInput.focus();
+        \\      }
+        \\    });
+        \\
+        \\    // Search functionality
+        \\    searchInput.addEventListener('input', (e) => {
+        \\      const query = e.target.value.toLowerCase().trim();
+        \\
+        \\      if (!query) {
+        \\        // No search query - hide all function lists except current module
+        \\        moduleItems.forEach(moduleItem => {
+        \\          const moduleLink = moduleItem.querySelector('.module-link');
+        \\          const functionList = moduleItem.querySelector('.nested');
+        \\          moduleItem.style.display = '';
+        \\          if (functionList) {
+        \\            // Only show functions for active module
+        \\            functionList.style.display = moduleLink.classList.contains('active') ? '' : 'none';
+        \\          }
+        \\        });
+        \\        return;
+        \\      }
+        \\
+        \\      // Search across modules and functions
+        \\      moduleItems.forEach(moduleItem => {
+        \\        const moduleLink = moduleItem.querySelector('.module-link');
+        \\        const moduleName = moduleLink.dataset.module.toLowerCase();
+        \\        const functionList = moduleItem.querySelector('.nested');
+        \\        const functionItems = functionList ? Array.from(functionList.querySelectorAll('.function-item')) : [];
+        \\
+        \\        // Check if module name matches
+        \\        const moduleMatches = moduleName.includes(query);
+        \\
+        \\        // Check which functions match
+        \\        let hasMatchingFunctions = false;
+        \\        functionItems.forEach(funcItem => {
+        \\          const link = funcItem.querySelector('a');
+        \\          const funcName = link.dataset.item.toLowerCase();
+        \\          const funcSignature = (link.dataset.signature || '').toLowerCase();
+        \\          const matches = funcName.includes(query) || funcSignature.includes(query);
+        \\          funcItem.style.display = matches ? '' : 'none';
+        \\          if (matches) hasMatchingFunctions = true;
+        \\        });
+        \\
+        \\        // Show module if it matches or has matching functions
+        \\        if (moduleMatches || hasMatchingFunctions) {
+        \\          moduleItem.style.display = '';
+        \\          // Show function list when searching
+        \\          if (functionList) {
+        \\            functionList.style.display = '';
+        \\          }
+        \\        } else {
+        \\          moduleItem.style.display = 'none';
+        \\        }
+        \\      });
+        \\    });
+        \\
+    );
+    try file.writeAll("  </script>\n");
 }
 
 pub const DocItem = struct {
@@ -575,7 +655,7 @@ pub fn writeIndexHtmlContent(allocator: std.mem.Allocator, file: anytype, module
     try file.writeAll("<body>\n");
 
     // Sidebar (shared between index and module pages)
-    try writeSidebar(file, modules, null, null);
+    try writeSidebar(file, modules, null);
 
     // Main content
     try file.writeAll("  <div class=\"main\">\n");
@@ -638,31 +718,8 @@ pub fn writeIndexHtmlContent(allocator: std.mem.Allocator, file: anytype, module
     try file.writeAll("    </div>\n");
     try file.writeAll("  </div>\n");
 
-    // Add search functionality
-    try file.writeAll("  <script>\n");
-    try file.writeAll(
-        \\    const searchInput = document.getElementById('sidebar-search');
-        \\    const modulesList = document.querySelector('.sidebar ul');
-        \\    const modules = Array.from(modulesList.querySelectorAll('li'));
-        \\
-        \\    // CMD+K / Ctrl+K to focus search
-        \\    document.addEventListener('keydown', (e) => {
-        \\      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        \\        e.preventDefault();
-        \\        searchInput.focus();
-        \\      }
-        \\    });
-        \\
-        \\    searchInput.addEventListener('input', (e) => {
-        \\      const query = e.target.value.toLowerCase();
-        \\      modules.forEach(module => {
-        \\        const text = module.textContent.toLowerCase();
-        \\        module.style.display = text.includes(query) ? '' : 'none';
-        \\      });
-        \\    });
-        \\
-    );
-    try file.writeAll("  </script>\n");
+    // Add unified search functionality
+    try writeSearchScript(file);
     try writeHtmlFooter(file);
 }
 
@@ -710,7 +767,7 @@ pub fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocI
     try file.writeAll("<body>\n");
 
     // Sidebar (shared between index and module pages)
-    try writeSidebar(file, modules, module_name, items);
+    try writeSidebar(file, modules, module_name);
 
     // Main content
     try file.writeAll("  <div class=\"main\">\n");
@@ -781,104 +838,15 @@ pub fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocI
     try file.writeAll("    </div>\n");
     try file.writeAll("    </div>\n");
     try file.writeAll("  </div>\n");
+
+    // Add unified search functionality
+    try writeSearchScript(file);
+
+    // Add scroll highlighting for module pages
     try file.writeAll("  <script>\n");
-
-    // Generate search data for all modules
-    try file.writeAll("    const searchData = [\n");
-    for (modules, 0..) |module, i| {
-        for (module.items, 0..) |item, j| {
-            try file.writeAll("      { module: '");
-            try file.writeAll(module.name);
-            try file.writeAll("', name: '");
-            // Escape single quotes in name
-            for (item.name) |c| {
-                if (c == '\'') {
-                    try file.writeAll("\\'");
-                } else {
-                    const char_slice = &[_]u8{c};
-                    try file.writeAll(char_slice);
-                }
-            }
-            try file.writeAll("', signature: '");
-            // Escape single quotes in signature
-            for (item.signature) |c| {
-                if (c == '\'') {
-                    try file.writeAll("\\'");
-                } else {
-                    const char_slice = &[_]u8{c};
-                    try file.writeAll(char_slice);
-                }
-            }
-            try file.writeAll("' }");
-            if (!(i == modules.len - 1 and j == module.items.len - 1)) {
-                try file.writeAll(",\n");
-            }
-        }
-    }
-    try file.writeAll("\n    ];\n");
-
     try file.writeAll(
-        \\
-        \\    const currentModule = document.querySelector('.sidebar .module-link.active').textContent;
-        \\    const searchInput = document.getElementById('sidebar-search');
-        \\    const modulesList = document.querySelector('.sidebar > ul');
-        \\    const originalModulesList = modulesList.innerHTML;
-        \\
-        \\    // CMD+K / Ctrl+K to focus search
-        \\    document.addEventListener('keydown', (e) => {
-        \\      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        \\        e.preventDefault();
-        \\        searchInput.focus();
-        \\      }
-        \\    });
-        \\
-        \\    // Search functionality
-        \\    searchInput.addEventListener('input', (e) => {
-        \\      const query = e.target.value.toLowerCase().trim();
-        \\
-        \\      if (!query) {
-        \\        // Restore original sidebar
-        \\        modulesList.innerHTML = originalModulesList;
-        \\        return;
-        \\      }
-        \\
-        \\      // Search across all modules
-        \\      const results = searchData.filter(item =>
-        \\        item.name.toLowerCase().includes(query) ||
-        \\        item.signature.toLowerCase().includes(query) ||
-        \\        item.module.toLowerCase().includes(query)
-        \\      );
-        \\
-        \\      // Group results by module
-        \\      const resultsByModule = {};
-        \\      results.forEach(result => {
-        \\        if (!resultsByModule[result.module]) {
-        \\          resultsByModule[result.module] = [];
-        \\        }
-        \\        resultsByModule[result.module].push(result);
-        \\      });
-        \\
-        \\      // Rebuild sidebar with search results
-        \\      let html = '';
-        \\      Object.keys(resultsByModule).sort().forEach(moduleName => {
-        \\        const isActive = moduleName === currentModule;
-        \\        html += '<li>';
-        \\        html += `<a href="${moduleName}.html" class="module-link${isActive ? ' active' : ''}">${moduleName}</a>`;
-        \\        html += '<ul class="nested">';
-        \\        resultsByModule[moduleName].forEach(item => {
-        \\          const href = isActive ? `#${item.name}` : `${moduleName}.html#${item.name}`;
-        \\          html += `<li><a href="${href}">${item.name}</a></li>`;
-        \\        });
-        \\        html += '</ul>';
-        \\        html += '</li>';
-        \\      });
-        \\
-        \\      modulesList.innerHTML = html;
-        \\    });
-        \\
         \\    // Highlight current section in sidebar on scroll
         \\    const docItems = Array.from(document.querySelectorAll('.doc-item'));
-        \\    const sidebarLinks = Array.from(document.querySelectorAll('.sidebar .nested a'));
         \\
         \\    function updateActiveLink() {
         \\      // Find the doc item that's currently most visible
@@ -892,6 +860,9 @@ pub fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocI
         \\          break;
         \\        }
         \\      }
+        \\
+        \\      // Get fresh sidebar links (in case search modified the DOM)
+        \\      const sidebarLinks = Array.from(document.querySelectorAll('.sidebar .nested a'));
         \\
         \\      // Remove active class from all links
         \\      sidebarLinks.forEach(link => link.classList.remove('active'));
