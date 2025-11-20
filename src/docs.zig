@@ -15,18 +15,39 @@ fn writeHtmlHeader(file: anytype, title: []const u8) !void {
 }
 
 // Helper function to write common CSS
-fn writeCommonCss(file: anytype, sidebar_width: []const u8) !void {
+fn writeCommonCss(file: anytype, sidebar_width: []const u8, has_navbar: bool) !void {
     try file.writeAll(
         \\    * { margin: 0; padding: 0; box-sizing: border-box; }
-        \\    body { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; line-height: 1.6; color: #333; background: #fafaf8; display: flex; }
         \\
     );
+
+    if (has_navbar) {
+        try file.writeAll(
+            \\    body { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; line-height: 1.6; color: #333; background: #fafaf8; display: flex; padding-top: 50px; }
+            \\
+        );
+    } else {
+        try file.writeAll(
+            \\    body { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; line-height: 1.6; color: #333; background: #fafaf8; display: flex; }
+            \\
+        );
+    }
 
     // Sidebar styles with configurable width
     try file.writeAll("    .sidebar { width: ");
     try file.writeAll(sidebar_width);
+    if (has_navbar) {
+        try file.writeAll(
+            \\; background: #2c3e50; color: white; height: calc(100vh - 50px); position: fixed; top: 50px; left: 0; display: flex; flex-direction: column; }
+            \\
+        );
+    } else {
+        try file.writeAll(
+            \\; background: #2c3e50; color: white; height: 100vh; position: fixed; top: 0; left: 0; display: flex; flex-direction: column; }
+            \\
+        );
+    }
     try file.writeAll(
-        \\; background: #2c3e50; color: white; height: 100vh; position: fixed; top: 0; left: 0; display: flex; flex-direction: column; }
         \\    .sidebar-search { padding: 15px; border-bottom: 1px solid #34495e; flex-shrink: 0; }
         \\    .sidebar-search input { width: 100%; padding: 10px 12px; font-size: 14px; border: 1px solid #34495e; border-radius: 4px; background: #34495e; color: white; }
         \\    .sidebar-search input::placeholder { color: #95a5a6; }
@@ -63,6 +84,41 @@ fn writeCommonCss(file: anytype, sidebar_width: []const u8) !void {
 fn writeHtmlFooter(file: anytype) !void {
     try file.writeAll("</body>\n");
     try file.writeAll("</html>\n");
+}
+
+// Helper function to write navigation bar
+// path_prefix: "" for root, "../" for stdlib pages
+fn writeNavBar(file: anytype, active_page: enum { home, stdlib }, path_prefix: []const u8) !void {
+    try file.writeAll("  <nav class=\"navbar\">\n");
+    try file.writeAll("    <div class=\"navbar-content\">\n");
+    try file.writeAll("      <a href=\"");
+    try file.writeAll(path_prefix);
+    try file.writeAll("index.html\" class=\"nav-link");
+    if (active_page == .home) {
+        try file.writeAll(" active");
+    }
+    try file.writeAll("\">Lazylang</a>\n");
+    try file.writeAll("      <a href=\"");
+    try file.writeAll(path_prefix);
+    try file.writeAll("stdlib/index.html\" class=\"nav-link");
+    if (active_page == .stdlib) {
+        try file.writeAll(" active");
+    }
+    try file.writeAll("\">Standard Library</a>\n");
+    try file.writeAll("    </div>\n");
+    try file.writeAll("  </nav>\n");
+}
+
+// Helper function to write navbar CSS
+fn writeNavBarCss(file: anytype) !void {
+    try file.writeAll(
+        \\    .navbar { background: #2c3e50; color: white; padding: 0 20px; position: fixed; top: 0; left: 0; right: 0; z-index: 1000; height: 50px; display: flex; align-items: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        \\    .navbar-content { display: flex; gap: 30px; max-width: 1200px; margin: 0 auto; width: 100%; }
+        \\    .navbar .nav-link { color: #ecf0f1; text-decoration: none; padding: 8px 16px; border-radius: 4px; transition: background 0.2s; font-weight: 500; }
+        \\    .navbar .nav-link:hover { background: #34495e; }
+        \\    .navbar .nav-link.active { background: #3498db; }
+        \\
+    );
 }
 
 // Helper function to write the sidebar HTML (used by both index and module pages)
@@ -641,9 +697,67 @@ pub fn renderMarkdownToHtml(allocator: std.mem.Allocator, markdown: []const u8) 
     return result.toOwnedSlice(allocator);
 }
 
+// Write root index.html (no sidebar, just navbar and README)
+pub fn writeRootIndexHtmlContent(allocator: std.mem.Allocator, file: anytype, readme_content: ?[]const u8) !void {
+    try writeHtmlHeader(file, "Lazylang");
+    try writeNavBarCss(file);
+    try file.writeAll(
+        \\    * { margin: 0; padding: 0; box-sizing: border-box; }
+        \\    body { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; line-height: 1.6; color: #333; background: #fafaf8; padding-top: 50px; }
+        \\    .main { flex: 1; }
+        \\    .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        \\    header { padding: 30px 0 10px 0; margin-bottom: 10px; }
+        \\    h1 { font-size: 2em; font-weight: 500; color: #333; }
+        \\    @media (max-width: 768px) { .container { padding: 10px; } }
+        \\
+    );
+    try file.writeAll("  </style>\n");
+    try file.writeAll("</head>\n");
+    try file.writeAll("<body>\n");
+
+    // Navbar
+    try writeNavBar(file, .home, "");
+
+    // Main content
+    try file.writeAll("  <div class=\"main\">\n");
+    try file.writeAll("    <div class=\"container\">\n");
+
+    // Render README content if available
+    if (readme_content) |readme| {
+        try file.writeAll("      <div class=\"readme-content\" style=\"line-height: 1.8; color: #333;\">\n");
+        try file.writeAll("      <style>\n");
+        try file.writeAll("        .readme-content h1 { font-size: 2em; color: #333; margin-top: 0 !important; margin-bottom: 0.5em; font-weight: 500; }\n");
+        try file.writeAll("        .readme-content h2 { font-size: 1.8em; color: #333; margin-top: 1.5em; margin-bottom: 0.5em; font-weight: 400; }\n");
+        try file.writeAll("        .readme-content h3 { font-size: 1.4em; color: #333; margin-top: 1.2em; margin-bottom: 0.4em; }\n");
+        try file.writeAll("        .readme-content p { margin-bottom: 1em; color: #555; }\n");
+        try file.writeAll("        .readme-content li { margin-left: 1.5em; margin-bottom: 0.5em; color: #555; }\n");
+        try file.writeAll("        .readme-content code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'SF Mono', 'Monaco', 'Menlo', 'Consolas', 'Courier New', monospace; font-size: 0.9em; color: #c7254e; }\n");
+        try file.writeAll("        .readme-content pre { background: #f9f9f9; border: 1px solid #e0e0e0; border-radius: 4px; padding: 16px; overflow-x: auto; margin: 1em 0; }\n");
+        try file.writeAll("        .readme-content pre code { background: none; padding: 0; color: #333; font-size: 0.95em; }\n");
+        try file.writeAll("      </style>\n");
+
+        const html_content = try renderMarkdownToHtml(allocator, readme);
+        defer allocator.free(html_content);
+
+        try file.writeAll(html_content);
+        try file.writeAll("      </div>\n");
+    } else {
+        try file.writeAll("      <header>\n");
+        try file.writeAll("        <h1>Lazylang</h1>\n");
+        try file.writeAll("      </header>\n");
+        try file.writeAll("      <p>No README found.</p>\n");
+    }
+
+    try file.writeAll("    </div>\n");
+    try file.writeAll("  </div>\n");
+
+    try writeHtmlFooter(file);
+}
+
 pub fn writeIndexHtmlContent(allocator: std.mem.Allocator, file: anytype, modules: []const ModuleInfo, readme_content: ?[]const u8) !void {
-    try writeHtmlHeader(file, "Documentation");
-    try writeCommonCss(file, "280px");
+    try writeHtmlHeader(file, "Standard Library - Documentation");
+    try writeNavBarCss(file);
+    try writeCommonCss(file, "280px", true);
 
     // Index-specific CSS
     try file.writeAll(
@@ -659,6 +773,9 @@ pub fn writeIndexHtmlContent(allocator: std.mem.Allocator, file: anytype, module
     try file.writeAll("  </style>\n");
     try file.writeAll("</head>\n");
     try file.writeAll("<body>\n");
+
+    // Navbar
+    try writeNavBar(file, .stdlib, "../");
 
     // Sidebar (shared between index and module pages)
     try writeSidebar(file, modules, null);
@@ -741,7 +858,8 @@ pub fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocI
     try file.writeAll(" - Documentation</title>\n");
     try file.writeAll("  <style>\n");
 
-    try writeCommonCss(file, "280px");
+    try writeNavBarCss(file);
+    try writeCommonCss(file, "280px", true);
 
     // Module-specific CSS (sidebar styles are now in common CSS)
     try file.writeAll(
@@ -765,6 +883,9 @@ pub fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocI
     try file.writeAll("  </style>\n");
     try file.writeAll("</head>\n");
     try file.writeAll("<body>\n");
+
+    // Navbar
+    try writeNavBar(file, .stdlib, "../");
 
     // Sidebar (shared between index and module pages)
     try writeSidebar(file, modules, module_name);
@@ -895,7 +1016,16 @@ pub fn generateModuleHtml(
     all_modules: []const ModuleInfo,
     output_dir: []const u8,
 ) !void {
-    const html_filename = try std.fmt.allocPrint(allocator, "{s}/{s}.html", .{ output_dir, module.name });
+    // Create stdlib subdirectory
+    const stdlib_dir = try std.fmt.allocPrint(allocator, "{s}/stdlib", .{output_dir});
+    defer allocator.free(stdlib_dir);
+
+    std.fs.cwd().makePath(stdlib_dir) catch |err| switch (err) {
+        error.PathAlreadyExists => {},
+        else => return err,
+    };
+
+    const html_filename = try std.fmt.allocPrint(allocator, "{s}/{s}.html", .{ stdlib_dir, module.name });
     defer allocator.free(html_filename);
 
     var html_file = try std.fs.cwd().createFile(html_filename, .{});
@@ -904,9 +1034,9 @@ pub fn generateModuleHtml(
     try writeHtmlDocs(html_file, module.name, module.items, all_modules, module.module_doc, allocator);
 }
 
-pub fn generateIndexHtml(
+// Generate root /index.html from root README.md
+pub fn generateRootIndexHtml(
     allocator: std.mem.Allocator,
-    modules: []const ModuleInfo,
     output_dir: []const u8,
 ) !void {
     const html_filename = try std.fmt.allocPrint(allocator, "{s}/index.html", .{output_dir});
@@ -915,14 +1045,56 @@ pub fn generateIndexHtml(
     var html_file = try std.fs.cwd().createFile(html_filename, .{});
     defer html_file.close();
 
-    // Try to read README.md from current directory
+    // Try to read README.md from root directory
     const readme_content = std.fs.cwd().readFileAlloc(allocator, "README.md", 1024 * 1024) catch |err| switch (err) {
         error.FileNotFound => null,
         else => return err,
     };
     defer if (readme_content) |content| allocator.free(content);
 
+    try writeRootIndexHtmlContent(allocator, html_file, readme_content);
+}
+
+// Generate /stdlib/index.html from stdlib README.md (or fall back to root README)
+pub fn generateStdlibIndexHtml(
+    allocator: std.mem.Allocator,
+    modules: []const ModuleInfo,
+    output_dir: []const u8,
+) !void {
+    // Create stdlib subdirectory
+    const stdlib_dir = try std.fmt.allocPrint(allocator, "{s}/stdlib", .{output_dir});
+    defer allocator.free(stdlib_dir);
+
+    std.fs.cwd().makePath(stdlib_dir) catch |err| switch (err) {
+        error.PathAlreadyExists => {},
+        else => return err,
+    };
+
+    const html_filename = try std.fmt.allocPrint(allocator, "{s}/index.html", .{stdlib_dir});
+    defer allocator.free(html_filename);
+
+    var html_file = try std.fs.cwd().createFile(html_filename, .{});
+    defer html_file.close();
+
+    // Try to read stdlib/README.md, fall back to root README.md
+    const readme_content = std.fs.cwd().readFileAlloc(allocator, "stdlib/README.md", 1024 * 1024) catch blk: {
+        break :blk std.fs.cwd().readFileAlloc(allocator, "README.md", 1024 * 1024) catch |err| switch (err) {
+            error.FileNotFound => null,
+            else => return err,
+        };
+    };
+    defer if (readme_content) |content| allocator.free(content);
+
     try writeIndexHtmlContent(allocator, html_file, modules, readme_content);
+}
+
+// Legacy function name for backward compatibility
+pub fn generateIndexHtml(
+    allocator: std.mem.Allocator,
+    modules: []const ModuleInfo,
+    output_dir: []const u8,
+) !void {
+    try generateStdlibIndexHtml(allocator, modules, output_dir);
 }
 
 pub fn collectModulesFromDirectory(

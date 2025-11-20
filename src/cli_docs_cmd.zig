@@ -89,8 +89,13 @@ pub fn runDocs(
         try modules_list.append(allocator, module_info);
     }
 
-    // Generate index.html
-    try docs.generateIndexHtml(allocator, modules_list.items, output_dir);
+    // Generate root index.html
+    try stdout.print("Generating root index.html...\n", .{});
+    try docs.generateRootIndexHtml(allocator, output_dir);
+
+    // Generate stdlib/index.html
+    try stdout.print("Generating stdlib/index.html...\n", .{});
+    try docs.generateStdlibIndexHtml(allocator, modules_list.items, output_dir);
 
     // Generate HTML for each module
     for (modules_list.items) |module| {
@@ -99,5 +104,7 @@ pub fn runDocs(
     }
 
     try stdout.print("Documentation generated in {s}/\n", .{output_dir});
+    try stdout.print("  - Root: {s}/index.html\n", .{output_dir});
+    try stdout.print("  - Standard Library: {s}/stdlib/index.html\n", .{output_dir});
     return .{ .exit_code = 0 };
 }
