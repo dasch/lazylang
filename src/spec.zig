@@ -306,10 +306,10 @@ fn runDescribe(ctx: anytype, desc: eval_module.ObjectValue) anyerror!void {
             // Symbols are formatted like code (blue)
             try ctx.writer.print("{s}{s}{s}\n", .{ Color.blue, description.?, Color.reset });
         } else {
-            // Strings use the full markdown-light formatting
+            // Strings use the full markdown-light formatting (white/no color)
             const formatted_desc = try formatDescription(ctx.allocator, description.?);
             defer ctx.allocator.free(formatted_desc);
-            try ctx.writer.print("{s}{s}{s}\n", .{ Color.cyan, formatted_desc, Color.reset });
+            try ctx.writer.print("{s}\n", .{formatted_desc});
         }
     }
 
