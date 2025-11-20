@@ -11,7 +11,7 @@ cd /path/to/lazylang
 zig build
 ```
 
-This creates `zig-out/bin/lazylang-lsp`.
+This creates `bin/lazy-lsp`.
 
 ### 2. Install the Extension
 
@@ -50,12 +50,12 @@ If the LSP server is not in your PATH or the default locations, configure it:
 
 1. Open VS Code Settings (Cmd+, or Ctrl+,)
 2. Search for "lazylang"
-3. Set "Lazylang: Lsp Path" to your `lazylang-lsp` executable path
+3. Set "Lazylang: Lsp Path" to your `lazy-lsp` executable path
 
 Example:
 ```json
 {
-  "lazylang.lspPath": "/Users/you/projects/lazylang/zig-out/bin/lazylang-lsp"
+  "lazylang.lspPath": "/Users/you/projects/lazylang/bin/lazy-lsp"
 }
 ```
 
@@ -81,8 +81,8 @@ Example:
 
 If you see "Lazylang LSP server not found":
 
-1. Check the path is correct: `ls /path/to/lazylang-lsp`
-2. Make it executable: `chmod +x /path/to/lazylang-lsp`
+1. Check the path is correct: `ls /path/to/lazy-lsp`
+2. Make it executable: `chmod +x /path/to/lazy-lsp`
 3. Set the path in VS Code settings (see step 3 above)
 
 ### No Syntax Highlighting

@@ -36,11 +36,15 @@ pub fn build(b: *std.Build) void {
     exe_module.addImport("evaluator", evaluator_module);
 
     const exe = b.addExecutable(.{
-        .name = "lazylang",
+        .name = "lazy",
         .root_module = exe_module,
     });
 
-    b.installArtifact(exe);
+    // Install to bin/ instead of zig-out/bin/
+    const exe_install = b.addInstallArtifact(exe, .{
+        .dest_dir = .{ .override = .{ .custom = "../bin" } },
+    });
+    b.getInstallStep().dependOn(&exe_install.step);
 
     // Create LSP server executable
     const lsp_exe_module = b.createModule(.{
@@ -54,11 +58,15 @@ pub fn build(b: *std.Build) void {
     lsp_exe_module.addImport("evaluator", evaluator_module);
 
     const lsp_exe = b.addExecutable(.{
-        .name = "lazylang-lsp",
+        .name = "lazy-lsp",
         .root_module = lsp_exe_module,
     });
 
-    b.installArtifact(lsp_exe);
+    // Install to bin/ instead of zig-out/bin/
+    const lsp_exe_install = b.addInstallArtifact(lsp_exe, .{
+        .dest_dir = .{ .override = .{ .custom = "../bin" } },
+    });
+    b.getInstallStep().dependOn(&lsp_exe_install.step);
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
@@ -66,7 +74,7 @@ pub fn build(b: *std.Build) void {
         run_cmd.addArgs(args);
     }
 
-    const run_step = b.step("run", "Run the lazylang CLI");
+    const run_step = b.step("run", "Run the lazy CLI");
     run_step.dependOn(&run_cmd.step);
 
     // Create test modules

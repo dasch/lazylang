@@ -142,10 +142,10 @@ export function deactivate(): Thenable<void> | undefined {
 }
 
 /**
- * Find the Lazylang formatter executable (lazylang CLI).
+ * Find the Lazylang formatter executable (lazy CLI).
  * Priority order:
- * 1. In workspace zig-out/bin/lazylang
- * 2. In workspace ../zig-out/bin/lazylang (for worktrees)
+ * 1. In workspace bin/lazy
+ * 2. In workspace ../bin/lazy (for worktrees)
  * 3. In PATH
  */
 function findFormatter(context: ExtensionContext): string | null {
@@ -154,14 +154,14 @@ function findFormatter(context: ExtensionContext): string | null {
     if (workspaceFolders && workspaceFolders.length > 0) {
         const workspaceRoot = workspaceFolders[0].uri.fsPath;
 
-        // Check zig-out/bin in workspace
-        const workspaceFormatterPath = path.join(workspaceRoot, 'zig-out', 'bin', 'lazylang');
+        // Check bin/ in workspace
+        const workspaceFormatterPath = path.join(workspaceRoot, 'bin', 'lazy');
         if (fs.existsSync(workspaceFormatterPath)) {
             return workspaceFormatterPath;
         }
 
         // Check parent directory (for git worktrees)
-        const parentFormatterPath = path.join(workspaceRoot, '..', 'zig-out', 'bin', 'lazylang');
+        const parentFormatterPath = path.join(workspaceRoot, '..', 'bin', 'lazy');
         if (fs.existsSync(parentFormatterPath)) {
             return path.resolve(parentFormatterPath);
         }
@@ -170,7 +170,7 @@ function findFormatter(context: ExtensionContext): string | null {
     // Try to find in PATH
     const pathDirs = (process.env.PATH || '').split(path.delimiter);
     for (const dir of pathDirs) {
-        const formatterPath = path.join(dir, 'lazylang');
+        const formatterPath = path.join(dir, 'lazy');
         if (fs.existsSync(formatterPath)) {
             return formatterPath;
         }
@@ -183,8 +183,8 @@ function findFormatter(context: ExtensionContext): string | null {
  * Find the Lazylang LSP server executable.
  * Priority order:
  * 1. User-configured path in settings
- * 2. In workspace zig-out/bin/lazylang-lsp
- * 3. In workspace ../zig-out/bin/lazylang-lsp (for worktrees)
+ * 2. In workspace bin/lazy-lsp
+ * 3. In workspace ../bin/lazy-lsp (for worktrees)
  * 4. In PATH
  */
 function findLspServer(context: ExtensionContext): string | null {
@@ -201,14 +201,14 @@ function findLspServer(context: ExtensionContext): string | null {
     if (workspaceFolders && workspaceFolders.length > 0) {
         const workspaceRoot = workspaceFolders[0].uri.fsPath;
 
-        // Check zig-out/bin in workspace
-        const workspaceLspPath = path.join(workspaceRoot, 'zig-out', 'bin', 'lazylang-lsp');
+        // Check bin/ in workspace
+        const workspaceLspPath = path.join(workspaceRoot, 'bin', 'lazy-lsp');
         if (fs.existsSync(workspaceLspPath)) {
             return workspaceLspPath;
         }
 
         // Check parent directory (for git worktrees)
-        const parentLspPath = path.join(workspaceRoot, '..', 'zig-out', 'bin', 'lazylang-lsp');
+        const parentLspPath = path.join(workspaceRoot, '..', 'bin', 'lazy-lsp');
         if (fs.existsSync(parentLspPath)) {
             return path.resolve(parentLspPath);
         }
@@ -217,7 +217,7 @@ function findLspServer(context: ExtensionContext): string | null {
     // Try to find in PATH
     const pathDirs = (process.env.PATH || '').split(path.delimiter);
     for (const dir of pathDirs) {
-        const lspPath = path.join(dir, 'lazylang-lsp');
+        const lspPath = path.join(dir, 'lazy-lsp');
         if (fs.existsSync(lspPath)) {
             return lspPath;
         }

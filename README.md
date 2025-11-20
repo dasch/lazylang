@@ -545,7 +545,7 @@ The `lazy` command line tool can evaluate and execute Lazylang files, and is use
 ```
 lazy eval path/to/file.lazy
 lazy run path/to/file.lazy --manifest output/dir
-lazy test tests/
+lazy spec tests/
 lazy docs path/to/file.lazy --output docs/
 ```
 
@@ -557,14 +557,14 @@ Two modes: `eval` and `run`.
 In both cases, passing the `--manifest` argument will make Lazylang expect the result to be an object with string file path keys and string values, and will write the values to the paths.
 
 ### `run` example
-When a module is executed with `lazylang run`, the top-level expression must be a function that takes a single object as argument.
+When a module is executed with `lazy run`, the top-level expression must be a function that takes a single object as argument.
 
 The object has two fields:
 * `args`: an array of command line arguments passed to the program (excluding the program name)
 * `env`: an object containing the environment variables
 
 ```
-// Execute with `lazylang run hello.lazy
+// Execute with `lazy run hello.lazy
 
 { args, env } ->
   if env.HELLO == 'world' then

@@ -1,4 +1,4 @@
-// Example program demonstrating lazylang run
-// Usage: lazylang run examples/hello.lazy -- Alice Bob
+// Example program demonstrating lazy run
+// Usage: lazy run examples/hello.lazy -- Alice Bob
 
 { args, env } -> { env, args }

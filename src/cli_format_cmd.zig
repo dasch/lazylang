@@ -3,7 +3,7 @@
 //! This module implements the 'format' subcommand which formats Lazylang
 //! source code by normalizing whitespace and indentation.
 //!
-//! Usage: lazylang format <path>
+//! Usage: lazy format <path>
 
 const std = @import("std");
 const formatter = @import("formatter.zig");

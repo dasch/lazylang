@@ -7,8 +7,8 @@
 //! with `args` (array of strings) and `env` (object mapping strings to strings).
 //!
 //! Usage:
-//!   lazylang run <file>               - Run with no arguments
-//!   lazylang run <file> -- arg1 arg2  - Run with arguments
+//!   lazy run <file>               - Run with no arguments
+//!   lazy run <file> -- arg1 arg2  - Run with arguments
 
 const std = @import("std");
 const evaluator = @import("eval.zig");

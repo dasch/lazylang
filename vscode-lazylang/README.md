@@ -22,8 +22,8 @@ This extension provides language support for Lazylang, including syntax highligh
 The Lazylang LSP server must be available. The extension will look for it in the following locations (in order):
 
 1. Custom path configured in settings (`lazylang.lspPath`)
-2. `zig-out/bin/lazylang-lsp` in your workspace
-3. `lazylang-lsp` in your system PATH
+2. `bin/lazy-lsp` in your workspace
+3. `lazy-lsp` in your system PATH
 
 To build the LSP server:
 
@@ -32,7 +32,7 @@ cd /path/to/lazylang
 zig build
 ```
 
-This will create the `lazylang-lsp` executable in `zig-out/bin/`.
+This will create the `lazy-lsp` executable in `bin/`.
 
 ## Extension Settings
 
