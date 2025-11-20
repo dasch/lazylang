@@ -74,6 +74,24 @@ fn formatDescription(allocator: std.mem.Allocator, text: []const u8) ![]const u8
     return result.toOwnedSlice(allocator);
 }
 
+// Helper to build the full describe path for display
+fn buildDescribePath(allocator: std.mem.Allocator, describe_stack: []const []const u8) ![]const u8 {
+    if (describe_stack.len == 0) return "";
+
+    var path = std.ArrayList(u8){};
+    errdefer path.deinit(allocator);
+
+    for (describe_stack, 0..) |desc, i| {
+        if (i > 0) {
+            try path.appendSlice(allocator, " ");
+        }
+        try path.appendSlice(allocator, desc);
+    }
+
+    try path.appendSlice(allocator, " ");
+    return path.toOwnedSlice(allocator);
+}
+
 // Helper to find the line number of a test by searching for its description
 fn findLineForTest(allocator: std.mem.Allocator, file_path: []const u8, test_description: []const u8) ?usize {
     const file = std.fs.cwd().openFile(file_path, .{}) catch return null;
@@ -115,9 +133,14 @@ fn recordFailedSpec(ctx: anytype, test_description: []const u8) !void {
 
     for (ctx.current_describe_stack.items, 0..) |desc, i| {
         if (i > 0) {
-            try describe_path.appendSlice(ctx.allocator, " / ");
+            try describe_path.appendSlice(ctx.allocator, " ");
         }
         try describe_path.appendSlice(ctx.allocator, desc);
+    }
+
+    // Add trailing space
+    if (ctx.current_describe_stack.items.len > 0) {
+        try describe_path.appendSlice(ctx.allocator, " ");
     }
 
     // Try to find the line number
@@ -466,18 +489,22 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
     // If the test is ignored (xit), just display it and return
     if (is_ignored) {
         try ctx.writeIndent();
+        const describe_path = try buildDescribePath(ctx.allocator, ctx.current_describe_stack.items);
+        defer ctx.allocator.free(describe_path);
         const formatted_desc = try formatDescription(ctx.allocator, description.?);
         defer ctx.allocator.free(formatted_desc);
-        try ctx.writer.print("{s}○ {s}{s}\n", .{ Color.grey, formatted_desc, Color.reset });
+        try ctx.writer.print("{s}○ {s}{s}{s}\n", .{ Color.grey, describe_path, formatted_desc, Color.reset });
         ctx.ignored += 1;
         return;
     }
 
     if (test_value == null) {
         try ctx.writeIndent();
+        const describe_path = try buildDescribePath(ctx.allocator, ctx.current_describe_stack.items);
+        defer ctx.allocator.free(describe_path);
         const formatted_desc = try formatDescription(ctx.allocator, description.?);
         defer ctx.allocator.free(formatted_desc);
-        try ctx.writer.print("{s}✗ {s}: missing test{s}\n", .{ Color.red, formatted_desc, Color.reset });
+        try ctx.writer.print("{s}✗ {s}{s}: missing test{s}\n", .{ Color.red, describe_path, formatted_desc, Color.reset });
         try recordFailedSpec(ctx, description.?);
         ctx.failed += 1;
         return;
@@ -531,9 +558,11 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
     // Handle explicit fail
     if (test_type != null and std.mem.eql(u8, test_type.?, "fail")) {
         try ctx.writeIndent();
+        const describe_path = try buildDescribePath(ctx.allocator, ctx.current_describe_stack.items);
+        defer ctx.allocator.free(describe_path);
         const formatted_desc = try formatDescription(ctx.allocator, description.?);
         defer ctx.allocator.free(formatted_desc);
-        try ctx.writer.print("{s}✗ {s}{s}\n", .{ Color.red, formatted_desc, Color.reset });
+        try ctx.writer.print("{s}✗ {s}{s}{s}\n", .{ Color.red, describe_path, formatted_desc, Color.reset });
 
         // Record the failed spec
         try recordFailedSpec(ctx, description.?);
@@ -653,7 +682,7 @@ pub fn runSpec(
             }
             try writer.print(" {s}#{s} ", .{ Color.dim, Color.reset });
             if (failed_spec.describe_path.len > 0) {
-                try writer.print("{s} / ", .{failed_spec.describe_path});
+                try writer.print("{s}", .{failed_spec.describe_path});
             }
             try writer.print("{s}\n", .{failed_spec.test_description});
         }
@@ -883,7 +912,7 @@ pub fn runAllSpecs(
             }
             try writer.print(" {s}#{s} ", .{ Color.dim, Color.reset });
             if (failed_spec.describe_path.len > 0) {
-                try writer.print("{s} / ", .{failed_spec.describe_path});
+                try writer.print("{s}", .{failed_spec.describe_path});
             }
             try writer.print("{s}\n", .{failed_spec.test_description});
         }
