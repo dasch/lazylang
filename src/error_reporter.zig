@@ -212,11 +212,6 @@ fn showSourceContextTwoSpans(
 ) !void {
     const w = writer;
 
-    // Find the line containing the error
-    const line_start = findLineStart(source, loc1.offset);
-    const line_end = findLineEnd(source, loc1.offset);
-    const line_content = source[line_start..line_end];
-
     const line_num_width = countDigits(loc1.line + 1);
 
     // Show location (filename:line:column)
@@ -226,6 +221,33 @@ fn showSourceContextTwoSpans(
     try w.writeAll(filename);
     try w.print(":{d}:{d}\n", .{ loc1.line, loc1.column });
 
+    // Check if offset is valid for this source
+    if (loc1.offset >= source.len or loc2.offset >= source.len) {
+        try w.writeAll("  ");
+        try boldBlue(w, "|", use_colors);
+        try w.writeAll("\n");
+        try w.writeAll("  ");
+        try boldBlue(w, "|", use_colors);
+        try w.writeAll(" (Source context unavailable - error is in imported module)\n");
+        try w.writeAll("  ");
+        try boldBlue(w, "|", use_colors);
+        try w.writeAll("\n\n");
+        return;
+    }
+
+    // Find the line containing the error
+    const line_start = findLineStart(source, loc1.offset);
+    const line_end = findLineEnd(source, loc1.offset);
+    const line_content = source[line_start..line_end];
+
+    // Limit line content length
+    const max_line_length = 200;
+    const display_line_content = if (line_content.len > max_line_length)
+        line_content[0..max_line_length]
+    else
+        line_content;
+    const was_truncated = line_content.len > max_line_length;
+
     // Show empty line with gutter
     try writeGutter(w, line_num_width, null, use_colors);
     try w.writeAll("\n");
@@ -233,7 +255,10 @@ fn showSourceContextTwoSpans(
     // Show the error line
     try writeGutter(w, line_num_width, loc1.line, use_colors);
     try w.writeAll(" ");
-    try w.writeAll(line_content);
+    try w.writeAll(display_line_content);
+    if (was_truncated) {
+        try w.writeAll("...");
+    }
     try w.writeAll("\n");
 
     // Show the error markers (carets) for both locations
@@ -320,20 +345,44 @@ fn showSourceContextTwoSpans(
 fn showSourceContext(writer: anytype, source: []const u8, filename: []const u8, loc: SourceLocation, use_colors: bool) !void {
     const w = writer;
 
-    // Find the line containing the error
-    const line_start = findLineStart(source, loc.offset);
-    const line_end = findLineEnd(source, loc.offset);
-    const line_content = source[line_start..line_end];
-
-        // Calculate padding for line numbers (we show 3 lines max, so we need space for the biggest number)
-        const line_num_width = countDigits(loc.line + 1);
-
     // Show location (filename:line:column)
     try w.writeAll("  ");
     try boldBlue(w, "-->", use_colors);
     try w.writeAll(" ");
     try w.writeAll(filename);
     try w.print(":{d}:{d}\n", .{ loc.line, loc.column });
+
+    // Check if offset is valid for this source
+    if (loc.offset >= source.len) {
+        // Offset is beyond source length - this means we're trying to show
+        // an error from a different file. Don't show source context.
+        try w.writeAll("  ");
+        try boldBlue(w, "|", use_colors);
+        try w.writeAll("\n");
+        try w.writeAll("  ");
+        try boldBlue(w, "|", use_colors);
+        try w.writeAll(" (Source context unavailable - error is in imported module)\n");
+        try w.writeAll("  ");
+        try boldBlue(w, "|", use_colors);
+        try w.writeAll("\n\n");
+        return;
+    }
+
+    // Find the line containing the error
+    const line_start = findLineStart(source, loc.offset);
+    const line_end = findLineEnd(source, loc.offset);
+    const line_content = source[line_start..line_end];
+
+    // Limit line content length to prevent showing huge amounts of code
+    const max_line_length = 200;
+    const display_line_content = if (line_content.len > max_line_length)
+        line_content[0..max_line_length]
+    else
+        line_content;
+    const was_truncated = line_content.len > max_line_length;
+
+        // Calculate padding for line numbers (we show 3 lines max, so we need space for the biggest number)
+        const line_num_width = countDigits(loc.line + 1);
 
     // Show empty line with gutter
     try writeGutter(w, line_num_width, null, use_colors);
@@ -342,7 +391,10 @@ fn showSourceContext(writer: anytype, source: []const u8, filename: []const u8, 
     // Show the error line
     try writeGutter(w, line_num_width, loc.line, use_colors);
     try w.writeAll(" ");
-    try w.writeAll(line_content);
+    try w.writeAll(display_line_content);
+    if (was_truncated) {
+        try w.writeAll("...");
+    }
     try w.writeAll("\n");
 
     // Show the error marker (caret/underline)

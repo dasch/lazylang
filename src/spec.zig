@@ -1,5 +1,7 @@
 const std = @import("std");
 const eval_module = @import("eval.zig");
+const cli_error_reporting = @import("cli_error_reporting.zig");
+const error_reporter = @import("error_reporter.zig");
 
 // ANSI color codes
 const Color = struct {
@@ -546,8 +548,20 @@ pub fn runSpec(
     }
     defer if (filter) |f| allocator.free(f.description);
 
+    // Read the file content first for error reporting
+    const file_content = std.fs.cwd().readFileAlloc(allocator, file_path, std.math.maxInt(usize)) catch |read_err| {
+        try writer.print("{s}error: failed to read file '{s}': {}{s}\n", .{ Color.red, file_path, read_err, Color.reset });
+        return SpecResult{
+            .passed = 0,
+            .failed = 1,
+            .ignored = 0,
+        };
+    };
+    defer allocator.free(file_content);
+
     // Evaluate the spec file
-    const value = eval_module.evalFileValue(arena.allocator(), allocator, file_path) catch |err| {
+    var result = eval_module.evalFileWithValue(allocator, file_path) catch |err| {
+        // For file I/O errors that don't have error context
         // Extract just the filename or relative path for display
         const display_path = if (std.mem.lastIndexOf(u8, file_path, "spec/")) |idx|
             file_path[idx..]
@@ -556,7 +570,7 @@ pub fn runSpec(
         else
             file_path;
 
-        try writer.print("{s}{s} failed with a syntax error: {s}{}{s}\n", .{
+        try writer.print("{s}{s} failed with error: {s}{}{s}\n", .{
             Color.red,
             display_path,
             Color.dim,
@@ -569,6 +583,51 @@ pub fn runSpec(
             .ignored = 0,
         };
     };
+    defer result.deinit();
+
+    // Check if there was an error during evaluation
+    if (result.err) |err| {
+        // Extract just the filename or relative path for display
+        const display_path = if (std.mem.lastIndexOf(u8, file_path, "spec/")) |idx|
+            file_path[idx..]
+        else if (std.mem.lastIndexOfScalar(u8, file_path, '/')) |idx|
+            file_path[idx + 1 ..]
+        else
+            file_path;
+
+        try writer.print("{s}{s} failed:{s}\n", .{
+            Color.red,
+            display_path,
+            Color.reset,
+        });
+
+        // Use proper error reporting with context
+        const colors_enabled = error_reporter.shouldUseColors();
+        const error_filename = if (result.error_ctx.source_filename.len > 0)
+            result.error_ctx.source_filename
+        else
+            file_path;
+
+        const error_source = result.error_ctx.source_map.get(error_filename) orelse file_content;
+
+        try cli_error_reporting.reportErrorWithContext(
+            allocator,
+            writer,
+            error_filename,
+            error_source,
+            &result.error_ctx,
+            err,
+            colors_enabled,
+        );
+
+        return SpecResult{
+            .passed = 0,
+            .failed = 1,
+            .ignored = 0,
+        };
+    }
+
+    const value = result.value;
 
     const Ctx = RunContext(@TypeOf(writer));
     var ctx = Ctx{
