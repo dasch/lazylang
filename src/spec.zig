@@ -10,6 +10,7 @@ const Color = struct {
     const red = "\x1b[31m";
     const cyan = "\x1b[36m";
     const blue = "\x1b[34m";
+    const yellow = "\x1b[33m";
     const dim = "\x1b[2m";
     const bold = "\x1b[1m";
     const italic = "\x1b[3m";
@@ -17,10 +18,11 @@ const Color = struct {
 };
 
 // Format description with markdown-light syntax highlighting
-// - `code` -> blue color
+// - `code` -> code_color (default blue)
 // - *emphasis* -> italic
 // - _emphasis_ -> italic
-fn formatDescription(allocator: std.mem.Allocator, text: []const u8) ![]const u8 {
+// After each formatting, resets to reset_color (default Color.reset)
+fn formatDescription(allocator: std.mem.Allocator, text: []const u8, code_color: []const u8, reset_color: []const u8) ![]const u8 {
     var result = std.ArrayList(u8){};
     errdefer result.deinit(allocator);
 
@@ -29,10 +31,10 @@ fn formatDescription(allocator: std.mem.Allocator, text: []const u8) ![]const u8
         if (text[i] == '`') {
             // Find closing backtick
             if (std.mem.indexOfScalarPos(u8, text, i + 1, '`')) |end| {
-                // Add blue color code, content, and reset
-                try result.appendSlice(allocator, Color.blue);
+                // Add code color, content, and reset to base color
+                try result.appendSlice(allocator, code_color);
                 try result.appendSlice(allocator, text[i + 1 .. end]);
-                try result.appendSlice(allocator, Color.reset);
+                try result.appendSlice(allocator, reset_color);
                 i = end + 1;
             } else {
                 // No closing backtick, just add the character
@@ -42,10 +44,10 @@ fn formatDescription(allocator: std.mem.Allocator, text: []const u8) ![]const u8
         } else if (text[i] == '*') {
             // Find closing asterisk
             if (std.mem.indexOfScalarPos(u8, text, i + 1, '*')) |end| {
-                // Add italic code, content, and reset
+                // Add italic code, content, and reset to base color
                 try result.appendSlice(allocator, Color.italic);
                 try result.appendSlice(allocator, text[i + 1 .. end]);
-                try result.appendSlice(allocator, Color.reset);
+                try result.appendSlice(allocator, reset_color);
                 i = end + 1;
             } else {
                 // No closing asterisk, just add the character
@@ -55,10 +57,10 @@ fn formatDescription(allocator: std.mem.Allocator, text: []const u8) ![]const u8
         } else if (text[i] == '_') {
             // Find closing underscore
             if (std.mem.indexOfScalarPos(u8, text, i + 1, '_')) |end| {
-                // Add italic code, content, and reset
+                // Add italic code, content, and reset to base color
                 try result.appendSlice(allocator, Color.italic);
                 try result.appendSlice(allocator, text[i + 1 .. end]);
-                try result.appendSlice(allocator, Color.reset);
+                try result.appendSlice(allocator, reset_color);
                 i = end + 1;
             } else {
                 // No closing underscore, just add the character
@@ -420,7 +422,7 @@ fn runDescribe(ctx: anytype, desc: eval_module.ObjectValue) anyerror!void {
             try ctx.writer.print("{s}{s}{s}\n", .{ Color.blue, symbol_name, Color.reset });
         } else {
             // Strings use the full markdown-light formatting (white/no color)
-            const formatted_desc = try formatDescription(ctx.allocator, description.?);
+            const formatted_desc = try formatDescription(ctx.allocator, description.?, Color.blue, Color.reset);
             defer ctx.allocator.free(formatted_desc);
             try ctx.writer.print("{s}\n", .{formatted_desc});
         }
@@ -513,7 +515,7 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
         try ctx.writeIndent();
         const describe_path = try buildDescribePath(ctx.allocator, ctx.current_describe_stack.items);
         defer ctx.allocator.free(describe_path);
-        const formatted_desc = try formatDescription(ctx.allocator, description.?);
+        const formatted_desc = try formatDescription(ctx.allocator, description.?, Color.blue, Color.grey);
         defer ctx.allocator.free(formatted_desc);
         try ctx.writer.print("{s}○ {s}{s}{s}\n", .{ Color.grey, describe_path, formatted_desc, Color.reset });
         ctx.ignored += 1;
@@ -524,7 +526,7 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
         try ctx.writeIndent();
         const describe_path = try buildDescribePath(ctx.allocator, ctx.current_describe_stack.items);
         defer ctx.allocator.free(describe_path);
-        const formatted_desc = try formatDescription(ctx.allocator, description.?);
+        const formatted_desc = try formatDescription(ctx.allocator, description.?, Color.yellow, Color.red);
         defer ctx.allocator.free(formatted_desc);
         try ctx.writer.print("{s}✗ {s}{s}: missing test{s}\n", .{ Color.red, describe_path, formatted_desc, Color.reset });
         try recordFailedSpec(ctx, description.?);
@@ -539,7 +541,7 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
             // Only print passing tests in verbose mode
             if (ctx.verbose) {
                 try ctx.writeIndent();
-                const formatted_desc = try formatDescription(ctx.allocator, description.?);
+                const formatted_desc = try formatDescription(ctx.allocator, description.?, Color.blue, Color.reset);
                 defer ctx.allocator.free(formatted_desc);
                 try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, formatted_desc });
             }
@@ -569,7 +571,7 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
         // Only print passing tests in verbose mode
         if (ctx.verbose) {
             try ctx.writeIndent();
-            const formatted_desc = try formatDescription(ctx.allocator, description.?);
+            const formatted_desc = try formatDescription(ctx.allocator, description.?, Color.blue, Color.reset);
             defer ctx.allocator.free(formatted_desc);
             try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, formatted_desc });
         }
@@ -582,7 +584,7 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
         try ctx.writeIndent();
         const describe_path = try buildDescribePath(ctx.allocator, ctx.current_describe_stack.items);
         defer ctx.allocator.free(describe_path);
-        const formatted_desc = try formatDescription(ctx.allocator, description.?);
+        const formatted_desc = try formatDescription(ctx.allocator, description.?, Color.yellow, Color.red);
         defer ctx.allocator.free(formatted_desc);
         try ctx.writer.print("{s}✗ {s}{s}{s}\n", .{ Color.red, describe_path, formatted_desc, Color.reset });
 
@@ -667,7 +669,7 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
     // Only print passing tests in verbose mode
     if (ctx.verbose) {
         try ctx.writeIndent();
-        const formatted_desc = try formatDescription(ctx.allocator, description.?);
+        const formatted_desc = try formatDescription(ctx.allocator, description.?, Color.blue, Color.reset);
         defer ctx.allocator.free(formatted_desc);
         try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, formatted_desc });
     }
