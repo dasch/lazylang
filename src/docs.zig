@@ -26,11 +26,12 @@ fn writeCommonCss(file: anytype, sidebar_width: []const u8) !void {
     try file.writeAll("    .sidebar { width: ");
     try file.writeAll(sidebar_width);
     try file.writeAll(
-        \\; background: #2c3e50; color: white; height: 100vh; position: fixed; top: 0; left: 0; overflow-y: auto; padding-bottom: 25vh; }
-        \\    .sidebar-search { padding: 15px; border-bottom: 1px solid #34495e; }
+        \\; background: #2c3e50; color: white; height: 100vh; position: fixed; top: 0; left: 0; display: flex; flex-direction: column; }
+        \\    .sidebar-search { padding: 15px; border-bottom: 1px solid #34495e; flex-shrink: 0; }
         \\    .sidebar-search input { width: 100%; padding: 10px 12px; font-size: 14px; border: 1px solid #34495e; border-radius: 4px; background: #34495e; color: white; }
         \\    .sidebar-search input::placeholder { color: #95a5a6; }
         \\    .sidebar-search input:focus { outline: none; background: #3d5469; border-color: #3498db; }
+        \\    .sidebar-content { overflow-y: auto; flex: 1; padding-bottom: 25vh; }
         \\    .sidebar-nav { list-style: none; border-bottom: 1px solid #34495e; }
         \\    .sidebar-nav li { border-bottom: none; }
         \\    .sidebar-nav .readme-link { font-weight: 500; font-size: 0.95em; }
@@ -508,6 +509,7 @@ pub fn writeIndexHtmlContent(allocator: std.mem.Allocator, file: anytype, module
     try file.writeAll("    <div class=\"sidebar-search\">\n");
     try file.writeAll("      <input type=\"text\" id=\"sidebar-search\" placeholder=\"Search modules...\" />\n");
     try file.writeAll("    </div>\n");
+    try file.writeAll("    <div class=\"sidebar-content\">\n");
     try file.writeAll("    <ul class=\"sidebar-nav\">\n");
     try file.writeAll("      <li><a href=\"index.html\" class=\"readme-link\">README</a></li>\n");
     try file.writeAll("    </ul>\n");
@@ -521,7 +523,8 @@ pub fn writeIndexHtmlContent(allocator: std.mem.Allocator, file: anytype, module
         try file.writeAll("</a></li>\n");
     }
     try file.writeAll("    </ul>\n");
-    try file.writeAll("  </div>\n");
+    try file.writeAll("    </div>\n"); // Close sidebar-content
+    try file.writeAll("  </div>\n"); // Close sidebar
 
     // Main content
     try file.writeAll("  <div class=\"main\">\n");
@@ -655,6 +658,9 @@ pub fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocI
     try file.writeAll("      <input type=\"text\" id=\"sidebar-search\" placeholder=\"Search (Cmd+K)...\" />\n");
     try file.writeAll("    </div>\n");
 
+    // Scrollable content wrapper
+    try file.writeAll("    <div class=\"sidebar-content\">\n");
+
     // README link
     try file.writeAll("    <ul class=\"sidebar-nav\">\n");
     try file.writeAll("      <li><a href=\"index.html\" class=\"readme-link\">README</a></li>\n");
@@ -700,7 +706,8 @@ pub fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocI
     }
 
     try file.writeAll("    </ul>\n");
-    try file.writeAll("  </div>\n");
+    try file.writeAll("    </div>\n"); // Close sidebar-content
+    try file.writeAll("  </div>\n"); // Close sidebar
 
     // Main content
     try file.writeAll("  <div class=\"main\">\n");
