@@ -163,6 +163,7 @@ fn RunContext(comptime WriterType: type) type {
         needs_blank_line: bool,
         filter: ?SpecFilter,
         current_describe_stack: std.ArrayList([]const u8),
+        verbose: bool,
 
         fn writeIndent(self: *@This()) !void {
             for (0..self.indent) |_| {
@@ -283,7 +284,7 @@ fn runDescribe(ctx: anytype, desc: eval_module.ObjectValue) anyerror!void {
     const should_run_children = children != null and
         (ctx.filter == null or ctx.filter != null); // Always descend when there's a filter
 
-    if (should_run_children and should_display) {
+    if (should_run_children and should_display and ctx.verbose) {
         // Add blank line if needed (from de-indenting)
         if (ctx.needs_blank_line) {
             try ctx.writer.writeAll("\n");
@@ -298,7 +299,7 @@ fn runDescribe(ctx: anytype, desc: eval_module.ObjectValue) anyerror!void {
 
     if (should_run_children) {
         const ch = children.?;
-        const should_indent = should_display;
+        const should_indent = should_display and ctx.verbose;
 
         if (should_indent) {
             ctx.indent += 1;
@@ -311,7 +312,8 @@ fn runDescribe(ctx: anytype, desc: eval_module.ObjectValue) anyerror!void {
             }
 
             // Add blank line before sibling describe blocks (but not before the first child)
-            if (i > 0 and should_display) {
+            // Only in verbose mode
+            if (ctx.verbose and i > 0 and should_display) {
                 const child_obj = switch (child) {
                     .object => |obj| obj,
                     else => null,
@@ -400,10 +402,13 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
     const test_obj = switch (test_value.?) {
         .object => |obj| obj,
         else => {
-            try ctx.writeIndent();
-            const formatted_desc = try formatDescription(ctx.allocator, description.?);
-            defer ctx.allocator.free(formatted_desc);
-            try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, formatted_desc });
+            // Only print passing tests in verbose mode
+            if (ctx.verbose) {
+                try ctx.writeIndent();
+                const formatted_desc = try formatDescription(ctx.allocator, description.?);
+                defer ctx.allocator.free(formatted_desc);
+                try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, formatted_desc });
+            }
             ctx.passed += 1;
             return;
         },
@@ -427,10 +432,13 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
 
     // Handle explicit pass
     if (test_type != null and std.mem.eql(u8, test_type.?, "pass")) {
-        try ctx.writeIndent();
-        const formatted_desc = try formatDescription(ctx.allocator, description.?);
-        defer ctx.allocator.free(formatted_desc);
-        try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, formatted_desc });
+        // Only print passing tests in verbose mode
+        if (ctx.verbose) {
+            try ctx.writeIndent();
+            const formatted_desc = try formatDescription(ctx.allocator, description.?);
+            defer ctx.allocator.free(formatted_desc);
+            try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, formatted_desc });
+        }
         ctx.passed += 1;
         return;
     }
@@ -517,10 +525,13 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
     }
 
     // Not a recognized test type (pass or fail), treat as truthy success
-    try ctx.writeIndent();
-    const formatted_desc = try formatDescription(ctx.allocator, description.?);
-    defer ctx.allocator.free(formatted_desc);
-    try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, formatted_desc });
+    // Only print passing tests in verbose mode
+    if (ctx.verbose) {
+        try ctx.writeIndent();
+        const formatted_desc = try formatDescription(ctx.allocator, description.?);
+        defer ctx.allocator.free(formatted_desc);
+        try ctx.writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, formatted_desc });
+    }
     ctx.passed += 1;
 }
 
@@ -528,6 +539,7 @@ pub fn runSpec(
     allocator: std.mem.Allocator,
     file_path: []const u8,
     line_number: ?usize,
+    verbose: bool,
     writer: anytype,
 ) !SpecResult {
     var arena = std.heap.ArenaAllocator.init(allocator);
@@ -640,6 +652,7 @@ pub fn runSpec(
         .needs_blank_line = false,
         .filter = filter,
         .current_describe_stack = std.ArrayList([]const u8){},
+        .verbose = verbose,
     };
     defer ctx.current_describe_stack.deinit(allocator);
 
@@ -655,6 +668,7 @@ pub fn runSpec(
 fn runAllSpecsRecursive(
     allocator: std.mem.Allocator,
     spec_dir: []const u8,
+    verbose: bool,
     writer: anytype,
     total_passed: *usize,
     total_failed: *usize,
@@ -670,19 +684,19 @@ fn runAllSpecsRecursive(
         defer allocator.free(full_path);
 
         if (entry.kind == .file and std.mem.endsWith(u8, entry.name, "Spec.lazy")) {
-            // Add blank line between test files
-            if (!first_file.*) {
+            // Add blank line between test files (only in verbose mode)
+            if (verbose and !first_file.*) {
                 try writer.writeAll("\n");
             }
             first_file.* = false;
 
-            const result = try runSpec(allocator, full_path, null, writer);
+            const result = try runSpec(allocator, full_path, null, verbose, writer);
             total_passed.* += result.passed;
             total_failed.* += result.failed;
             total_ignored.* += result.ignored;
         } else if (entry.kind == .directory) {
             // Recursively search subdirectories
-            try runAllSpecsRecursive(allocator, full_path, writer, total_passed, total_failed, total_ignored, first_file);
+            try runAllSpecsRecursive(allocator, full_path, verbose, writer, total_passed, total_failed, total_ignored, first_file);
         }
     }
 }
@@ -690,6 +704,7 @@ fn runAllSpecsRecursive(
 pub fn runAllSpecs(
     allocator: std.mem.Allocator,
     spec_dir: []const u8,
+    verbose: bool,
     writer: anytype,
 ) !SpecResult {
     var total_passed: usize = 0;
@@ -697,7 +712,7 @@ pub fn runAllSpecs(
     var total_ignored: usize = 0;
     var first_file = true;
 
-    try runAllSpecsRecursive(allocator, spec_dir, writer, &total_passed, &total_failed, &total_ignored, &first_file);
+    try runAllSpecsRecursive(allocator, spec_dir, verbose, writer, &total_passed, &total_failed, &total_ignored, &first_file);
 
     // Print summary
     try writer.writeAll("\n");
