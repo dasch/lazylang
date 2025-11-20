@@ -40,6 +40,7 @@ pub const TokenKind = enum {
     less_equals,
     greater_equals,
     dot,
+    dot_dot,
     dot_dot_dot,
     l_paren,
     r_paren,
@@ -123,6 +124,13 @@ pub const ExpressionData = union(enum) {
     field_accessor: FieldAccessor,
     field_projection: FieldProjection,
     operator_function: BinaryOp,
+    range: Range,
+};
+
+pub const Range = struct {
+    start: *Expression,
+    end: *Expression,
+    inclusive: bool,
 };
 
 pub const Lambda = struct {

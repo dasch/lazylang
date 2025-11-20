@@ -5,7 +5,7 @@
 //! exposed through the evaluator.
 //!
 //! Function categories:
-//! - Array operations: length, get, reverse, fold, concat, slice, sort, uniq
+//! - Array operations: length, get, reverse, fold, concat, slice, sort, uniq, range, rangeExclusive
 //! - String operations: length, concat, split, case conversion, trim, search, replace, join
 //! - Math operations: max, min, abs, pow, sqrt, floor, ceil, round, log, exp, mod, rem
 //! - Object operations: keys, values, get
@@ -41,6 +41,12 @@ pub fn createBuiltinEnvironment(arena: std.mem.Allocator) !?*Environment {
     env = try addBuiltin(arena, env, "__array_slice", builtins.arraySlice);
     env = try addBuiltin(arena, env, "__array_sort", builtins.arraySort);
     env = try addBuiltin(arena, env, "__array_uniq", builtins.arrayUniq);
+
+    // Range builtins
+    env = try addBuiltin(arena, env, "__range_inclusive", builtins.rangeInclusive);
+    env = try addBuiltin(arena, env, "__range_exclusive", builtins.rangeExclusive);
+    env = try addBuiltin(arena, env, "__range_to_array", builtins.rangeToArray);
+    env = try addBuiltin(arena, env, "__range_covers", builtins.rangeCovers);
 
     // String builtins
     env = try addBuiltin(arena, env, "__string_length", builtins.stringLength);

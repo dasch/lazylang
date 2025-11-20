@@ -113,6 +113,7 @@ pub const Parser = struct {
             .equals => "'='",
             .arrow => "'->'",
             .dot => "'.'",
+            .dot_dot => "'..'",
             .plus => "'+'",
             .minus => "'-'",
             .star => "'*'",
@@ -407,6 +408,27 @@ pub const Parser = struct {
                 }
             else
                 try self.parseBinary(precedence + 1);
+
+            // Handle range operators specially
+            if (op_token.kind == .dot_dot or op_token.kind == .dot_dot_dot) {
+                const start_ptr = try self.arena.create(Expression);
+                const end_ptr = try self.arena.create(Expression);
+                start_ptr.* = left.*;
+                end_ptr.* = right.*;
+
+                const range_data = ast.Range{
+                    .start = start_ptr,
+                    .end = end_ptr,
+                    .inclusive = op_token.kind == .dot_dot,
+                };
+                const node = try self.allocateExpression();
+                node.* = .{
+                    .data = .{ .range = range_data },
+                    .location = left.location,
+                };
+                left = node;
+                continue;
+            }
 
             const node = try self.allocateExpression();
             node.* = .{
@@ -1628,6 +1650,7 @@ fn getPrecedence(kind: TokenKind) ?u32 {
         .ampersand_ampersand => 4,
         .equals_equals, .bang_equals, .less, .greater, .less_equals, .greater_equals => 5,
         .ampersand => 6, // Object merge operator
+        .dot_dot, .dot_dot_dot => 6, // Range operators
         .plus, .minus => 7,
         .star, .slash => 8,
         else => null,

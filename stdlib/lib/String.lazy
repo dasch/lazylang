@@ -18,7 +18,6 @@
 /// // Check contents
 /// String.startsWith "hello" "hello world"  // Returns true
 /// ```
-/// ---
 {
   /// Returns the number of characters in a string.
   ///

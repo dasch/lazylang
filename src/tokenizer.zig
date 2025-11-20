@@ -167,7 +167,7 @@ pub const Tokenizer = struct {
                 return self.makeToken(.r_brace, start, start_line, start_column);
             },
             '.' => {
-                // Check for ... (spread operator)
+                // Check for ... (spread operator / exclusive range)
                 if (self.index + 2 < self.source.len and
                     self.source[self.index + 1] == '.' and
                     self.source[self.index + 2] == '.')
@@ -176,6 +176,14 @@ pub const Tokenizer = struct {
                     self.advance();
                     self.advance();
                     return self.makeToken(.dot_dot_dot, start, start_line, start_column);
+                }
+                // Check for .. (inclusive range)
+                if (self.index + 1 < self.source.len and
+                    self.source[self.index + 1] == '.')
+                {
+                    self.advance();
+                    self.advance();
+                    return self.makeToken(.dot_dot, start, start_line, start_column);
                 }
                 // Single dot for field access
                 self.advance();

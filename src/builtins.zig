@@ -277,6 +277,120 @@ pub fn arrayUniq(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalEr
     return eval.Value{ .array = .{ .elements = try seen.toOwnedSlice(arena) } };
 }
 
+pub fn rangeInclusive(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple_arg = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
+
+    const start = switch (tuple_arg.elements[0]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    const end = switch (tuple_arg.elements[1]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    return eval.Value{ .range = .{
+        .start = start,
+        .end = end,
+        .inclusive = true,
+    } };
+}
+
+pub fn rangeExclusive(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple_arg = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
+
+    const start = switch (tuple_arg.elements[0]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    const end = switch (tuple_arg.elements[1]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    return eval.Value{ .range = .{
+        .start = start,
+        .end = end,
+        .inclusive = false,
+    } };
+}
+
+pub fn rangeToArray(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const range = switch (args[0]) {
+        .range => |r| r,
+        else => return error.TypeMismatch,
+    };
+
+    // Calculate actual end
+    const actual_end = if (range.inclusive) range.end else range.end - 1;
+
+    // Empty range if start > actual_end
+    if (range.start > actual_end) {
+        const empty = try arena.alloc(eval.Value, 0);
+        return eval.Value{ .array = .{ .elements = empty } };
+    }
+
+    const len = @as(usize, @intCast(actual_end - range.start + 1));
+    const result = try arena.alloc(eval.Value, len);
+
+    var i: usize = 0;
+    var current = range.start;
+    while (current <= actual_end) : (current += 1) {
+        result[i] = eval.Value{ .integer = current };
+        i += 1;
+    }
+
+    return eval.Value{ .array = .{ .elements = result } };
+}
+
+pub fn rangeCovers(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple_arg = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
+
+    const range = switch (tuple_arg.elements[0]) {
+        .range => |r| r,
+        else => return error.TypeMismatch,
+    };
+
+    const value = switch (tuple_arg.elements[1]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    // Check if value is within range
+    const actual_end = if (range.inclusive) range.end else range.end - 1;
+    const is_covered = value >= range.start and value <= actual_end;
+
+    return eval.Value{ .boolean = is_covered };
+}
+
 fn valuesEqual(arena: std.mem.Allocator, a: eval.Value, b: eval.Value) bool {
     // Force thunks before comparison
     const a_forced = eval.force(arena, a) catch a;
@@ -301,6 +415,10 @@ fn valuesEqual(arena: std.mem.Allocator, a: eval.Value, b: eval.Value) bool {
         },
         .string => |av| switch (b_forced) {
             .string => |bv| std.mem.eql(u8, av, bv),
+            else => false,
+        },
+        .range => |av| switch (b_forced) {
+            .range => |bv| av.start == bv.start and av.end == bv.end and av.inclusive == bv.inclusive,
             else => false,
         },
         else => false, // Functions, arrays, objects, tuples not compared

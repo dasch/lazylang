@@ -120,6 +120,10 @@ fn valuesEqual(arena: std.mem.Allocator, a: Value, b: Value) bool {
             },
             else => false,
         },
+        .range => |av| switch (b_forced) {
+            .range => |bv| av.start == bv.start and av.end == bv.end and av.inclusive == bv.inclusive,
+            else => false,
+        },
     };
 }
 
@@ -1623,6 +1627,22 @@ pub fn evaluateExpression(
             }
             break :blk Value{ .tuple = .{ .elements = values } };
         },
+        .range => |range| blk: {
+            const start = try evaluateExpression(arena, range.start, env, current_dir, ctx);
+            const end = try evaluateExpression(arena, range.end, env, current_dir, ctx);
+
+            const start_int = switch (start) {
+                .integer => |i| i,
+                else => return error.TypeMismatch,
+            };
+
+            const end_int = switch (end) {
+                .integer => |i| i,
+                else => return error.TypeMismatch,
+            };
+
+            break :blk Value{ .range = .{ .start = start_int, .end = end_int, .inclusive = range.inclusive } };
+        },
         .object => |object| blk: {
             // First pass: evaluate dynamic keys and count total fields
             var fields_list = std.ArrayList(ObjectFieldValue){};
@@ -2048,6 +2068,17 @@ fn evaluateArrayComprehension(
                 try evaluateArrayComprehension(arena, result, comp, clause_index + 1, new_env, current_dir, ctx);
             }
         },
+        .range => |range| {
+            const actual_end = if (range.inclusive) range.end else range.end - 1;
+            if (range.start <= actual_end) {
+                var i = range.start;
+                while (i <= actual_end) : (i += 1) {
+                    const element = Value{ .integer = i };
+                    const new_env = try matchPattern(arena, clause.pattern, element, env, ctx);
+                    try evaluateArrayComprehension(arena, result, comp, clause_index + 1, new_env, current_dir, ctx);
+                }
+            }
+        },
         .object => |obj| {
             for (obj.fields) |field| {
                 // Create a tuple (key, value) for object iteration
@@ -2111,6 +2142,17 @@ fn evaluateObjectComprehension(
             for (arr.elements) |element| {
                 const new_env = try matchPattern(arena, clause.pattern, element, env, ctx);
                 try evaluateObjectComprehension(arena, result, comp, clause_index + 1, new_env, current_dir, ctx);
+            }
+        },
+        .range => |range| {
+            const actual_end = if (range.inclusive) range.end else range.end - 1;
+            if (range.start <= actual_end) {
+                var i = range.start;
+                while (i <= actual_end) : (i += 1) {
+                    const element = Value{ .integer = i };
+                    const new_env = try matchPattern(arena, clause.pattern, element, env, ctx);
+                    try evaluateObjectComprehension(arena, result, comp, clause_index + 1, new_env, current_dir, ctx);
+                }
             }
         },
         .object => |obj| {
@@ -2186,7 +2228,7 @@ pub fn createStdlibEnvironment(
     var env = try builtin_env.createBuiltinEnvironment(arena);
 
     // Import standard library modules (if available)
-    const stdlib_modules = [_][]const u8{ "Array", "Basics", "Float", "Math", "Object", "String" };
+    const stdlib_modules = [_][]const u8{ "Array", "Basics", "Float", "Math", "Object", "Range", "String" };
     for (stdlib_modules) |module_name| {
         // Try to import the module, but continue if it's not found
         const module_value = importModule(arena, module_name, current_dir, ctx) catch |err| {
@@ -2246,6 +2288,7 @@ fn getValueTypeName(value: Value) []const u8 {
         .function => "function",
         .native_fn => "native function",
         .thunk => "thunk",
+        .range => "range",
     };
 }
 

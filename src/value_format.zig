@@ -44,6 +44,10 @@ pub fn formatValueShort(allocator: std.mem.Allocator, value: Value) ![]u8 {
         .function => try allocator.dupe(u8, "function"),
         .native_fn => try allocator.dupe(u8, "native function"),
         .thunk => try allocator.dupe(u8, "thunk"),
+        .range => |r| if (r.inclusive)
+            try std.fmt.allocPrint(allocator, "Range({d}..{d})", .{ r.start, r.end })
+        else
+            try std.fmt.allocPrint(allocator, "Range({d}...{d})", .{ r.start, r.end }),
     };
 }
 
@@ -157,6 +161,28 @@ fn formatValueAsJsonImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator,
             try builder.append(allocator, '"');
             try jsonEscapeString(&builder, allocator, str);
             try builder.append(allocator, '"');
+
+            break :blk try builder.toOwnedSlice(allocator);
+        },
+        .range => |range| blk: {
+            // Convert range to array for JSON output
+            const actual_end = if (range.inclusive) range.end else range.end - 1;
+            var builder = std.ArrayList(u8){};
+            errdefer builder.deinit(allocator);
+
+            try builder.append(allocator, '[');
+            if (range.start <= actual_end) {
+                var current = range.start;
+                var first = true;
+                while (current <= actual_end) : (current += 1) {
+                    if (!first) try builder.appendSlice(allocator, ",");
+                    first = false;
+                    const num_str = try std.fmt.allocPrint(allocator, "{d}", .{current});
+                    defer allocator.free(num_str);
+                    try builder.appendSlice(allocator, num_str);
+                }
+            }
+            try builder.append(allocator, ']');
 
             break :blk try builder.toOwnedSlice(allocator);
         },
@@ -401,6 +427,33 @@ fn formatValueAsYamlImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator,
                 break :blk try allocator.dupe(u8, str);
             }
         },
+        .range => |range| blk: {
+            // Convert range to array for YAML output
+            const actual_end = if (range.inclusive) range.end else range.end - 1;
+
+            if (range.start > actual_end) {
+                break :blk try std.fmt.allocPrint(allocator, "[]", .{});
+            }
+
+            var builder = std.ArrayList(u8){};
+            errdefer builder.deinit(allocator);
+
+            var current = range.start;
+            while (current <= actual_end) : (current += 1) {
+                if (builder.items.len > 0) {
+                    try builder.append(allocator, '\n');
+                }
+                for (0..indent) |_| {
+                    try builder.appendSlice(allocator, "  ");
+                }
+                try builder.appendSlice(allocator, "- ");
+                const num_str = try std.fmt.allocPrint(allocator, "{d}", .{current});
+                defer allocator.free(num_str);
+                try builder.appendSlice(allocator, num_str);
+            }
+
+            break :blk try builder.toOwnedSlice(allocator);
+        },
     };
 }
 
@@ -632,6 +685,10 @@ fn formatValuePrettyImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator,
             break :blk try builder.toOwnedSlice(allocator);
         },
         .string => |str| try std.fmt.allocPrint(allocator, "\"{s}\"", .{str}),
+        .range => |r| if (r.inclusive)
+            try std.fmt.allocPrint(allocator, "{d}..{d}", .{ r.start, r.end })
+        else
+            try std.fmt.allocPrint(allocator, "{d}...{d}", .{ r.start, r.end }),
     };
 }
 
@@ -701,5 +758,9 @@ fn formatValueWithArena(allocator: std.mem.Allocator, arena: std.mem.Allocator, 
             break :blk try builder.toOwnedSlice(allocator);
         },
         .string => |str| try std.fmt.allocPrint(allocator, "\"{s}\"", .{str}),
+        .range => |r| if (r.inclusive)
+            try std.fmt.allocPrint(allocator, "{d}..{d}", .{ r.start, r.end })
+        else
+            try std.fmt.allocPrint(allocator, "{d}...{d}", .{ r.start, r.end }),
     };
 }

@@ -8,7 +8,6 @@
 ///
 /// Best for simple config files and basic data serialization. Uses a custom parser optimized
 /// for common use cases. See `examples/yaml_demo.lazy` for usage examples.
-/// ---
 {
   /// Parses a YAML string into a Lazylang value.
   ///
