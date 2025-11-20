@@ -1,176 +1,54 @@
 //! Core evaluation engine for Lazylang.
 //!
-//! This module serves as the main entry point for parsing and evaluating Lazylang code.
-//! It re-exports modularized components while maintaining backward compatibility:
+//! This module contains the tree-walking interpreter that evaluates Lazylang expressions:
 //!
-//! Architecture:
-//! - Imports and re-exports AST types from ast.zig
-//! - Imports and re-exports Tokenizer from tokenizer.zig
-//! - Imports and re-exports Parser from parser.zig
-//! - Imports builtin environment setup from builtin_env.zig
-//! - Contains Evaluator: Tree-walking interpreter with pattern matching
-//! - Contains Value types: Runtime value representation (Value, Environment, Thunk)
-//! - Contains module system: Import resolution and module loading
-//! - Contains value formatting: JSON, YAML, and pretty-print output
+//! - Pattern matching and destructuring (matchPattern)
+//! - Lazy evaluation with thunk forcing (force)
+//! - Expression evaluation (evaluateExpression)
+//! - Array and object comprehensions
+//! - Module importing and loading (importModule, createStdlibEnvironment)
+//! - Object merging and field access
 //!
-//! Key features:
-//! - Pure functional semantics with lazy evaluation
-//! - Pattern matching and destructuring
-//! - Object merging with patch fields (field vs field:)
-//! - Array/object comprehensions
-//! - Module imports with LAZYLANG_PATH resolution
-//!
-//! Public API:
-//! - evalInline/evalFile: Parse and evaluate code
-//! - Parser.init: Create parser from source
-//! - evaluateExpression: Evaluate AST nodes
-//!
-//! See REFACTORING.md for details on ongoing modularization.
+//! The evaluator uses an Environment chain for lexical scoping and supports:
+//! - Pure functional semantics
+//! - Recursive definitions through thunks
+//! - First-class functions with closures
+//! - Dynamic typing with runtime type checking
 
 const std = @import("std");
+const ast = @import("ast.zig");
+const value_mod = @import("value.zig");
 const error_reporter = @import("error_reporter.zig");
 const error_context = @import("error_context.zig");
-const ast = @import("ast.zig");
-const tokenizer_mod = @import("tokenizer.zig");
-const parser_mod = @import("parser.zig");
+const value_format = @import("value_format.zig");
 const builtin_env = @import("builtin_env.zig");
+const parser_mod = @import("parser.zig");
+const module_resolver = @import("module_resolver.zig");
 
-// Re-export error_context for use by other modules
-pub const ErrorContext = error_context.ErrorContext;
-pub const ErrorData = error_context.ErrorData;
-
-// Re-export tokenizer types
-pub const Tokenizer = tokenizer_mod.Tokenizer;
-pub const TokenizerError = tokenizer_mod.TokenizerError;
-
-// Re-export parser types
-pub const Parser = parser_mod.Parser;
-pub const ParseError = parser_mod.ParseError;
-
-// Re-export AST types
-pub const TokenKind = ast.TokenKind;
-pub const Token = ast.Token;
-pub const BinaryOp = ast.BinaryOp;
-pub const UnaryOp = ast.UnaryOp;
-pub const SourceLocation = ast.SourceLocation;
+// Re-export types from dependencies
 pub const Expression = ast.Expression;
-pub const ExpressionData = ast.ExpressionData;
 pub const Pattern = ast.Pattern;
-pub const PatternData = ast.PatternData;
-pub const Lambda = ast.Lambda;
-pub const Let = ast.Let;
-pub const WhereBinding = ast.WhereBinding;
-pub const WhereExpr = ast.WhereExpr;
-pub const Unary = ast.Unary;
-pub const Binary = ast.Binary;
-pub const Application = ast.Application;
-pub const If = ast.If;
-pub const WhenMatches = ast.WhenMatches;
-pub const MatchBranch = ast.MatchBranch;
-pub const ConditionalElement = ast.ConditionalElement;
-pub const ArrayElement = ast.ArrayElement;
-pub const ArrayLiteral = ast.ArrayLiteral;
-pub const TupleLiteral = ast.TupleLiteral;
-pub const ObjectFieldKey = ast.ObjectFieldKey;
-pub const ObjectField = ast.ObjectField;
-pub const ObjectLiteral = ast.ObjectLiteral;
-pub const ObjectExtend = ast.ObjectExtend;
-pub const ImportExpr = ast.ImportExpr;
-pub const StringInterpolation = ast.StringInterpolation;
-pub const StringPart = ast.StringPart;
-pub const ForClause = ast.ForClause;
+pub const SourceLocation = ast.SourceLocation;
 pub const ArrayComprehension = ast.ArrayComprehension;
 pub const ObjectComprehension = ast.ObjectComprehension;
-pub const FieldAccess = ast.FieldAccess;
-pub const Index = ast.Index;
-pub const FieldAccessor = ast.FieldAccessor;
-pub const FieldProjection = ast.FieldProjection;
-pub const TuplePattern = ast.TuplePattern;
-pub const ArrayPattern = ast.ArrayPattern;
-pub const ObjectPattern = ast.ObjectPattern;
-pub const ObjectPatternField = ast.ObjectPatternField;
+pub const Value = value_mod.Value;
+pub const Environment = value_mod.Environment;
+pub const EvalError = value_mod.EvalError;
+pub const EvalContext = value_mod.EvalContext;
+pub const ObjectValue = value_mod.ObjectValue;
+pub const ObjectFieldValue = value_mod.ObjectFieldValue;
+pub const ArrayValue = value_mod.ArrayValue;
+pub const TupleValue = value_mod.TupleValue;
+pub const FunctionValue = value_mod.FunctionValue;
+pub const Thunk = value_mod.Thunk;
+pub const ThunkState = value_mod.ThunkState;
+pub const Parser = parser_mod.Parser;
 
-/// Thread-local storage for user crash messages
-threadlocal var user_crash_message: ?[]const u8 = null;
+// Import formatting functions
+const formatValueShort = value_format.formatValueShort;
+const valueToString = value_format.valueToString;
 
-pub fn setUserCrashMessage(message: []const u8) void {
-    user_crash_message = message;
-}
-
-pub fn getUserCrashMessage() ?[]const u8 {
-    return user_crash_message;
-}
-
-pub fn clearUserCrashMessage() void {
-    if (user_crash_message) |msg| {
-        std.heap.page_allocator.free(msg);
-    }
-    user_crash_message = null;
-}
-
-pub const Environment = struct {
-    parent: ?*Environment,
-    name: []const u8,
-    value: Value,
-};
-
-pub const FunctionValue = struct {
-    param: *Pattern,
-    body: *Expression,
-    env: ?*Environment,
-};
-
-pub const NativeFn = *const fn (arena: std.mem.Allocator, args: []const Value) EvalError!Value;
-
-pub const ThunkState = union(enum) {
-    unevaluated,
-    evaluating, // For cycle detection
-    evaluated: Value,
-};
-
-pub const Thunk = struct {
-    expr: *Expression,
-    env: ?*Environment,
-    current_dir: ?[]const u8,
-    ctx: *const EvalContext,
-    state: ThunkState,
-    field_key_location: ?error_reporter.SourceLocation, // For object field thunks, to show cyclic reference span
-};
-
-pub const Value = union(enum) {
-    integer: i64,
-    float: f64,
-    boolean: bool,
-    null_value,
-    symbol: []const u8,
-    function: *FunctionValue,
-    native_fn: NativeFn,
-    array: ArrayValue,
-    tuple: TupleValue,
-    object: ObjectValue,
-    string: []const u8,
-    thunk: *Thunk,
-};
-
-pub const ArrayValue = struct {
-    elements: []Value,
-};
-
-pub const TupleValue = struct {
-    elements: []Value,
-};
-
-pub const ObjectFieldValue = struct {
-    key: []const u8,
-    value: Value,
-    is_patch: bool, // true if field should be deep-merged (written as `field { ... }` without colon)
-};
-
-pub const ObjectValue = struct {
-    fields: []ObjectFieldValue,
-    module_doc: ?[]const u8, // Module-level documentation
-};
-
+// Value comparison helper (depends on force, so kept here)
 fn valuesEqual(arena: std.mem.Allocator, a: Value, b: Value) bool {
     // Force thunks before comparison
     const a_forced = force(arena, a) catch a;
@@ -245,113 +123,16 @@ fn valuesEqual(arena: std.mem.Allocator, a: Value, b: Value) bool {
     };
 }
 
-pub const EvalError = ParseError || std.mem.Allocator.Error || std.process.GetEnvVarOwnedError || std.fs.File.OpenError || std.fs.File.ReadError || error{
-    UnknownIdentifier,
-    TypeMismatch,
-    ExpectedFunction,
-    ModuleNotFound,
-    Overflow,
-    FileTooBig,
-    WrongNumberOfArguments,
-    InvalidArgument,
-    UnknownField,
-    UserCrash,
-    CyclicReference,
-    DivisionByZero,
-    IndexOutOfBounds,
-    FieldNotFound,
-};
-
-pub const EvalContext = struct {
-    allocator: std.mem.Allocator,
-    lazy_paths: [][]const u8,
-    error_ctx: ?*error_context.ErrorContext = null,
-};
-
-const ModuleFile = struct {
-    path: []u8,
-    file: std.fs.File,
-};
-
-fn collectLazyPaths(arena: std.mem.Allocator) EvalError![][]const u8 {
-    var list = std.ArrayList([]const u8){};
-    defer list.deinit(arena);
-
-    // Always include ./stdlib/lib as a default search path
-    const default_lib = try arena.dupe(u8, "stdlib/lib");
-    try list.append(arena, default_lib);
-
-    const env_value = std.process.getEnvVarOwned(arena, "LAZYLANG_PATH") catch |err| switch (err) {
-        error.EnvironmentVariableNotFound => return try list.toOwnedSlice(arena),
-        else => return err,
-    };
-
-    if (env_value.len == 0) {
-        return try list.toOwnedSlice(arena);
-    }
-
-    var parts = std.mem.splitScalar(u8, env_value, std.fs.path.delimiter);
-    while (parts.next()) |part| {
-        if (part.len == 0) continue;
-        const copy = try arena.dupe(u8, part);
-        try list.append(arena, copy);
-    }
-
-    return try list.toOwnedSlice(arena);
-}
-
-fn normalizedImportPath(allocator: std.mem.Allocator, import_path: []const u8) ![]u8 {
-    if (std.fs.path.extension(import_path).len == 0) {
-        return try std.fmt.allocPrint(allocator, "{s}.lazy", .{import_path});
-    }
-    return try allocator.dupe(u8, import_path);
-}
-
-fn openImportFile(ctx: *const EvalContext, import_path: []const u8, current_dir: ?[]const u8) EvalError!ModuleFile {
-    const normalized = try normalizedImportPath(ctx.allocator, import_path);
-    errdefer ctx.allocator.free(normalized);
-
-    if (current_dir) |dir| {
-        const candidate = try std.fs.path.join(ctx.allocator, &.{ dir, normalized });
-        const maybe_file = std.fs.cwd().openFile(candidate, .{}) catch |err| switch (err) {
-            error.FileNotFound => null,
-            else => return err,
-        };
-        if (maybe_file) |file| {
-            ctx.allocator.free(normalized);
-            return .{ .path = candidate, .file = file };
+// Helper function to look up a variable in the environment chain
+fn lookup(env: ?*Environment, name: []const u8) ?Value {
+    var current = env;
+    while (current) |scope| {
+        if (std.mem.eql(u8, scope.name, name)) {
+            return scope.value;
         }
-        ctx.allocator.free(candidate);
+        current = scope.parent;
     }
-
-    const relative_file = std.fs.cwd().openFile(normalized, .{}) catch |err| switch (err) {
-        error.FileNotFound => null,
-        else => return err,
-    };
-    if (relative_file) |file| {
-        return .{ .path = normalized, .file = file };
-    }
-
-    for (ctx.lazy_paths) |base| {
-        const candidate = try std.fs.path.join(ctx.allocator, &.{ base, normalized });
-        const maybe_file = std.fs.cwd().openFile(candidate, .{}) catch |err| switch (err) {
-            error.FileNotFound => null,
-            else => return err,
-        };
-        if (maybe_file) |file| {
-            ctx.allocator.free(normalized);
-            return .{ .path = candidate, .file = file };
-        }
-        ctx.allocator.free(candidate);
-    }
-
-    // Set error context with module name
-    if (ctx.error_ctx) |err_ctx| {
-        const module_name_copy = try err_ctx.allocator.dupe(u8, import_path);
-        err_ctx.setErrorData(.{ .module_not_found = .{ .module_name = module_name_copy } });
-    }
-
-    return error.ModuleNotFound;
+    return null;
 }
 
 pub fn matchPattern(
@@ -1503,17 +1284,92 @@ pub fn evaluateExpression(
                     // The left side is the value, the right side is the function
                     switch (right_value) {
                         .function => |function_ptr| {
-                            const bound_env = try matchPattern(arena, function_ptr.param, left_value, function_ptr.env, ctx);
-                            break :blk2 try evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx);
+                            const bound_env = matchPattern(arena, function_ptr.param, left_value, function_ptr.env, ctx) catch |err| {
+                                if (ctx.error_ctx) |err_ctx| {
+                                    err_ctx.captureStackTrace() catch {};
+                                }
+                                return err;
+                            };
+
+                            // Push stack frame for pipeline function call
+                            const function_name = switch (binary.right.data) {
+                                .identifier => |name| name,
+                                else => null,
+                            };
+
+                            if (ctx.error_ctx) |err_ctx| {
+                                err_ctx.pushStackFrame(
+                                    function_name,
+                                    err_ctx.current_file,
+                                    binary.right.location.line,
+                                    binary.right.location.column,
+                                    binary.right.location.offset,
+                                    binary.right.location.length,
+                                    false,
+                                ) catch {};
+                            }
+
+                            const result = evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx) catch |err| {
+                                if (ctx.error_ctx) |err_ctx| {
+                                    if (err_ctx.stack_trace == null) {
+                                        err_ctx.captureStackTrace() catch {};
+                                    }
+                                }
+                                if (ctx.error_ctx) |err_ctx| {
+                                    err_ctx.popStackFrame();
+                                }
+                                return err;
+                            };
+
+                            if (ctx.error_ctx) |err_ctx| {
+                                err_ctx.popStackFrame();
+                            }
+
+                            break :blk2 result;
                         },
                         .native_fn => |native_fn| {
+                            // Push stack frame for native function call
+                            const function_name = switch (binary.right.data) {
+                                .identifier => |name| name,
+                                else => null,
+                            };
+
+                            if (ctx.error_ctx) |err_ctx| {
+                                err_ctx.pushStackFrame(
+                                    function_name,
+                                    err_ctx.current_file,
+                                    binary.right.location.line,
+                                    binary.right.location.column,
+                                    binary.right.location.offset,
+                                    binary.right.location.length,
+                                    true,
+                                ) catch {};
+                            }
+
                             const args = [_]Value{left_value};
-                            break :blk2 try native_fn(arena, &args);
+                            const result = native_fn(arena, &args) catch |err| {
+                                if (ctx.error_ctx) |err_ctx| {
+                                    if (err_ctx.stack_trace == null) {
+                                        err_ctx.captureStackTrace() catch {};
+                                    }
+                                }
+                                if (ctx.error_ctx) |err_ctx| {
+                                    err_ctx.popStackFrame();
+                                }
+                                return err;
+                            };
+
+                            if (ctx.error_ctx) |err_ctx| {
+                                err_ctx.popStackFrame();
+                            }
+
+                            break :blk2 result;
                         },
                         else => {
                             // Point to the right operand (function) that isn't actually a function
                             if (ctx.error_ctx) |err_ctx| {
                                 err_ctx.setErrorLocation(binary.right.location.line, binary.right.location.column, binary.right.location.offset, binary.right.location.length);
+                                err_ctx.captureStackTrace() catch {};
                             }
                             return error.ExpectedFunction;
                         },
@@ -1612,20 +1468,99 @@ pub fn evaluateExpression(
                                     }
                                 }
                             }
+                            // Capture stack trace on error
+                            err_ctx.captureStackTrace() catch {};
                         }
                         return err;
                     };
-                    break :blk try evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx);
+
+                    // Push stack frame for function call
+                    const function_name = switch (application.function.data) {
+                        .identifier => |name| name,
+                        else => null,
+                    };
+
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.pushStackFrame(
+                            function_name,
+                            err_ctx.current_file,
+                            application.function.location.line,
+                            application.function.location.column,
+                            application.function.location.offset,
+                            application.function.location.length,
+                            false, // Not a native function
+                        ) catch {};
+                    }
+
+                    // Evaluate function body
+                    const result = evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx) catch |err| {
+                        // Capture stack trace on error (only if not already captured)
+                        if (ctx.error_ctx) |err_ctx| {
+                            if (err_ctx.stack_trace == null) {
+                                err_ctx.captureStackTrace() catch {};
+                            }
+                        }
+                        // Pop stack frame before returning error
+                        if (ctx.error_ctx) |err_ctx| {
+                            err_ctx.popStackFrame();
+                        }
+                        return err;
+                    };
+
+                    // Pop stack frame after successful evaluation
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.popStackFrame();
+                    }
+
+                    break :blk result;
                 },
                 .native_fn => |native_fn| {
+                    // Push stack frame for native function call
+                    const function_name = switch (application.function.data) {
+                        .identifier => |name| name,
+                        else => null,
+                    };
+
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.pushStackFrame(
+                            function_name,
+                            err_ctx.current_file,
+                            application.function.location.line,
+                            application.function.location.column,
+                            application.function.location.offset,
+                            application.function.location.length,
+                            true, // Native function
+                        ) catch {};
+                    }
+
                     // Native functions receive a single argument (could be a tuple for multiple args)
                     const args = [_]Value{argument_value};
-                    break :blk try native_fn(arena, &args);
+                    const result = native_fn(arena, &args) catch |err| {
+                        // Capture stack trace on error (only if not already captured)
+                        if (ctx.error_ctx) |err_ctx| {
+                            if (err_ctx.stack_trace == null) {
+                                err_ctx.captureStackTrace() catch {};
+                            }
+                        }
+                        // Pop stack frame before returning error
+                        if (ctx.error_ctx) |err_ctx| {
+                            err_ctx.popStackFrame();
+                        }
+                        return err;
+                    };
+
+                    // Pop stack frame after successful evaluation
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.popStackFrame();
+                    }
+
+                    break :blk result;
                 },
                 else => {
                     // Point to the function expression that isn't actually a function
                     if (ctx.error_ctx) |err_ctx| {
                         err_ctx.setErrorLocation(application.function.location.line, application.function.location.column, application.function.location.offset, application.function.location.length);
+                        err_ctx.captureStackTrace() catch {};
                     }
                     return error.ExpectedFunction;
                 },
@@ -2201,7 +2136,7 @@ fn importModule(
     current_dir: ?[]const u8,
     ctx: *const EvalContext,
 ) EvalError!Value {
-    var module_file = try openImportFile(ctx, import_path, current_dir);
+    var module_file = try module_resolver.openImportFile(ctx, import_path, current_dir);
     defer module_file.file.close();
     defer ctx.allocator.free(module_file.path);
 
@@ -2223,9 +2158,9 @@ fn importModule(
         return err;
     };
 
-    const builtin_env = try createBuiltinEnvironment(arena);
+    const env = try builtin_env.createBuiltinEnvironment(arena);
     const module_dir = std.fs.path.dirname(module_file.path);
-    const result = evaluateExpression(arena, expression, builtin_env, module_dir, ctx) catch |err| {
+    const result = evaluateExpression(arena, expression, env, module_dir, ctx) catch |err| {
         // Only register source on evaluation error
         if (ctx.error_ctx) |err_ctx| {
             err_ctx.registerSource(module_file.path, contents) catch {};
@@ -2241,78 +2176,6 @@ fn importModule(
     return result;
 }
 
-pub fn createBuiltinEnvironment(arena: std.mem.Allocator) !?*Environment {
-    const builtins = @import("builtins.zig");
-
-    var env: ?*Environment = null;
-
-    // Array builtins
-    env = try addBuiltin(arena, env, "__array_length", builtins.arrayLength);
-    env = try addBuiltin(arena, env, "__array_get", builtins.arrayGet);
-    env = try addBuiltin(arena, env, "__array_reverse", builtins.arrayReverse);
-    env = try addBuiltin(arena, env, "__array_fold", builtins.arrayFold);
-    env = try addBuiltin(arena, env, "__array_concat_all", builtins.arrayConcatAll);
-    env = try addBuiltin(arena, env, "__array_slice", builtins.arraySlice);
-    env = try addBuiltin(arena, env, "__array_sort", builtins.arraySort);
-    env = try addBuiltin(arena, env, "__array_uniq", builtins.arrayUniq);
-
-    // String builtins
-    env = try addBuiltin(arena, env, "__string_length", builtins.stringLength);
-    env = try addBuiltin(arena, env, "__string_concat", builtins.stringConcat);
-    env = try addBuiltin(arena, env, "__string_split", builtins.stringSplit);
-    env = try addBuiltin(arena, env, "__string_to_upper", builtins.stringToUpper);
-    env = try addBuiltin(arena, env, "__string_to_lower", builtins.stringToLower);
-    env = try addBuiltin(arena, env, "__string_chars", builtins.stringChars);
-    env = try addBuiltin(arena, env, "__string_trim", builtins.stringTrim);
-    env = try addBuiltin(arena, env, "__string_starts_with", builtins.stringStartsWith);
-    env = try addBuiltin(arena, env, "__string_ends_with", builtins.stringEndsWith);
-    env = try addBuiltin(arena, env, "__string_contains", builtins.stringContains);
-    env = try addBuiltin(arena, env, "__string_repeat", builtins.stringRepeat);
-    env = try addBuiltin(arena, env, "__string_replace", builtins.stringReplace);
-    env = try addBuiltin(arena, env, "__string_slice", builtins.stringSlice);
-    env = try addBuiltin(arena, env, "__string_join", builtins.stringJoin);
-
-    // Math builtins
-    env = try addBuiltin(arena, env, "__math_max", builtins.mathMax);
-    env = try addBuiltin(arena, env, "__math_min", builtins.mathMin);
-    env = try addBuiltin(arena, env, "__math_abs", builtins.mathAbs);
-    env = try addBuiltin(arena, env, "__math_pow", builtins.mathPow);
-    env = try addBuiltin(arena, env, "__math_sqrt", builtins.mathSqrt);
-    env = try addBuiltin(arena, env, "__math_floor", builtins.mathFloor);
-    env = try addBuiltin(arena, env, "__math_ceil", builtins.mathCeil);
-    env = try addBuiltin(arena, env, "__math_round", builtins.mathRound);
-    env = try addBuiltin(arena, env, "__math_log", builtins.mathLog);
-    env = try addBuiltin(arena, env, "__math_exp", builtins.mathExp);
-
-    // Object builtins
-    env = try addBuiltin(arena, env, "__object_keys", builtins.objectKeys);
-    env = try addBuiltin(arena, env, "__object_values", builtins.objectValues);
-    env = try addBuiltin(arena, env, "__object_get", builtins.objectGet);
-
-    // Error handling builtins
-    env = try addBuiltin(arena, env, "crash", builtins.crash);
-
-    // YAML builtins
-    env = try addBuiltin(arena, env, "__yaml_parse", builtins.yamlParse);
-    env = try addBuiltin(arena, env, "__yaml_encode", builtins.yamlEncode);
-
-    // JSON builtins
-    env = try addBuiltin(arena, env, "__json_parse", builtins.jsonParse);
-    env = try addBuiltin(arena, env, "__json_encode", builtins.jsonEncode);
-
-    // Float builtins
-    env = try addBuiltin(arena, env, "__float_round", builtins.floatRound);
-    env = try addBuiltin(arena, env, "__float_floor", builtins.floatFloor);
-    env = try addBuiltin(arena, env, "__float_ceil", builtins.floatCeil);
-    env = try addBuiltin(arena, env, "__float_abs", builtins.floatAbs);
-    env = try addBuiltin(arena, env, "__float_sqrt", builtins.floatSqrt);
-    env = try addBuiltin(arena, env, "__float_pow", builtins.floatPow);
-    env = try addBuiltin(arena, env, "__math_mod", builtins.mathMod);
-    env = try addBuiltin(arena, env, "__math_rem", builtins.mathRem);
-
-    return env;
-}
-
 /// Create an environment with both builtin functions and standard library modules
 pub fn createStdlibEnvironment(
     arena: std.mem.Allocator,
@@ -2320,10 +2183,10 @@ pub fn createStdlibEnvironment(
     ctx: *const EvalContext,
 ) EvalError!?*Environment {
     // Start with builtin environment
-    var env = try createBuiltinEnvironment(arena);
+    var env = try builtin_env.createBuiltinEnvironment(arena);
 
     // Import standard library modules (if available)
-    const stdlib_modules = [_][]const u8{ "Array", "Float", "Math", "Object", "String" };
+    const stdlib_modules = [_][]const u8{ "Array", "Basics", "Float", "Math", "Object", "String" };
     for (stdlib_modules) |module_name| {
         // Try to import the module, but continue if it's not found
         const module_value = importModule(arena, module_name, current_dir, ctx) catch |err| {
@@ -2333,6 +2196,28 @@ pub fn createStdlibEnvironment(
             }
             return err;
         };
+
+        // Special handling for Basics: expose all fields unqualified
+        if (std.mem.eql(u8, module_name, "Basics")) {
+            const basics_obj = switch (module_value) {
+                .object => |obj| obj,
+                else => return error.TypeMismatch,
+            };
+
+            // Add each field from Basics to the environment
+            for (basics_obj.fields) |field| {
+                const field_value = try force(arena, field.value);
+                const field_env = try arena.create(Environment);
+                field_env.* = .{
+                    .parent = env,
+                    .name = field.key,
+                    .value = field_value,
+                };
+                env = field_env;
+            }
+        }
+
+        // Add the module itself to the environment
         const new_env = try arena.create(Environment);
         new_env.* = .{
             .parent = env,
@@ -2345,26 +2230,7 @@ pub fn createStdlibEnvironment(
     return env;
 }
 
-fn addBuiltin(arena: std.mem.Allocator, parent: ?*Environment, name: []const u8, function: NativeFn) !?*Environment {
-    const new_env = try arena.create(Environment);
-    new_env.* = .{
-        .parent = parent,
-        .name = name,
-        .value = Value{ .native_fn = function },
-    };
-    return new_env;
-}
-
-fn lookup(env: ?*Environment, name: []const u8) ?Value {
-    var current = env;
-    while (current) |scope| {
-        if (std.mem.eql(u8, scope.name, name)) {
-            return scope.value;
-        }
-        current = scope.parent;
-    }
-    return null;
-}
+// Helper functions for error reporting
 
 fn getValueTypeName(value: Value) []const u8 {
     return switch (value) {
@@ -2416,7 +2282,7 @@ fn formatPatternValue(allocator: std.mem.Allocator, pattern: *Pattern) ![]u8 {
     };
 }
 
-fn formatObjectFields(allocator: std.mem.Allocator, obj_pattern: ObjectPattern) ![]u8 {
+fn formatObjectFields(allocator: std.mem.Allocator, obj_pattern: ast.ObjectPattern) ![]u8 {
     if (obj_pattern.fields.len == 0) return allocator.dupe(u8, "{}");
 
     var result = std.ArrayList(u8){};
@@ -2429,953 +2295,6 @@ fn formatObjectFields(allocator: std.mem.Allocator, obj_pattern: ObjectPattern) 
     }
 
     try result.append(allocator, '}');
-    return result.toOwnedSlice(allocator);
-}
 
-fn formatValueShort(allocator: std.mem.Allocator, value: Value) ![]u8 {
-    return switch (value) {
-        .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
-        .float => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
-        .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
-        .null_value => try allocator.dupe(u8, "null"),
-        .symbol => |s| try std.fmt.allocPrint(allocator, "#{s}", .{s}),
-        .string => |s| if (s.len > 20)
-            try std.fmt.allocPrint(allocator, "\"{s}...\"", .{s[0..20]})
-        else
-            try std.fmt.allocPrint(allocator, "\"{s}\"", .{s}),
-        .array => |a| try std.fmt.allocPrint(allocator, "array with {d} elements", .{a.elements.len}),
-        .tuple => |t| try std.fmt.allocPrint(allocator, "tuple with {d} elements", .{t.elements.len}),
-        .object => |o| try std.fmt.allocPrint(allocator, "object with {d} fields", .{o.fields.len}),
-        .function => try allocator.dupe(u8, "function"),
-        .native_fn => try allocator.dupe(u8, "native function"),
-        .thunk => try allocator.dupe(u8, "thunk"),
-    };
-}
-
-fn valueToString(allocator: std.mem.Allocator, value: Value) ![]u8 {
-    return switch (value) {
-        .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
-        .float => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
-        .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
-        .null_value => try std.fmt.allocPrint(allocator, "null", .{}),
-        .symbol => |s| try allocator.dupe(u8, s),
-        .string => |str| try allocator.dupe(u8, str),
-        else => try formatValue(allocator, value),
-    };
-}
-
-pub fn formatValue(allocator: std.mem.Allocator, value: Value) ![]u8 {
-    return formatValueWithArena(allocator, allocator, value);
-}
-
-pub fn formatValuePretty(allocator: std.mem.Allocator, value: Value) ![]u8 {
-    return formatValuePrettyImpl(allocator, allocator, value, 0);
-}
-
-pub fn formatValueAsJson(allocator: std.mem.Allocator, value: Value) ![]u8 {
-    return formatValueAsJsonImpl(allocator, allocator, value);
-}
-
-fn formatValueAsJsonImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator, value: Value) EvalError![]u8 {
-    return switch (value) {
-        .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
-        .float => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
-        .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
-        .null_value => try std.fmt.allocPrint(allocator, "null", .{}),
-        .symbol => |s| try std.fmt.allocPrint(allocator, "\"{s}\"", .{s}),
-        .function => {
-            const message = "Cannot represent function in JSON output. Functions are not serializable.";
-            const message_copy = try std.heap.page_allocator.dupe(u8, message);
-            setUserCrashMessage(message_copy);
-            return error.UserCrash;
-        },
-        .native_fn => {
-            const message = "Cannot represent native function in JSON output. Functions are not serializable.";
-            const message_copy = try std.heap.page_allocator.dupe(u8, message);
-            setUserCrashMessage(message_copy);
-            return error.UserCrash;
-        },
-        .thunk => blk: {
-            const forced = force(arena, value) catch break :blk try std.fmt.allocPrint(allocator, "null", .{});
-            break :blk try formatValueAsJsonImpl(allocator, arena, forced);
-        },
-        .array => |arr| blk: {
-            var builder = std.ArrayList(u8){};
-            errdefer builder.deinit(allocator);
-
-            try builder.append(allocator, '[');
-            for (arr.elements, 0..) |element, i| {
-                if (i != 0) try builder.appendSlice(allocator, ",");
-                const formatted = try formatValueAsJsonImpl(allocator, arena, element);
-                defer allocator.free(formatted);
-                try builder.appendSlice(allocator, formatted);
-            }
-            try builder.append(allocator, ']');
-
-            break :blk try builder.toOwnedSlice(allocator);
-        },
-        .tuple => |tup| blk: {
-            // Tuples are represented as arrays in JSON
-            var builder = std.ArrayList(u8){};
-            errdefer builder.deinit(allocator);
-
-            try builder.append(allocator, '[');
-            for (tup.elements, 0..) |element, i| {
-                if (i != 0) try builder.appendSlice(allocator, ",");
-                const formatted = try formatValueAsJsonImpl(allocator, arena, element);
-                defer allocator.free(formatted);
-                try builder.appendSlice(allocator, formatted);
-            }
-            try builder.append(allocator, ']');
-
-            break :blk try builder.toOwnedSlice(allocator);
-        },
-        .object => |obj| blk: {
-            var builder = std.ArrayList(u8){};
-            errdefer builder.deinit(allocator);
-
-            try builder.append(allocator, '{');
-            for (obj.fields, 0..) |field, i| {
-                if (i != 0) try builder.appendSlice(allocator, ",");
-                // Escape key for JSON
-                try builder.append(allocator, '"');
-                try jsonEscapeString(&builder, allocator, field.key);
-                try builder.appendSlice(allocator, "\":");
-                const formatted = try formatValueAsJsonImpl(allocator, arena, field.value);
-                defer allocator.free(formatted);
-                try builder.appendSlice(allocator, formatted);
-            }
-            try builder.append(allocator, '}');
-
-            break :blk try builder.toOwnedSlice(allocator);
-        },
-        .string => |str| blk: {
-            var builder = std.ArrayList(u8){};
-            errdefer builder.deinit(allocator);
-
-            try builder.append(allocator, '"');
-            try jsonEscapeString(&builder, allocator, str);
-            try builder.append(allocator, '"');
-
-            break :blk try builder.toOwnedSlice(allocator);
-        },
-    };
-}
-
-fn jsonEscapeString(builder: *std.ArrayList(u8), allocator: std.mem.Allocator, str: []const u8) !void {
-    for (str) |c| {
-        switch (c) {
-            '"' => try builder.appendSlice(allocator, "\\\""),
-            '\\' => try builder.appendSlice(allocator, "\\\\"),
-            '\n' => try builder.appendSlice(allocator, "\\n"),
-            '\r' => try builder.appendSlice(allocator, "\\r"),
-            '\t' => try builder.appendSlice(allocator, "\\t"),
-            0x08 => try builder.appendSlice(allocator, "\\b"),
-            0x0C => try builder.appendSlice(allocator, "\\f"),
-            else => {
-                if (c < 0x20) {
-                    // Control characters: use \uXXXX format
-                    try builder.appendSlice(allocator, try std.fmt.allocPrint(allocator, "\\u{x:0>4}", .{c}));
-                } else {
-                    try builder.append(allocator, c);
-                }
-            },
-        }
-    }
-}
-
-pub fn formatValueAsYaml(allocator: std.mem.Allocator, value: Value) ![]u8 {
-    return formatValueAsYamlImpl(allocator, allocator, value, 0);
-}
-
-fn formatValueAsYamlImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator, value: Value, indent: usize) EvalError![]u8 {
-    return switch (value) {
-        .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
-        .float => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
-        .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
-        .null_value => try std.fmt.allocPrint(allocator, "null", .{}),
-        .symbol => |s| blk: {
-            // Symbols are represented as strings in YAML
-            if (yamlNeedsQuoting(s)) {
-                var builder = std.ArrayList(u8){};
-                errdefer builder.deinit(allocator);
-                try builder.append(allocator, '"');
-                try yamlEscapeString(&builder, allocator, s);
-                try builder.append(allocator, '"');
-                break :blk try builder.toOwnedSlice(allocator);
-            } else {
-                break :blk try allocator.dupe(u8, s);
-            }
-        },
-        .function => {
-            const message = "Cannot represent function in YAML output. Functions are not serializable.";
-            const message_copy = try std.heap.page_allocator.dupe(u8, message);
-            setUserCrashMessage(message_copy);
-            return error.UserCrash;
-        },
-        .native_fn => {
-            const message = "Cannot represent native function in YAML output. Functions are not serializable.";
-            const message_copy = try std.heap.page_allocator.dupe(u8, message);
-            setUserCrashMessage(message_copy);
-            return error.UserCrash;
-        },
-        .thunk => blk: {
-            const forced = force(arena, value) catch break :blk try std.fmt.allocPrint(allocator, "null", .{});
-            break :blk try formatValueAsYamlImpl(allocator, arena, forced, indent);
-        },
-        .array => |arr| blk: {
-            if (arr.elements.len == 0) {
-                break :blk try std.fmt.allocPrint(allocator, "[]", .{});
-            }
-
-            var builder = std.ArrayList(u8){};
-            errdefer builder.deinit(allocator);
-
-            for (arr.elements) |element| {
-                if (builder.items.len > 0) {
-                    try builder.append(allocator, '\n');
-                }
-                for (0..indent) |_| {
-                    try builder.appendSlice(allocator, "  ");
-                }
-                try builder.appendSlice(allocator, "- ");
-
-                const formatted = try formatValueAsYamlImpl(allocator, arena, element, indent + 1);
-                defer allocator.free(formatted);
-
-                // If the formatted value contains newlines, append as-is (already properly indented)
-                if (std.mem.indexOf(u8, formatted, "\n")) |_| {
-                    // Child was formatted with indent+1, so lines are already indented
-                    // First line goes after "- ", subsequent lines already have correct indentation
-                    var is_first = true;
-                    var iter = std.mem.splitScalar(u8, formatted, '\n');
-                    while (iter.next()) |line| {
-                        if (is_first) {
-                            // Strip leading indent from first line (it goes inline with "- ")
-                            const spaces_to_strip = (indent + 1) * 2;
-                            const stripped = if (line.len >= spaces_to_strip and std.mem.allEqual(u8, line[0..spaces_to_strip], ' '))
-                                line[spaces_to_strip..]
-                            else
-                                line;
-                            try builder.appendSlice(allocator, stripped);
-                            is_first = false;
-                        } else {
-                            try builder.append(allocator, '\n');
-                            try builder.appendSlice(allocator, line);
-                        }
-                    }
-                } else {
-                    // Single-line value: strip leading indentation (it goes inline with "- ")
-                    const spaces_to_strip = (indent + 1) * 2;
-                    const stripped = if (formatted.len >= spaces_to_strip and std.mem.allEqual(u8, formatted[0..spaces_to_strip], ' '))
-                        formatted[spaces_to_strip..]
-                    else
-                        formatted;
-                    try builder.appendSlice(allocator, stripped);
-                }
-            }
-
-            break :blk try builder.toOwnedSlice(allocator);
-        },
-        .tuple => |tup| blk: {
-            // Tuples are represented as arrays in YAML
-            if (tup.elements.len == 0) {
-                break :blk try std.fmt.allocPrint(allocator, "[]", .{});
-            }
-
-            var builder = std.ArrayList(u8){};
-            errdefer builder.deinit(allocator);
-
-            for (tup.elements) |element| {
-                if (builder.items.len > 0) {
-                    try builder.append(allocator, '\n');
-                }
-                for (0..indent) |_| {
-                    try builder.appendSlice(allocator, "  ");
-                }
-                try builder.appendSlice(allocator, "- ");
-                const formatted = try formatValueAsYamlImpl(allocator, arena, element, indent + 1);
-                defer allocator.free(formatted);
-
-                // If the formatted value contains newlines, append as-is (already properly indented)
-                if (std.mem.indexOf(u8, formatted, "\n")) |_| {
-                    // Child was formatted with indent+1, so lines are already indented
-                    // First line goes after "- ", subsequent lines already have correct indentation
-                    var is_first = true;
-                    var iter = std.mem.splitScalar(u8, formatted, '\n');
-                    while (iter.next()) |line| {
-                        if (is_first) {
-                            // Strip leading indent from first line (it goes inline with "- ")
-                            const spaces_to_strip = (indent + 1) * 2;
-                            const stripped = if (line.len >= spaces_to_strip and std.mem.allEqual(u8, line[0..spaces_to_strip], ' '))
-                                line[spaces_to_strip..]
-                            else
-                                line;
-                            try builder.appendSlice(allocator, stripped);
-                            is_first = false;
-                        } else {
-                            try builder.append(allocator, '\n');
-                            try builder.appendSlice(allocator, line);
-                        }
-                    }
-                } else {
-                    // Single-line value: strip leading indentation (it goes inline with "- ")
-                    const spaces_to_strip = (indent + 1) * 2;
-                    const stripped = if (formatted.len >= spaces_to_strip and std.mem.allEqual(u8, formatted[0..spaces_to_strip], ' '))
-                        formatted[spaces_to_strip..]
-                    else
-                        formatted;
-                    try builder.appendSlice(allocator, stripped);
-                }
-            }
-
-            break :blk try builder.toOwnedSlice(allocator);
-        },
-        .object => |obj| blk: {
-            if (obj.fields.len == 0) {
-                break :blk try std.fmt.allocPrint(allocator, "{{}}", .{});
-            }
-
-            var builder = std.ArrayList(u8){};
-            errdefer builder.deinit(allocator);
-
-            for (obj.fields, 0..) |field, i| {
-                if (i > 0) {
-                    try builder.append(allocator, '\n');
-                }
-                for (0..indent) |_| {
-                    try builder.appendSlice(allocator, "  ");
-                }
-
-                // Format the key
-                if (yamlNeedsQuoting(field.key)) {
-                    try builder.append(allocator, '"');
-                    try yamlEscapeString(&builder, allocator, field.key);
-                    try builder.append(allocator, '"');
-                } else {
-                    try builder.appendSlice(allocator, field.key);
-                }
-                try builder.appendSlice(allocator, ": ");
-
-                const formatted = try formatValueAsYamlImpl(allocator, arena, field.value, indent + 1);
-                defer allocator.free(formatted);
-
-                // Check if value should go on a new line (multiline, array, or nested object)
-                const expected_indent = (indent + 1) * 2;
-                const is_multiline = std.mem.indexOf(u8, formatted, "\n") != null;
-                const is_structured = formatted.len >= expected_indent and
-                                     std.mem.allEqual(u8, formatted[0..expected_indent], ' ');
-
-                if (is_multiline or is_structured) {
-                    try builder.append(allocator, '\n');
-                    // Child was formatted with indent+1, so lines already have correct indentation
-                    var is_first = true;
-                    var iter = std.mem.splitScalar(u8, formatted, '\n');
-                    while (iter.next()) |line| {
-                        if (!is_first) {
-                            try builder.append(allocator, '\n');
-                        }
-                        try builder.appendSlice(allocator, line);
-                        is_first = false;
-                    }
-                } else {
-                    // Simple scalar value: goes inline with ": "
-                    try builder.appendSlice(allocator, formatted);
-                }
-            }
-
-            break :blk try builder.toOwnedSlice(allocator);
-        },
-        .string => |str| blk: {
-            if (yamlNeedsQuoting(str)) {
-                var builder = std.ArrayList(u8){};
-                errdefer builder.deinit(allocator);
-                try builder.append(allocator, '"');
-                try yamlEscapeString(&builder, allocator, str);
-                try builder.append(allocator, '"');
-                break :blk try builder.toOwnedSlice(allocator);
-            } else {
-                break :blk try allocator.dupe(u8, str);
-            }
-        },
-    };
-}
-
-fn yamlNeedsQuoting(str: []const u8) bool {
-    if (str.len == 0) return true;
-
-    // Check for special YAML values that need quoting
-    if (std.mem.eql(u8, str, "true") or std.mem.eql(u8, str, "false") or
-        std.mem.eql(u8, str, "null") or std.mem.eql(u8, str, "~") or
-        std.mem.eql(u8, str, "yes") or std.mem.eql(u8, str, "no"))
-    {
-        return true;
-    }
-
-    // Check if string starts with special characters
-    switch (str[0]) {
-        '-', '?', ':', '@', '`', '|', '>', '&', '*', '!', '%', '#', '[', ']', '{', '}', ',', '"', '\'', ' ' => return true,
-        else => {},
-    }
-
-    // Check for special characters in the string
-    for (str) |c| {
-        switch (c) {
-            '\n', '\r', '\t', ':', '#', ',', '[', ']', '{', '}', '"', '\'' => return true,
-            else => if (c < 0x20 or c == 0x7F) return true,
-        }
-    }
-
-    return false;
-}
-
-fn yamlEscapeString(builder: *std.ArrayList(u8), allocator: std.mem.Allocator, str: []const u8) !void {
-    for (str) |c| {
-        switch (c) {
-            '"' => try builder.appendSlice(allocator, "\\\""),
-            '\\' => try builder.appendSlice(allocator, "\\\\"),
-            '\n' => try builder.appendSlice(allocator, "\\n"),
-            '\r' => try builder.appendSlice(allocator, "\\r"),
-            '\t' => try builder.appendSlice(allocator, "\\t"),
-            else => {
-                if (c < 0x20 or c == 0x7F) {
-                    try builder.appendSlice(allocator, try std.fmt.allocPrint(allocator, "\\x{x:0>2}", .{c}));
-                } else {
-                    try builder.append(allocator, c);
-                }
-            },
-        }
-    }
-}
-
-fn formatValuePrettyImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator, value: Value, indent: usize) error{OutOfMemory}![]u8 {
-    return switch (value) {
-        .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
-        .float => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
-        .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
-        .null_value => try std.fmt.allocPrint(allocator, "null", .{}),
-        .symbol => |s| try std.fmt.allocPrint(allocator, "{s}", .{s}),
-        .function => try std.fmt.allocPrint(allocator, "<function>", .{}),
-        .native_fn => try std.fmt.allocPrint(allocator, "<native function>", .{}),
-        .thunk => blk: {
-            // Force the thunk and format the result
-            const forced = force(arena, value) catch break :blk try std.fmt.allocPrint(allocator, "<thunk error>", .{});
-            break :blk try formatValuePrettyImpl(allocator, arena, forced, indent);
-        },
-        .array => |arr| blk: {
-            if (arr.elements.len == 0) {
-                break :blk try std.fmt.allocPrint(allocator, "[]", .{});
-            }
-
-            var builder = std.ArrayList(u8){};
-            errdefer builder.deinit(allocator);
-
-            try builder.append(allocator, '[');
-
-            // Check if all elements are simple (primitives, not nested structures)
-            var all_simple = true;
-            for (arr.elements) |element| {
-                if (element == .array or element == .object or element == .tuple) {
-                    all_simple = false;
-                    break;
-                }
-                if (element == .thunk) {
-                    const forced = force(arena, element) catch {
-                        all_simple = false;
-                        break;
-                    };
-                    if (forced == .array or forced == .object or forced == .tuple) {
-                        all_simple = false;
-                        break;
-                    }
-                }
-            }
-
-            if (all_simple) {
-                // Single-line format for simple arrays
-                for (arr.elements, 0..) |element, i| {
-                    if (i != 0) try builder.appendSlice(allocator, ", ");
-                    const formatted = try formatValuePrettyImpl(allocator, arena, element, indent);
-                    defer allocator.free(formatted);
-                    try builder.appendSlice(allocator, formatted);
-                }
-                try builder.append(allocator, ']');
-            } else {
-                // Multi-line format for complex arrays
-                try builder.append(allocator, '\n');
-                for (arr.elements, 0..) |element, i| {
-                    // Indentation
-                    for (0..indent + 1) |_| {
-                        try builder.appendSlice(allocator, "  ");
-                    }
-                    const formatted = try formatValuePrettyImpl(allocator, arena, element, indent + 1);
-                    defer allocator.free(formatted);
-                    try builder.appendSlice(allocator, formatted);
-                    if (i < arr.elements.len - 1) {
-                        try builder.append(allocator, ',');
-                    }
-                    try builder.append(allocator, '\n');
-                }
-                // Closing bracket with proper indentation
-                for (0..indent) |_| {
-                    try builder.appendSlice(allocator, "  ");
-                }
-                try builder.append(allocator, ']');
-            }
-
-            break :blk try builder.toOwnedSlice(allocator);
-        },
-        .tuple => |tup| blk: {
-            var builder = std.ArrayList(u8){};
-            errdefer builder.deinit(allocator);
-
-            try builder.append(allocator, '(');
-            for (tup.elements, 0..) |element, i| {
-                if (i != 0) try builder.appendSlice(allocator, ", ");
-                const formatted = try formatValuePrettyImpl(allocator, arena, element, indent);
-                defer allocator.free(formatted);
-                try builder.appendSlice(allocator, formatted);
-            }
-            try builder.append(allocator, ')');
-
-            break :blk try builder.toOwnedSlice(allocator);
-        },
-        .object => |obj| blk: {
-            var builder = std.ArrayList(u8){};
-            errdefer builder.deinit(allocator);
-
-            if (obj.fields.len == 0) {
-                try builder.appendSlice(allocator, "{}");
-            } else if (obj.fields.len > 3) {
-                // Multi-line format for larger objects
-                try builder.appendSlice(allocator, "{\n");
-                for (obj.fields, 0..) |field, i| {
-                    // Indentation
-                    for (0..indent + 1) |_| {
-                        try builder.appendSlice(allocator, "  ");
-                    }
-                    try builder.appendSlice(allocator, field.key);
-                    try builder.appendSlice(allocator, ": ");
-                    const formatted = try formatValuePrettyImpl(allocator, arena, field.value, indent + 1);
-                    defer allocator.free(formatted);
-                    try builder.appendSlice(allocator, formatted);
-                    if (i < obj.fields.len - 1) {
-                        try builder.append(allocator, ',');
-                    }
-                    try builder.append(allocator, '\n');
-                }
-                // Closing brace with proper indentation
-                for (0..indent) |_| {
-                    try builder.appendSlice(allocator, "  ");
-                }
-                try builder.append(allocator, '}');
-            } else {
-                // Check if all fields are simple (primitives, functions, or strings only)
-                var all_simple = true;
-                for (obj.fields) |field| {
-                    const val = if (field.value == .thunk)
-                        force(arena, field.value) catch {
-                            all_simple = false;
-                            break;
-                        }
-                    else
-                        field.value;
-
-                    // Consider nested structures (arrays, objects, tuples) as complex
-                    if (val == .array or val == .object or val == .tuple) {
-                        all_simple = false;
-                        break;
-                    }
-                }
-
-                if (all_simple) {
-                    // Single-line format for simple, small objects
-                    try builder.appendSlice(allocator, "{ ");
-                    for (obj.fields, 0..) |field, i| {
-                        if (i != 0) try builder.appendSlice(allocator, ", ");
-                        try builder.appendSlice(allocator, field.key);
-                        try builder.appendSlice(allocator, ": ");
-                        const formatted = try formatValuePrettyImpl(allocator, arena, field.value, indent);
-                        defer allocator.free(formatted);
-                        try builder.appendSlice(allocator, formatted);
-                    }
-                    try builder.appendSlice(allocator, " }");
-                } else {
-                    // Multi-line format for objects with complex values
-                    try builder.appendSlice(allocator, "{\n");
-                    for (obj.fields, 0..) |field, i| {
-                        // Indentation
-                        for (0..indent + 1) |_| {
-                            try builder.appendSlice(allocator, "  ");
-                        }
-                        try builder.appendSlice(allocator, field.key);
-                        try builder.appendSlice(allocator, ": ");
-                        const formatted = try formatValuePrettyImpl(allocator, arena, field.value, indent + 1);
-                        defer allocator.free(formatted);
-                        try builder.appendSlice(allocator, formatted);
-                        if (i < obj.fields.len - 1) {
-                            try builder.append(allocator, ',');
-                        }
-                        try builder.append(allocator, '\n');
-                    }
-                    // Closing brace with proper indentation
-                    for (0..indent) |_| {
-                        try builder.appendSlice(allocator, "  ");
-                    }
-                    try builder.append(allocator, '}');
-                }
-            }
-
-            break :blk try builder.toOwnedSlice(allocator);
-        },
-        .string => |str| try std.fmt.allocPrint(allocator, "\"{s}\"", .{str}),
-    };
-}
-
-fn formatValueWithArena(allocator: std.mem.Allocator, arena: std.mem.Allocator, value: Value) error{OutOfMemory}![]u8 {
-    return switch (value) {
-        .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
-        .float => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
-        .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
-        .null_value => try std.fmt.allocPrint(allocator, "null", .{}),
-        .symbol => |s| try std.fmt.allocPrint(allocator, "{s}", .{s}),
-        .function => try std.fmt.allocPrint(allocator, "<function>", .{}),
-        .native_fn => try std.fmt.allocPrint(allocator, "<native function>", .{}),
-        .thunk => blk: {
-            // Force the thunk and format the result
-            const forced = force(arena, value) catch break :blk try std.fmt.allocPrint(allocator, "<thunk error>", .{});
-            break :blk try formatValueWithArena(allocator, arena, forced);
-        },
-        .array => |arr| blk: {
-            var builder = std.ArrayList(u8){};
-            errdefer builder.deinit(allocator);
-
-            try builder.append(allocator, '[');
-            for (arr.elements, 0..) |element, i| {
-                if (i != 0) try builder.appendSlice(allocator, ", ");
-                const formatted = try formatValueWithArena(allocator, arena, element);
-                defer allocator.free(formatted);
-                try builder.appendSlice(allocator, formatted);
-            }
-            try builder.append(allocator, ']');
-
-            break :blk try builder.toOwnedSlice(allocator);
-        },
-        .tuple => |tup| blk: {
-            var builder = std.ArrayList(u8){};
-            errdefer builder.deinit(allocator);
-
-            try builder.append(allocator, '(');
-            for (tup.elements, 0..) |element, i| {
-                if (i != 0) try builder.appendSlice(allocator, ", ");
-                const formatted = try formatValueWithArena(allocator, arena, element);
-                defer allocator.free(formatted);
-                try builder.appendSlice(allocator, formatted);
-            }
-            try builder.append(allocator, ')');
-
-            break :blk try builder.toOwnedSlice(allocator);
-        },
-        .object => |obj| blk: {
-            var builder = std.ArrayList(u8){};
-            errdefer builder.deinit(allocator);
-
-            if (obj.fields.len == 0) {
-                try builder.appendSlice(allocator, "{}");
-            } else {
-                try builder.appendSlice(allocator, "{ ");
-                for (obj.fields, 0..) |field, i| {
-                    if (i != 0) try builder.appendSlice(allocator, ", ");
-                    try builder.appendSlice(allocator, field.key);
-                    try builder.appendSlice(allocator, ": ");
-                    const formatted = try formatValueWithArena(allocator, arena, field.value);
-                    defer allocator.free(formatted);
-                    try builder.appendSlice(allocator, formatted);
-                }
-                try builder.appendSlice(allocator, " }");
-            }
-
-            break :blk try builder.toOwnedSlice(allocator);
-        },
-        .string => |str| try std.fmt.allocPrint(allocator, "\"{s}\"", .{str}),
-    };
-}
-
-pub const EvalOutput = struct {
-    allocator: std.mem.Allocator,
-    text: []u8,
-
-    pub fn deinit(self: *EvalOutput) void {
-        self.allocator.free(self.text);
-        self.* = undefined;
-    }
-};
-
-/// Extended eval output that includes error context
-pub const EvalResult = struct {
-    output: ?EvalOutput,
-    error_ctx: error_context.ErrorContext,
-    err: ?EvalError = null,
-
-    pub fn deinit(self: *EvalResult) void {
-        if (self.output) |*out| {
-            out.deinit();
-        }
-        self.error_ctx.deinit();
-    }
-};
-
-pub const FormatStyle = enum {
-    pretty,
-    json,
-    yaml,
-};
-
-fn evalSourceWithContext(
-    allocator: std.mem.Allocator,
-    source: []const u8,
-    current_dir: ?[]const u8,
-) EvalError!EvalResult {
-    return evalSourceWithFormat(allocator, source, current_dir, .pretty);
-}
-
-fn evalSourceWithFormat(
-    allocator: std.mem.Allocator,
-    source: []const u8,
-    current_dir: ?[]const u8,
-    format: FormatStyle,
-) EvalError!EvalResult {
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    errdefer arena.deinit();
-
-    const lazy_paths = try collectLazyPaths(arena.allocator());
-    var err_ctx = error_context.ErrorContext.init(allocator);
-    errdefer err_ctx.deinit();
-    err_ctx.setSource(source);
-
-    const context = EvalContext{
-        .allocator = allocator,
-        .lazy_paths = lazy_paths,
-        .error_ctx = &err_ctx,
-    };
-
-    var parser = Parser.initWithContext(arena.allocator(), source, &err_ctx) catch |err| {
-        // Error location already set by tokenizer if applicable
-        arena.deinit();
-        return EvalResult{
-            .output = null,
-            .error_ctx = err_ctx,
-            .err = err,
-        };
-    };
-    const expression = parser.parse() catch |err| {
-        arena.deinit();
-        return EvalResult{
-            .output = null,
-            .error_ctx = err_ctx,
-            .err = err,
-        };
-    };
-
-    const env = try createStdlibEnvironment(arena.allocator(), current_dir, &context);
-    const value = evaluateExpression(arena.allocator(), expression, env, current_dir, &context) catch |err| {
-        arena.deinit();
-        return EvalResult{
-            .output = null,
-            .error_ctx = err_ctx,
-            .err = err,
-        };
-    };
-    const formatted = switch (format) {
-        .pretty => try formatValuePrettyImpl(allocator, arena.allocator(), value, 0),
-        .json => try formatValueAsJsonImpl(allocator, arena.allocator(), value),
-        .yaml => try formatValueAsYamlImpl(allocator, arena.allocator(), value, 0),
-    };
-
-    arena.deinit();
-    return EvalResult{
-        .output = .{
-            .allocator = allocator,
-            .text = formatted,
-        },
-        .error_ctx = err_ctx,
-    };
-}
-
-fn evalSource(
-    allocator: std.mem.Allocator,
-    source: []const u8,
-    current_dir: ?[]const u8,
-) EvalError!EvalOutput {
-    var result = try evalSourceWithContext(allocator, source, current_dir);
-    defer result.error_ctx.deinit();
-
-    if (result.output) |output| {
-        return output;
-    } else {
-        // Return the actual error that occurred
-        return result.err orelse error.UnknownIdentifier;
-    }
-}
-
-pub fn evalInline(allocator: std.mem.Allocator, source: []const u8) EvalError!EvalOutput {
-    return try evalSource(allocator, source, null);
-}
-
-pub fn evalInlineWithContext(allocator: std.mem.Allocator, source: []const u8) EvalError!EvalResult {
-    return try evalSourceWithContext(allocator, source, null);
-}
-
-pub fn evalInlineWithFormat(allocator: std.mem.Allocator, source: []const u8, format: FormatStyle) EvalError!EvalResult {
-    return try evalSourceWithFormat(allocator, source, null, format);
-}
-
-pub fn evalFileWithContext(allocator: std.mem.Allocator, path: []const u8) EvalError!EvalResult {
-    var file = try std.fs.cwd().openFile(path, .{});
-    defer file.close();
-
-    const contents = try file.readToEndAlloc(allocator, std.math.maxInt(usize));
-    defer allocator.free(contents);
-
-    const directory = std.fs.path.dirname(path);
-    return try evalSourceWithContext(allocator, contents, directory);
-}
-
-pub fn evalFileWithFormat(allocator: std.mem.Allocator, path: []const u8, format: FormatStyle) EvalError!EvalResult {
-    var file = try std.fs.cwd().openFile(path, .{});
-    defer file.close();
-
-    const contents = try file.readToEndAlloc(allocator, std.math.maxInt(usize));
-    defer allocator.free(contents);
-
-    const directory = std.fs.path.dirname(path);
-    var result = try evalSourceWithFormat(allocator, contents, directory, format);
-
-    // Register the main file for error reporting
-    if (result.err != null) {
-        result.error_ctx.registerSource(path, contents) catch {};
-        if (result.error_ctx.current_file.len == 0) {
-            result.error_ctx.setCurrentFile(path);
-        }
-    }
-
-    return result;
-}
-
-pub const EvalValueResult = struct {
-    value: Value,
-    arena: std.heap.ArenaAllocator,
-    error_ctx: error_context.ErrorContext,
-    err: ?EvalError = null,
-
-    pub fn deinit(self: *EvalValueResult) void {
-        self.arena.deinit();
-        self.error_ctx.deinit();
-    }
-};
-
-pub fn evalInlineWithValue(allocator: std.mem.Allocator, source: []const u8) EvalError!EvalValueResult {
-    return evalSourceWithValue(allocator, source, null);
-}
-
-pub fn evalFileWithValue(allocator: std.mem.Allocator, path: []const u8) EvalError!EvalValueResult {
-    var file = try std.fs.cwd().openFile(path, .{});
-    defer file.close();
-
-    const contents = try file.readToEndAlloc(allocator, std.math.maxInt(usize));
-    defer allocator.free(contents);
-
-    const directory = std.fs.path.dirname(path);
-    var result = try evalSourceWithValue(allocator, contents, directory);
-
-    // Register the main file for error reporting
-    if (result.err != null) {
-        result.error_ctx.registerSource(path, contents) catch {};
-        if (result.error_ctx.current_file.len == 0) {
-            result.error_ctx.setCurrentFile(path);
-        }
-    }
-
-    return result;
-}
-
-fn evalSourceWithValue(
-    allocator: std.mem.Allocator,
-    source: []const u8,
-    current_dir: ?[]const u8,
-) EvalError!EvalValueResult {
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    errdefer arena.deinit();
-
-    const lazy_paths = try collectLazyPaths(arena.allocator());
-    var err_ctx = error_context.ErrorContext.init(allocator);
-    err_ctx.setSource(source);
-
-    const context = EvalContext{
-        .allocator = allocator,
-        .lazy_paths = lazy_paths,
-        .error_ctx = &err_ctx,
-    };
-
-    var parser = try Parser.init(arena.allocator(), source);
-    parser.setErrorContext(&err_ctx);
-    const expression = parser.parse() catch |err| {
-        arena.deinit();
-        return EvalValueResult{
-            .value = .null_value,
-            .arena = std.heap.ArenaAllocator.init(allocator),
-            .error_ctx = err_ctx,
-            .err = err,
-        };
-    };
-
-    const builtin_env = try createBuiltinEnvironment(arena.allocator());
-    const value = evaluateExpression(arena.allocator(), expression, builtin_env, current_dir, &context) catch |err| {
-        arena.deinit();
-        return EvalValueResult{
-            .value = .null_value,
-            .arena = std.heap.ArenaAllocator.init(allocator),
-            .error_ctx = err_ctx,
-            .err = err,
-        };
-    };
-
-    return EvalValueResult{
-        .value = value,
-        .arena = arena,
-        .error_ctx = err_ctx,
-    };
-}
-
-pub fn evalFile(allocator: std.mem.Allocator, path: []const u8) EvalError!EvalOutput {
-    var file = try std.fs.cwd().openFile(path, .{});
-    defer file.close();
-
-    const contents = try file.readToEndAlloc(allocator, std.math.maxInt(usize));
-    defer allocator.free(contents);
-
-    const directory = std.fs.path.dirname(path);
-    return try evalSource(allocator, contents, directory);
-}
-
-pub fn evalFileValue(
-    arena: std.mem.Allocator,
-    allocator: std.mem.Allocator,
-    path: []const u8,
-) EvalError!Value {
-    var file = try std.fs.cwd().openFile(path, .{});
-    defer file.close();
-
-    const contents = try file.readToEndAlloc(allocator, std.math.maxInt(usize));
-    defer allocator.free(contents);
-
-    const lazy_paths = try collectLazyPaths(arena);
-    const context = EvalContext{ .allocator = allocator, .lazy_paths = lazy_paths };
-
-    var parser = try Parser.init(arena, contents);
-    const expression = try parser.parse();
-
-    const directory = std.fs.path.dirname(path);
-    const env = try createStdlibEnvironment(arena, directory, &context);
-    return try evaluateExpression(arena, expression, env, directory, &context);
+    return try result.toOwnedSlice(allocator);
 }
