@@ -28,18 +28,19 @@ Lazylang is a pure, dynamically typed, lazy functional language for configuratio
 ### Implementation Approach
 
 - **Language**: Zig (0.12.0)
-- **Architecture**: Single-pass tree-walking interpreter
+- **Architecture**: Single-pass tree-walking interpreter with modular design
 - **Memory Management**: Arena allocation (no manual free needed)
-- **Lines of Code**: ~3000 in eval.zig (the core), ~600 in builtins
+- **Lines of Code**: ~5500 total (evaluator ~2500, parser ~1600, value_format ~800, builtins ~600, tokenizer ~650, ast ~500)
 - **Distribution**: Single static binary (`lazylang` and `lazylang-lsp`)
 
 ### Key Design Decisions
 
-1. **Monolithic eval.zig**: Tokenizer, parser, AST, evaluator all in one file for simplicity
+1. **Modular architecture**: Previously monolithic eval.zig has been refactored into focused modules (ast, tokenizer, parser, evaluator, value, value_format, module_resolver) for maintainability
 2. **No separate IR**: AST is directly evaluated (tree-walking)
 3. **Lazy by default for objects**: Object fields wrapped in thunks for recursive definitions
 4. **Arena allocation**: Memory freed in bulk at end of evaluation
 5. **No type system**: Runtime type checking only
+6. **Auto-imported stdlib**: Core modules (Array, String, Math, etc.) are automatically available without explicit imports
 
 ---
 
@@ -52,32 +53,35 @@ Source Code (.lazy file)
     ↓
 ┌─────────────────────┐
 │   Tokenizer         │  Splits into tokens, tracks position
-│   (eval.zig:5-648)  │  Handles doc comments (///)
+│  (tokenizer.zig)    │  Handles doc comments (///)
 └──────────┬──────────┘
            ↓
 ┌─────────────────────┐
 │   Parser            │  Recursive descent, 2-token lookahead
-│   (eval.zig:650-    │  Operator precedence climbing
-│    1822)            │  Indentation-aware
+│   (parser.zig)      │  Operator precedence climbing
+│                     │  Indentation-aware
 └──────────┬──────────┘
            ↓
 ┌─────────────────────┐
-│   AST (Expression)  │  22 expression types (union)
-│   (eval.zig:79-224) │  Patterns for destructuring
+│   AST (Expression)  │  Expression types (union)
+│    (ast.zig)        │  Patterns for destructuring
 └──────────┬──────────┘
            ↓
 ┌─────────────────────┐
 │   Evaluator         │  Tree-walking with environment
-│   (eval.zig:2170-   │  Pattern matching, comprehensions
-│    2551)            │  Thunk forcing for laziness
+│  (evaluator.zig)    │  Pattern matching, comprehensions
+│                     │  Thunk forcing for laziness
 └──────────┬──────────┘
            ↓
-      Value Result
+┌─────────────────────┐
+│      Value          │  Runtime values (union)
+│    (value.zig)      │  Integer, Float, String, Array, etc.
+└─────────────────────┘
 ```
 
 ### Core Data Structures
 
-#### 1. Token (eval.zig:5-78)
+#### 1. Token (ast.zig)
 ```zig
 const TokenKind = enum {
     // 38 token types: identifiers, literals, operators, delimiters
@@ -96,7 +100,7 @@ const Token = struct {
 };
 ```
 
-#### 2. Expression AST (eval.zig:79-224)
+#### 2. Expression AST (ast.zig)
 ```zig
 pub const Expression = union(enum) {
     // Literals
@@ -144,7 +148,7 @@ Key nested types:
 - `Let`: `{ identifier: []const u8, value: *Expression, body: *Expression }`
 - `Object`: `{ fields: []ObjectField }` where each field has `key: Expression`, `value: Expression`, `is_merge: bool`
 
-#### 3. Pattern (eval.zig:225-254)
+#### 3. Pattern (ast.zig)
 For destructuring in function params, let bindings, and when-matches:
 ```zig
 pub const Pattern = union(enum) {
@@ -159,7 +163,7 @@ pub const Pattern = union(enum) {
 };
 ```
 
-#### 4. Value (eval.zig:1851-1879)
+#### 4. Value (value.zig)
 Runtime values during evaluation:
 ```zig
 pub const Value = union(enum) {
@@ -184,7 +188,7 @@ const Function = struct {
 const NativeFn = *const fn (arena: Allocator, args: []const Value) EvalError!Value;
 ```
 
-#### 5. Environment (eval.zig:1837-1841)
+#### 5. Environment (value.zig)
 Linked-list scope chain for lexical scoping:
 ```zig
 pub const Environment = struct {
@@ -196,7 +200,7 @@ pub const Environment = struct {
 
 ### Module System
 
-**Location**: eval.zig:1904-1977
+**Location**: module_resolver.zig, evaluator.zig:createStdlibEnvironment
 
 **Import Resolution**:
 1. Check if path is absolute or relative (starts with `.` or `/`)
@@ -204,6 +208,23 @@ pub const Environment = struct {
 3. Default search path: `stdlib/lib`
 4. Append `.lazy` extension if not present
 5. Read file, parse, evaluate → the result is the module value
+
+**Auto-Imported Modules**:
+
+Certain stdlib modules are automatically imported and available without explicit `import` statements. These are defined in the `stdlib_modules` array in `evaluator.zig`:
+
+```zig
+const stdlib_modules = [_][]const u8{ "Array", "Basics", "Float", "Math", "Object", "Range", "String" };
+```
+
+**Special handling**:
+- **Basics module**: All exported fields are exposed as unqualified identifiers (e.g., `isInteger`, `isFloat` are available directly, not just as `Basics.isInteger`)
+- **Other modules**: Available by module name (e.g., `Array.map`, `String.split`, `Range.toArray`)
+
+**To add a new auto-imported module**:
+1. Create the module file in `stdlib/lib/ModuleName.lazy`
+2. Add the module name to the `stdlib_modules` array in `evaluator.zig`
+3. Rebuild and test
 
 **No caching**: Each import re-evaluates the file (simple but inefficient)
 
@@ -234,15 +255,22 @@ pub const Environment = struct {
 lazylang/
 ├── src/
 │   ├── main.zig                   # CLI entry point
-│   ├── cli.zig                    # Command dispatcher (661 lines)
+│   ├── cli.zig                    # Command dispatcher
 │   ├── cli_error_reporting.zig    # CLI error formatting
 │   │
-│   ├── eval.zig                   # ⭐ Core evaluator (4939 lines, re-exports modules)
-│   ├── ast.zig                    # AST type definitions
-│   ├── tokenizer.zig              # Lexical analysis
+│   ├── eval.zig                   # ⭐ Re-export layer (~350 lines)
+│   ├── ast.zig                    # AST and token type definitions (~500 lines)
+│   ├── tokenizer.zig              # Lexical analysis (~650 lines)
+│   ├── parser.zig                 # Recursive descent parser (~1600 lines)
+│   ├── evaluator.zig              # Expression evaluation (~2500 lines)
+│   ├── value.zig                  # Runtime value types (~160 lines)
+│   ├── value_format.zig           # Value formatting (~800 lines)
+│   ├── module_resolver.zig        # Module path resolution (~120 lines)
+│   ├── builtin_env.zig            # Builtin environment setup (~130 lines)
 │   │
-│   ├── builtins.zig               # Native function implementations
+│   ├── builtins.zig               # Native function implementations (~600 lines)
 │   ├── spec.zig                   # Test framework (runs *Spec.lazy files)
+│   ├── docs.zig                   # Documentation generation (~500 lines)
 │   ├── error_context.zig          # Error location tracking
 │   ├── error_reporter.zig         # Pretty error formatting
 │   ├── formatter.zig              # Code formatter
@@ -272,26 +300,31 @@ lazylang/
 
 ### Key Files Deep Dive
 
-#### eval.zig (~4900 lines) - THE CORE
+#### eval.zig (~350 lines) - RE-EXPORT LAYER
 
-**Architecture**: eval.zig now serves as a re-export layer for modularized components while maintaining backward compatibility.
+**Architecture**: eval.zig is now a thin re-export layer that provides backward compatibility while the interpreter is fully modularized.
 
-**Structure** (after partial refactoring):
-- Imports and re-exports AST types from ast.zig
-- Imports and re-exports Tokenizer from tokenizer.zig
-- Contains Parser implementation (~1600 lines)
-- Contains evaluateExpression and evaluation logic (~1400 lines)
-- Contains Value types and Environment (~200 lines)
-- Contains module import system (~200 lines)
-- Contains value formatting (~800 lines)
-- Contains builtin environment setup (~100 lines)
+**Current structure**:
+- Re-exports AST types from ast.zig
+- Re-exports Tokenizer from tokenizer.zig
+- Re-exports Parser from parser.zig
+- Re-exports evaluator functions from evaluator.zig
+- Re-exports Value types from value.zig
+- Re-exports module resolver from module_resolver.zig
+- Re-exports value formatting from value_format.zig
 
-**Extracted modules**:
-- **ast.zig**: All AST and token type definitions
-- **tokenizer.zig**: Complete lexical analysis implementation
-- See REFACTORING.md for extraction details and remaining work
+**The refactoring is complete**. The monolithic eval.zig has been split into focused modules:
 
-**Why still large?**: The refactoring is ongoing. Parser, evaluator, and value formatting are candidates for further extraction.
+#### Core Modules
+
+- **ast.zig** (~500 lines): All AST and token type definitions
+- **tokenizer.zig** (~650 lines): Complete lexical analysis implementation
+- **parser.zig** (~1600 lines): Recursive descent parser with operator precedence climbing
+- **evaluator.zig** (~2500 lines): Expression evaluation, pattern matching, comprehensions, module imports
+- **value.zig** (~160 lines): Runtime value types (Value union, Environment, Thunk, FunctionValue, etc.)
+- **value_format.zig** (~800 lines): Value formatting for JSON, YAML, pretty-print, short format
+- **module_resolver.zig** (~120 lines): Module path resolution and file loading
+- **builtin_env.zig** (~130 lines): Builtin environment setup (registers all native functions)
 
 #### builtins.zig (~600 lines)
 
@@ -300,7 +333,7 @@ lazylang/
 - Each follows signature: `fn(arena: Allocator, args: []const Value) EvalError!Value`
 - Categories: Array (5), String (9), Math (10), Object (3), Error handling (1)
 
-**Integration**: Registered in `createBuiltinEnvironment` (eval.zig:2696). Most have `__` prefix, except for `crash` which is directly exposed.
+**Integration**: Registered in `createBuiltinEnvironment` (builtin_env.zig). Most have `__` prefix, except for `crash` which is directly exposed.
 
 **Notable builtins**:
 - `crash`: Takes a string message and causes a runtime error with that message. Uses thread-local storage to preserve the message across arena deallocation.
@@ -319,6 +352,20 @@ lazylang/
 { type: "describe", description: "...", children: [...] }
 { type: "it", description: "...", test: value_or_assertion }
 ```
+
+#### docs.zig (~500 lines)
+
+**Purpose**: Documentation generation from doc comments in stdlib files
+
+**Key functions**:
+- `extractModuleDocs`: Parse `///` doc comments from .lazy files
+- `renderMarkdownToHtml`: Convert markdown to HTML with syntax highlighting
+- `renderInlineMarkdown`: Handle inline markdown (backticks, bold, links)
+
+**Important notes**:
+- The markdown parser needs to gracefully handle unclosed markers (`, [, **) by resetting the index when no closing marker is found
+- When adding new inline markdown features, ensure the parser doesn't go out of bounds at the end of text
+- Doc comments use standard markdown with code blocks (```) and inline code (`)
 
 ---
 
@@ -766,17 +813,48 @@ describe "Array" [
 
 ### Common Pitfalls
 
-1. **Arena allocation**: Never store pointers outside arena lifetime. All Expression/Pattern/Value pointers must be arena-allocated.
+1. **Do block scoping limitation**: `do` blocks are converted to lambda bodies, which means they can have multiple `let` bindings but only ONE final expression. Variables defined in a do block can't be used inside nested function calls within the same expression.
 
-2. **Token lookahead**: Parser has 2-token lookahead. Use `peek(0)` for next, `peek(1)` for next+1.
+   **Does NOT work**:
+   ```
+   it "test" do
+     arr = [1, 2, 3]
+     mustEq 100 (Array.length arr)
+     mustEq (#ok, 1) (Array.get 0 arr)  // Error: arr not defined
+   ```
 
-3. **Newline handling**: Newlines are significant for indentation but ignored in some contexts (inside parentheses). Check `newlines_before` on tokens.
+   **Workaround 1 - Separate test blocks**:
+   ```
+   it "test length" do
+     arr = [1, 2, 3]
+     mustEq 100 (Array.length arr)
 
-4. **Environment chaining**: Always create new Environment nodes, never mutate existing ones (immutable scope chain).
+   it "test first element" do
+     arr = [1, 2, 3]
+     mustEq (#ok, 1) (Array.get 0 arr)
+   ```
 
-5. **Pattern matching null return**: `matchPattern` returns `null` if pattern doesn't match. Don't forget to handle this case.
+   **Workaround 2 - Extract to intermediate variables**:
+   ```
+   it "test" do
+     arr = [1, 2, 3]
+     len = Array.length arr
+     first = Array.get 0 arr
+     mustEq 100 len
+     mustEq (#ok, 1) first
+   ```
 
-6. **String slicing**: Token lexemes are slices into source. Don't mutate source after tokenization.
+2. **Arena allocation**: Never store pointers outside arena lifetime. All Expression/Pattern/Value pointers must be arena-allocated.
+
+3. **Token lookahead**: Parser has 2-token lookahead. Use `peek(0)` for next, `peek(1)` for next+1.
+
+4. **Newline handling**: Newlines are significant for indentation but ignored in some contexts (inside parentheses). Check `newlines_before` on tokens.
+
+5. **Environment chaining**: Always create new Environment nodes, never mutate existing ones (immutable scope chain).
+
+6. **Pattern matching null return**: `matchPattern` returns `null` if pattern doesn't match. Don't forget to handle this case.
+
+7. **String slicing**: Token lexemes are slices into source. Don't mutate source after tokenization.
 
 ### Useful Commands
 
@@ -834,7 +912,7 @@ If you see an error without location info:
 
 **Implementation details**:
 
-1. **Thunk type** (eval.zig:1869-1881):
+1. **Thunk type** (value.zig):
    ```zig
    pub const ThunkState = union(enum) {
        unevaluated,
@@ -856,7 +934,7 @@ If you see an error without location info:
    };
    ```
 
-2. **Object construction** (eval.zig:2495-2511): When creating objects, field values are wrapped in thunks instead of being eagerly evaluated:
+2. **Object construction** (evaluator.zig): When creating objects, field values are wrapped in thunks instead of being eagerly evaluated:
    ```zig
    .object => |object| blk: {
        const fields = try arena.alloc(ObjectFieldValue, object.fields.len);
@@ -876,7 +954,7 @@ If you see an error without location info:
    }
    ```
 
-3. **Force function** (eval.zig:2205-2221): Evaluates thunks on demand with cycle detection:
+3. **Force function** (evaluator.zig): Evaluates thunks on demand with cycle detection:
    ```zig
    pub fn force(arena: std.mem.Allocator, value: Value) EvalError!Value {
        return switch (value) {
@@ -898,11 +976,11 @@ If you see an error without location info:
    ```
 
 4. **Forcing locations**: Thunks are forced at:
-   - Field access (eval.zig:2644-2660)
-   - Pattern matching for object destructuring (eval.zig:2142)
-   - Object comprehensions when iterating over objects (eval.zig:2759)
-   - Object patching when merging nested objects (eval.zig:2553)
-   - Value formatting/printing (eval.zig:2879-2883)
+   - Field access (evaluator.zig)
+   - Pattern matching for object destructuring (evaluator.zig)
+   - Object comprehensions when iterating over objects (evaluator.zig)
+   - Object patching when merging nested objects (evaluator.zig)
+   - Value formatting/printing (value_format.zig)
 
 **Benefits**:
 - Allows recursive object definitions
@@ -952,9 +1030,18 @@ Don't optimize prematurely. Profile first.
 
 | File | Purpose | Modify When |
 |------|---------|------------|
-| eval.zig | Core interpreter | Adding syntax, operators, evaluation logic |
+| eval.zig | Re-export layer | Never (use specific modules below) |
+| ast.zig | AST and token definitions | Adding new syntax constructs |
+| tokenizer.zig | Lexical analysis | Adding new tokens or keywords |
+| parser.zig | Parsing | Adding new syntax or operators |
+| evaluator.zig | Expression evaluation | Adding evaluation logic, comprehensions |
+| value.zig | Runtime value types | Adding new value types |
+| value_format.zig | Value formatting | Changing JSON/YAML/pretty-print output |
+| module_resolver.zig | Module loading | Changing module search paths |
+| builtin_env.zig | Builtin registration | Adding auto-imported modules |
 | builtins.zig | Native functions | Adding builtin functions |
 | spec.zig | Test framework | Modifying test runner behavior |
+| docs.zig | Documentation generation | Changing doc comment parsing or HTML output |
 | error_context.zig | Error tracking | Changing error location tracking |
 | error_reporter.zig | Error formatting | Changing error display |
 | cli.zig | Command parsing | Adding CLI commands |
