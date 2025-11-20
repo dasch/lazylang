@@ -41,6 +41,12 @@ fn writeCommonCss(file: anytype, sidebar_width: []const u8) !void {
         \\    .sidebar a { display: block; padding: 12px 20px; color: #ecf0f1; text-decoration: none; transition: background 0.2s; }
         \\    .sidebar a:hover { background: #34495e; }
         \\    .sidebar a.active { background: #3498db; font-weight: 600; }
+        \\    .sidebar .module-link { font-weight: 500; }
+        \\    .sidebar .nested { list-style: none; }
+        \\    .sidebar .nested li { border-bottom: none; }
+        \\    .sidebar .nested a { padding: 8px 20px 8px 35px; font-size: 0.9em; color: #bdc3c7; }
+        \\    .sidebar .nested a:hover { background: #3d5469; color: #ecf0f1; }
+        \\    .sidebar .nested a.active { background: #2c3e50; color: #3498db; border-left: 3px solid #3498db; padding-left: 32px; }
         \\    .main { margin-left:
     );
     try file.writeAll(sidebar_width);
@@ -737,14 +743,8 @@ pub fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocI
 
     try writeCommonCss(file, "280px");
 
-    // Module-specific CSS
+    // Module-specific CSS (sidebar styles are now in common CSS)
     try file.writeAll(
-        \\    .sidebar .module-link { font-weight: 500; }
-        \\    .sidebar .nested { list-style: none; }
-        \\    .sidebar .nested li { border-bottom: none; }
-        \\    .sidebar .nested a { padding: 8px 20px 8px 35px; font-size: 0.9em; color: #bdc3c7; }
-        \\    .sidebar .nested a:hover { background: #3d5469; color: #ecf0f1; }
-        \\    .sidebar .nested a.active { background: #2c3e50; color: #3498db; border-left: 3px solid #3498db; padding-left: 32px; }
         \\    .doc-item { margin-bottom: 30px; padding-bottom: 20px; border-bottom: 1px solid #e0e0e0; }
         \\    .doc-item:last-child { border-bottom: none; }
         \\    .doc-item h2 { color: #333; margin-bottom: 10px; font-size: 1.2em; font-weight: 500; }
