@@ -26,7 +26,7 @@ fn writeCommonCss(file: anytype, sidebar_width: []const u8) !void {
     try file.writeAll("    .sidebar { width: ");
     try file.writeAll(sidebar_width);
     try file.writeAll(
-        \\; background: #2c3e50; color: white; min-height: 100vh; position: fixed; top: 0; left: 0; overflow-y: auto; }
+        \\; background: #2c3e50; color: white; height: 100vh; position: fixed; top: 0; left: 0; overflow-y: auto; }
         \\    .sidebar-search { padding: 15px; border-bottom: 1px solid #34495e; }
         \\    .sidebar-search input { width: 100%; padding: 10px 12px; font-size: 14px; border: 1px solid #34495e; border-radius: 4px; background: #34495e; color: white; }
         \\    .sidebar-search input::placeholder { color: #95a5a6; }
