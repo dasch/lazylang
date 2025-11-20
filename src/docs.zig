@@ -59,6 +59,67 @@ fn writeHtmlFooter(file: anytype) !void {
     try file.writeAll("</html>\n");
 }
 
+// Helper function to write the sidebar HTML (used by both index and module pages)
+fn writeSidebar(file: anytype, modules: []const ModuleInfo, current_module: ?[]const u8, current_module_items: ?[]const DocItem) !void {
+    try file.writeAll("  <div class=\"sidebar\">\n");
+
+    // Search box at the top
+    try file.writeAll("    <div class=\"sidebar-search\">\n");
+    try file.writeAll("      <input type=\"text\" id=\"sidebar-search\" placeholder=\"Search (Cmd+K)...\" />\n");
+    try file.writeAll("    </div>\n");
+
+    // Scrollable content wrapper
+    try file.writeAll("    <div class=\"sidebar-content\">\n");
+
+    // README link
+    try file.writeAll("    <ul class=\"sidebar-nav\">\n");
+    try file.writeAll("      <li><a href=\"index.html\" class=\"readme-link\">README</a></li>\n");
+    try file.writeAll("    </ul>\n");
+
+    // Modules section
+    try file.writeAll("    <h2>Modules</h2>\n");
+    try file.writeAll("    <ul>\n");
+
+    // List all modules
+    for (modules) |module| {
+        const is_current = if (current_module) |curr| std.mem.eql(u8, module.name, curr) else false;
+
+        try file.writeAll("      <li>\n");
+        try file.writeAll("        <a href=\"");
+        try file.writeAll(module.name);
+        try file.writeAll(".html\" class=\"module-link");
+        if (is_current) {
+            try file.writeAll(" active");
+        }
+        try file.writeAll("\">");
+        try file.writeAll(module.name);
+        try file.writeAll("</a>\n");
+
+        // If this is the current module and we have items, show nested list
+        if (is_current and current_module_items != null) {
+            try file.writeAll("        <ul class=\"nested\">\n");
+            for (current_module_items.?) |item| {
+                try file.writeAll("          <li><a href=\"#");
+                try file.writeAll(item.name);
+                try file.writeAll("\" data-module=\"");
+                try file.writeAll(module.name);
+                try file.writeAll("\" data-item=\"");
+                try file.writeAll(item.name);
+                try file.writeAll("\">");
+                try file.writeAll(item.name);
+                try file.writeAll("</a></li>\n");
+            }
+            try file.writeAll("        </ul>\n");
+        }
+
+        try file.writeAll("      </li>\n");
+    }
+
+    try file.writeAll("    </ul>\n");
+    try file.writeAll("    </div>\n"); // Close sidebar-content
+    try file.writeAll("  </div>\n"); // Close sidebar
+}
+
 pub const DocItem = struct {
     name: []const u8,
     signature: []const u8, // Full signature like "min: a -> b ->"
@@ -513,27 +574,8 @@ pub fn writeIndexHtmlContent(allocator: std.mem.Allocator, file: anytype, module
     try file.writeAll("</head>\n");
     try file.writeAll("<body>\n");
 
-    // Sidebar with module list
-    try file.writeAll("  <div class=\"sidebar\">\n");
-    try file.writeAll("    <div class=\"sidebar-search\">\n");
-    try file.writeAll("      <input type=\"text\" id=\"sidebar-search\" placeholder=\"Search modules...\" />\n");
-    try file.writeAll("    </div>\n");
-    try file.writeAll("    <div class=\"sidebar-content\">\n");
-    try file.writeAll("    <ul class=\"sidebar-nav\">\n");
-    try file.writeAll("      <li><a href=\"index.html\" class=\"readme-link\">README</a></li>\n");
-    try file.writeAll("    </ul>\n");
-    try file.writeAll("    <h2>Modules</h2>\n");
-    try file.writeAll("    <ul>\n");
-    for (modules) |module| {
-        try file.writeAll("      <li><a href=\"");
-        try file.writeAll(module.name);
-        try file.writeAll(".html\" class=\"module-link\">");
-        try file.writeAll(module.name);
-        try file.writeAll("</a></li>\n");
-    }
-    try file.writeAll("    </ul>\n");
-    try file.writeAll("    </div>\n"); // Close sidebar-content
-    try file.writeAll("  </div>\n"); // Close sidebar
+    // Sidebar (shared between index and module pages)
+    try writeSidebar(file, modules, null, null);
 
     // Main content
     try file.writeAll("  <div class=\"main\">\n");
@@ -659,64 +701,8 @@ pub fn writeHtmlDocs(file: anytype, module_name: []const u8, items: []const DocI
     try file.writeAll("</head>\n");
     try file.writeAll("<body>\n");
 
-    // Sidebar
-    try file.writeAll("  <div class=\"sidebar\">\n");
-
-    // Search box at the top
-    try file.writeAll("    <div class=\"sidebar-search\">\n");
-    try file.writeAll("      <input type=\"text\" id=\"sidebar-search\" placeholder=\"Search (Cmd+K)...\" />\n");
-    try file.writeAll("    </div>\n");
-
-    // Scrollable content wrapper
-    try file.writeAll("    <div class=\"sidebar-content\">\n");
-
-    // README link
-    try file.writeAll("    <ul class=\"sidebar-nav\">\n");
-    try file.writeAll("      <li><a href=\"index.html\" class=\"readme-link\">README</a></li>\n");
-    try file.writeAll("    </ul>\n");
-
-    // Modules section
-    try file.writeAll("    <h2>Modules</h2>\n");
-    try file.writeAll("    <ul>\n");
-
-    // List all modules
-    for (modules) |module| {
-        const is_current = std.mem.eql(u8, module.name, module_name);
-
-        try file.writeAll("      <li>\n");
-        try file.writeAll("        <a href=\"");
-        try file.writeAll(module.name);
-        try file.writeAll(".html\" class=\"module-link");
-        if (is_current) {
-            try file.writeAll(" active");
-        }
-        try file.writeAll("\">");
-        try file.writeAll(module.name);
-        try file.writeAll("</a>\n");
-
-        // If this is the current module, show its items
-        if (is_current) {
-            try file.writeAll("        <ul class=\"nested\">\n");
-            for (items) |item| {
-                try file.writeAll("          <li><a href=\"#");
-                try file.writeAll(item.name);
-                try file.writeAll("\" data-module=\"");
-                try file.writeAll(module_name);
-                try file.writeAll("\" data-item=\"");
-                try file.writeAll(item.name);
-                try file.writeAll("\">");
-                try file.writeAll(item.name);
-                try file.writeAll("</a></li>\n");
-            }
-            try file.writeAll("        </ul>\n");
-        }
-
-        try file.writeAll("      </li>\n");
-    }
-
-    try file.writeAll("    </ul>\n");
-    try file.writeAll("    </div>\n"); // Close sidebar-content
-    try file.writeAll("  </div>\n"); // Close sidebar
+    // Sidebar (shared between index and module pages)
+    try writeSidebar(file, modules, module_name, items);
 
     // Main content
     try file.writeAll("  <div class=\"main\">\n");
