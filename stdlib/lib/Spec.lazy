@@ -34,7 +34,6 @@
 ///
 /// Tests pass automatically if they don't throw errors. Use [pass] and [fail]
 /// for explicit control.
-/// ---
 {
   /// Explicitly marks a test as passing.
   /// Useful for tests that verify side effects or when you want to document expected behavior.

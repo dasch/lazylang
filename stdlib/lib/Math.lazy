@@ -18,7 +18,6 @@
 /// // Round numbers
 /// Math.round 3  // Returns 3
 /// ```
-/// ---
 {
   /// Returns the maximum of two numbers.
   ///

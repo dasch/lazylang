@@ -19,7 +19,6 @@
 /// // Error handling
 /// crash "Something went wrong!"
 /// ```
-/// ---
 {
   /// Checks if a value is an integer.
   ///

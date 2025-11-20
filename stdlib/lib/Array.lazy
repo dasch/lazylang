@@ -17,7 +17,6 @@
 /// // Reduce to a single value
 /// Array.fold (acc -> x -> acc + x) 0 [1, 2, 3]  // Returns 6
 /// ```
-/// ---
 {
   /// Returns the number of elements in an array.
   ///

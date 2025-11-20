@@ -17,7 +17,6 @@
 /// // Modulo operation
 /// Float.mod 10.5 3.0  // Returns 1.5
 /// ```
-/// ---
 {
   /// Rounds a number to the nearest integer.
   ///
