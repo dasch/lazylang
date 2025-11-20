@@ -557,7 +557,7 @@ pub fn renderMarkdownToHtml(allocator: std.mem.Allocator, markdown: []const u8) 
 
 pub fn writeIndexHtmlContent(allocator: std.mem.Allocator, file: anytype, modules: []const ModuleInfo, readme_content: ?[]const u8) !void {
     try writeHtmlHeader(file, "Documentation");
-    try writeCommonCss(file, "250px");
+    try writeCommonCss(file, "280px");
 
     // Index-specific CSS
     try file.writeAll(
