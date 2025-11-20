@@ -1,4 +1,8 @@
 // error: Type mismatch
+//   --> tests/fixtures/errors/type_mismatch_add.lazy:11:14
+//    |
+// 11 | result = 5 + "hello"
+//    |              ^----
 //
 // Expected `integer` for addition, but found `string`.
 //

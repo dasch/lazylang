@@ -191,7 +191,7 @@ fn evalSourceWithFormat(
 
     const lazy_paths = try collectLazyPaths(arena.allocator());
     var err_ctx = error_context.ErrorContext.init(allocator);
-    errdefer err_ctx.deinit();
+    // NOTE: No errdefer for err_ctx because we return it to the caller who will deinit it
     err_ctx.setSource(source);
 
     // Set current file if provided
@@ -224,7 +224,33 @@ fn evalSourceWithFormat(
         };
     };
 
-    const env = try createStdlibEnvironment(arena.allocator(), current_dir, &context);
+    const env = createStdlibEnvironment(arena.allocator(), current_dir, &context) catch |err| {
+        // If stdlib import fails, clean up and return error
+        arena.deinit();
+        return EvalResult{
+            .output = null,
+            .error_ctx = err_ctx,
+            .err = err,
+        };
+    };
+
+    // CRITICAL: Restore current_file to the main file before evaluating the main expression
+    // This ensures any errors in the main file show the correct filename, not a module filename
+    // Also clear any stale error state from imports
+    if (filename) |fname| {
+        err_ctx.setCurrentFile(fname);
+        // Clear all error state to ensure fresh error reporting for main file
+        if (err_ctx.source_filename_owned and err_ctx.source_filename.len > 0) {
+            allocator.free(err_ctx.source_filename);
+        }
+        err_ctx.source_filename = "";
+        err_ctx.source_filename_owned = false;
+        err_ctx.last_error_location = null;
+        err_ctx.last_error_secondary_location = null;
+        err_ctx.last_error_location_label = null;
+        err_ctx.last_error_secondary_label = null;
+    }
+
     const value = evaluateExpression(arena.allocator(), expression, env, current_dir, &context) catch |err| {
         arena.deinit();
         return EvalResult{

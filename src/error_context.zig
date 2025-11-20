@@ -88,6 +88,8 @@ pub const ErrorContext = struct {
     last_error_data: ErrorData = .none,
     source: []const u8 = "",
     source_filename: []const u8 = "",
+    /// Whether source_filename is an owned copy that needs to be freed
+    source_filename_owned: bool = false,
     /// Maps filename -> source content for all files involved (main + imports)
     source_map: std.StringHashMap([]const u8),
     /// The currently active file being parsed/evaluated
@@ -124,6 +126,11 @@ pub const ErrorContext = struct {
         // Free current_file if it's an owned copy
         if (self.current_file_owned and self.current_file.len > 0) {
             self.allocator.free(self.current_file);
+        }
+
+        // Free source_filename if it's an owned copy
+        if (self.source_filename_owned and self.source_filename.len > 0) {
+            self.allocator.free(self.source_filename);
         }
 
         // Free error token lexeme
@@ -177,7 +184,7 @@ pub const ErrorContext = struct {
     }
 
     /// Set the currently active file being parsed/evaluated
-    /// Makes a copy since the filename may be freed
+    /// Always makes an owned copy to avoid dangling pointers if HashMap reallocates
     pub fn setCurrentFile(self: *ErrorContext, filename: []const u8) void {
         // Free previous owned copy if any
         if (self.current_file_owned and self.current_file.len > 0) {
@@ -185,21 +192,8 @@ pub const ErrorContext = struct {
             self.current_file_owned = false;
         }
 
-        // The current_file should point to a key in our source_map which we own
-        // So we don't need to copy it separately - just reference the map key
-        if (self.source_map.get(filename)) |_| {
-            // Find the key in the map (which is owned) and use that
-            var it = self.source_map.iterator();
-            while (it.next()) |entry| {
-                if (std.mem.eql(u8, entry.key_ptr.*, filename)) {
-                    self.current_file = entry.key_ptr.*;
-                    self.current_file_owned = false;
-                    return;
-                }
-            }
-        }
-        // If not in map yet, make a temporary copy
-        // This will be overwritten when registerSource is called on error
+        // Always make an owned copy, even if the filename is in the source_map
+        // This is necessary because HashMap can reallocate and invalidate key pointers
         if (self.allocator.dupe(u8, filename)) |owned| {
             self.current_file = owned;
             self.current_file_owned = true;
@@ -216,8 +210,19 @@ pub const ErrorContext = struct {
             .offset = offset,
             .length = length,
         };
-        // Capture the current file when the error occurs
-        self.source_filename = self.current_file;
+        // Capture the current file when the error occurs - make a copy to avoid dangling pointer
+        if (self.source_filename_owned and self.source_filename.len > 0) {
+            self.allocator.free(self.source_filename);
+            self.source_filename_owned = false;
+        }
+        if (self.allocator.dupe(u8, self.current_file)) |owned| {
+            self.source_filename = owned;
+            self.source_filename_owned = true;
+        } else |_| {
+            // If allocation fails, just use the pointer (better than crashing)
+            self.source_filename = self.current_file;
+            self.source_filename_owned = false;
+        }
     }
 
     pub fn setErrorLocationWithLabels(
@@ -247,8 +252,19 @@ pub const ErrorContext = struct {
         };
         self.last_error_location_label = label;
         self.last_error_secondary_label = secondary_label;
-        // Capture the current file when the error occurs
-        self.source_filename = self.current_file;
+        // Capture the current file when the error occurs - make a copy to avoid dangling pointer
+        if (self.source_filename_owned and self.source_filename.len > 0) {
+            self.allocator.free(self.source_filename);
+            self.source_filename_owned = false;
+        }
+        if (self.allocator.dupe(u8, self.current_file)) |owned| {
+            self.source_filename = owned;
+            self.source_filename_owned = true;
+        } else |_| {
+            // If allocation fails, just use the pointer (better than crashing)
+            self.source_filename = self.current_file;
+            self.source_filename_owned = false;
+        }
     }
 
     pub fn setErrorToken(self: *ErrorContext, lexeme: []const u8) void {
@@ -316,6 +332,13 @@ pub const ErrorContext = struct {
         self.last_error_secondary_label = null;
         self.last_error_token_lexeme = null;
         self.last_error_data = .none;
+
+        // Clear source_filename if it's owned
+        if (self.source_filename_owned and self.source_filename.len > 0) {
+            self.allocator.free(self.source_filename);
+            self.source_filename = "";
+            self.source_filename_owned = false;
+        }
 
         // Clear stack trace
         if (self.stack_trace) |trace| {

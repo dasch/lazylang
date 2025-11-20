@@ -1034,6 +1034,7 @@ pub fn evaluateExpression(
                                         .divide => "division",
                                         else => unreachable,
                                     };
+                                    err_ctx.setErrorLocation(binary.left.location.line, binary.left.location.column, binary.left.location.offset, binary.left.location.length);
                                     err_ctx.setErrorData(.{ .type_mismatch = .{
                                         .expected = "number (integer or float)",
                                         .found = getValueTypeName(left_value),
@@ -1055,6 +1056,7 @@ pub fn evaluateExpression(
                                         .divide => "division",
                                         else => unreachable,
                                     };
+                                    err_ctx.setErrorLocation(binary.right.location.line, binary.right.location.column, binary.right.location.offset, binary.right.location.length);
                                     err_ctx.setErrorData(.{ .type_mismatch = .{
                                         .expected = "number (integer or float)",
                                         .found = getValueTypeName(right_value),
@@ -1095,6 +1097,7 @@ pub fn evaluateExpression(
                                         .divide => "division",
                                         else => unreachable,
                                     };
+                                    err_ctx.setErrorLocation(binary.left.location.line, binary.left.location.column, binary.left.location.offset, binary.left.location.length);
                                     err_ctx.setErrorData(.{ .type_mismatch = .{
                                         .expected = "integer",
                                         .found = getValueTypeName(left_value),
@@ -1115,6 +1118,7 @@ pub fn evaluateExpression(
                                         .divide => "division",
                                         else => unreachable,
                                     };
+                                    err_ctx.setErrorLocation(binary.right.location.line, binary.right.location.column, binary.right.location.offset, binary.right.location.length);
                                     err_ctx.setErrorData(.{ .type_mismatch = .{
                                         .expected = "integer",
                                         .found = getValueTypeName(right_value),
@@ -1817,10 +1821,7 @@ pub fn evaluateExpression(
             break :blk Value{ .object = .{ .fields = try result_fields.toOwnedSlice(arena), .module_doc = null } };
         },
         .import_expr => |import_expr| blk: {
-            // Set error location to the module path string
-            if (ctx.error_ctx) |err_ctx| {
-                err_ctx.setErrorLocation(import_expr.path_location.line, import_expr.path_location.column, import_expr.path_location.offset, import_expr.path_location.length);
-            }
+            // Import the module - error location will be set inside importModule if it fails
             break :blk try importModule(arena, import_expr.path, current_dir, ctx);
         },
         .field_access => |field_access| blk: {
@@ -2185,7 +2186,14 @@ fn importModule(
     const contents = try module_file.file.readToEndAlloc(arena, std.math.maxInt(usize));
 
     // Save the current file so we can restore it after import
-    const saved_file = if (ctx.error_ctx) |err_ctx| err_ctx.current_file else "";
+    // Make an owned copy since setCurrentFile will free the old current_file
+    var saved_file: ?[]const u8 = null;
+    if (ctx.error_ctx) |err_ctx| {
+        if (err_ctx.current_file.len > 0) {
+            saved_file = try ctx.allocator.dupe(u8, err_ctx.current_file);
+        }
+    }
+    defer if (saved_file) |file| ctx.allocator.free(file);
 
     var parser = try Parser.init(arena, contents);
     if (ctx.error_ctx) |err_ctx| {
@@ -2196,6 +2204,29 @@ fn importModule(
         // Only register source on parse error
         if (ctx.error_ctx) |err_ctx| {
             err_ctx.registerSource(module_file.path, contents) catch {};
+            // Restore the previous file - important to update BOTH current_file and source_filename
+            // because source_filename may have been set during error reporting
+            if (saved_file) |file| {
+                err_ctx.setCurrentFile(file);
+                // Also restore source_filename if it was set to the module file
+                if (err_ctx.source_filename_owned and err_ctx.source_filename.len > 0) {
+                    err_ctx.allocator.free(err_ctx.source_filename);
+                }
+                if (err_ctx.allocator.dupe(u8, file)) |owned| {
+                    err_ctx.source_filename = owned;
+                    err_ctx.source_filename_owned = true;
+                } else |_| {
+                    err_ctx.source_filename = file;
+                    err_ctx.source_filename_owned = false;
+                }
+            } else {
+                err_ctx.setCurrentFile("");
+                if (err_ctx.source_filename_owned and err_ctx.source_filename.len > 0) {
+                    err_ctx.allocator.free(err_ctx.source_filename);
+                }
+                err_ctx.source_filename = "";
+                err_ctx.source_filename_owned = false;
+            }
         }
         return err;
     };
@@ -2206,13 +2237,39 @@ fn importModule(
         // Only register source on evaluation error
         if (ctx.error_ctx) |err_ctx| {
             err_ctx.registerSource(module_file.path, contents) catch {};
+            // Restore the previous file - important to update BOTH current_file and source_filename
+            if (saved_file) |file| {
+                err_ctx.setCurrentFile(file);
+                // Also restore source_filename if it was set to the module file
+                if (err_ctx.source_filename_owned and err_ctx.source_filename.len > 0) {
+                    err_ctx.allocator.free(err_ctx.source_filename);
+                }
+                if (err_ctx.allocator.dupe(u8, file)) |owned| {
+                    err_ctx.source_filename = owned;
+                    err_ctx.source_filename_owned = true;
+                } else |_| {
+                    err_ctx.source_filename = file;
+                    err_ctx.source_filename_owned = false;
+                }
+            } else {
+                err_ctx.setCurrentFile("");
+                if (err_ctx.source_filename_owned and err_ctx.source_filename.len > 0) {
+                    err_ctx.allocator.free(err_ctx.source_filename);
+                }
+                err_ctx.source_filename = "";
+                err_ctx.source_filename_owned = false;
+            }
         }
         return err;
     };
 
     // Restore the previous file
     if (ctx.error_ctx) |err_ctx| {
-        err_ctx.setCurrentFile(saved_file);
+        if (saved_file) |file| {
+            err_ctx.setCurrentFile(file);
+        } else {
+            err_ctx.setCurrentFile("");
+        }
     }
 
     return result;
