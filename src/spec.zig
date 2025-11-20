@@ -74,6 +74,65 @@ fn formatDescription(allocator: std.mem.Allocator, text: []const u8) ![]const u8
     return result.toOwnedSlice(allocator);
 }
 
+// Helper to find the line number of a test by searching for its description
+fn findLineForTest(allocator: std.mem.Allocator, file_path: []const u8, test_description: []const u8) ?usize {
+    const file = std.fs.cwd().openFile(file_path, .{}) catch return null;
+    defer file.close();
+
+    const content = file.readToEndAlloc(allocator, 1024 * 1024) catch return null;
+    defer allocator.free(content);
+
+    // Search for 'it "description"' or 'xit "description"'
+    var lines = std.mem.splitScalar(u8, content, '\n');
+    var line_number: usize = 1;
+
+    while (lines.next()) |line| : (line_number += 1) {
+        const trimmed = std.mem.trim(u8, line, " \t");
+
+        // Look for "it " or "xit " followed by the description in quotes
+        for ([_][]const u8{ "it \"", "xit \"" }) |prefix| {
+            if (std.mem.indexOf(u8, trimmed, prefix)) |start| {
+                // Find the description in quotes
+                const after_prefix = trimmed[start + prefix.len..];
+                if (std.mem.indexOfScalar(u8, after_prefix, '"')) |end| {
+                    const found_desc = after_prefix[0..end];
+                    if (std.mem.eql(u8, found_desc, test_description)) {
+                        return line_number;
+                    }
+                }
+            }
+        }
+    }
+
+    return null;
+}
+
+// Helper to record a failed spec for the summary
+fn recordFailedSpec(ctx: anytype, test_description: []const u8) !void {
+    // Build the describe path from the stack
+    var describe_path = std.ArrayList(u8){};
+    defer describe_path.deinit(ctx.allocator);
+
+    for (ctx.current_describe_stack.items, 0..) |desc, i| {
+        if (i > 0) {
+            try describe_path.appendSlice(ctx.allocator, " / ");
+        }
+        try describe_path.appendSlice(ctx.allocator, desc);
+    }
+
+    // Try to find the line number
+    const line_number = findLineForTest(ctx.allocator, ctx.current_file_path, test_description);
+
+    const failed_spec = FailedSpec{
+        .file_path = try ctx.allocator.dupe(u8, ctx.current_file_path),
+        .line_number = line_number,
+        .describe_path = try describe_path.toOwnedSlice(ctx.allocator),
+        .test_description = try ctx.allocator.dupe(u8, test_description),
+    };
+
+    try ctx.failed_specs.append(ctx.allocator, failed_spec);
+}
+
 pub const SpecResult = struct {
     passed: usize,
     failed: usize,
@@ -152,6 +211,13 @@ pub fn findTestAtLine(allocator: std.mem.Allocator, file_path: []const u8, targe
     return null;
 }
 
+const FailedSpec = struct {
+    file_path: []const u8,
+    line_number: ?usize,
+    describe_path: []const u8,
+    test_description: []const u8,
+};
+
 fn RunContext(comptime WriterType: type) type {
     return struct {
         allocator: std.mem.Allocator,
@@ -164,6 +230,8 @@ fn RunContext(comptime WriterType: type) type {
         filter: ?SpecFilter,
         current_describe_stack: std.ArrayList([]const u8),
         verbose: bool,
+        failed_specs: std.ArrayList(FailedSpec),
+        current_file_path: []const u8,
 
         fn writeIndent(self: *@This()) !void {
             for (0..self.indent) |_| {
@@ -410,6 +478,7 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
         const formatted_desc = try formatDescription(ctx.allocator, description.?);
         defer ctx.allocator.free(formatted_desc);
         try ctx.writer.print("{s}✗ {s}: missing test{s}\n", .{ Color.red, formatted_desc, Color.reset });
+        try recordFailedSpec(ctx, description.?);
         ctx.failed += 1;
         return;
     }
@@ -465,6 +534,9 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
         const formatted_desc = try formatDescription(ctx.allocator, description.?);
         defer ctx.allocator.free(formatted_desc);
         try ctx.writer.print("{s}✗ {s}{s}\n", .{ Color.red, formatted_desc, Color.reset });
+
+        // Record the failed spec
+        try recordFailedSpec(ctx, description.?);
 
         // Handle fail details (can be a string or an object with structured info)
         if (fail_details) |details| {
@@ -556,6 +628,46 @@ pub fn runSpec(
     file_path: []const u8,
     line_number: ?usize,
     verbose: bool,
+    writer: anytype,
+) !SpecResult {
+    var failed_specs = std.ArrayList(FailedSpec){};
+    defer {
+        for (failed_specs.items) |failed_spec| {
+            allocator.free(failed_spec.file_path);
+            allocator.free(failed_spec.describe_path);
+            allocator.free(failed_spec.test_description);
+        }
+        failed_specs.deinit(allocator);
+    }
+
+    const result = try runSpecWithFailedSpecs(allocator, file_path, line_number, verbose, &failed_specs, writer);
+
+    // Print failed specs list if there are failures
+    if (result.failed > 0 and failed_specs.items.len > 0) {
+        try writer.writeAll("\n");
+        try writer.print("{s}Failed specs:{s}\n", .{ Color.red, Color.reset });
+        for (failed_specs.items) |failed_spec| {
+            try writer.print("- {s}", .{failed_spec.file_path});
+            if (failed_spec.line_number) |line| {
+                try writer.print(":{d}", .{line});
+            }
+            try writer.print(" {s}#{s} ", .{ Color.dim, Color.reset });
+            if (failed_spec.describe_path.len > 0) {
+                try writer.print("{s} / ", .{failed_spec.describe_path});
+            }
+            try writer.print("{s}\n", .{failed_spec.test_description});
+        }
+    }
+
+    return result;
+}
+
+fn runSpecWithFailedSpecs(
+    allocator: std.mem.Allocator,
+    file_path: []const u8,
+    line_number: ?usize,
+    verbose: bool,
+    all_failed_specs: ?*std.ArrayList(FailedSpec),
     writer: anytype,
 ) !SpecResult {
     var arena = std.heap.ArenaAllocator.init(allocator);
@@ -669,10 +781,29 @@ pub fn runSpec(
         .filter = filter,
         .current_describe_stack = std.ArrayList([]const u8){},
         .verbose = verbose,
+        .failed_specs = std.ArrayList(FailedSpec){},
+        .current_file_path = file_path,
     };
     defer ctx.current_describe_stack.deinit(allocator);
+    defer {
+        // If all_failed_specs is provided, transfer ownership to it
+        if (all_failed_specs == null) {
+            // Clean up if we're not transferring
+            for (ctx.failed_specs.items) |failed_spec| {
+                allocator.free(failed_spec.file_path);
+                allocator.free(failed_spec.describe_path);
+                allocator.free(failed_spec.test_description);
+            }
+        }
+        ctx.failed_specs.deinit(allocator);
+    }
 
     try runTestItem(&ctx, value);
+
+    // Transfer failed specs to all_failed_specs if provided
+    if (all_failed_specs) |list| {
+        try list.appendSlice(allocator, ctx.failed_specs.items);
+    }
 
     return SpecResult{
         .passed = ctx.passed,
@@ -689,6 +820,7 @@ fn runAllSpecsRecursive(
     total_passed: *usize,
     total_failed: *usize,
     total_ignored: *usize,
+    all_failed_specs: *std.ArrayList(FailedSpec),
     first_file: *bool,
 ) !void {
     var dir = try std.fs.cwd().openDir(spec_dir, .{ .iterate = true });
@@ -706,13 +838,13 @@ fn runAllSpecsRecursive(
             }
             first_file.* = false;
 
-            const result = try runSpec(allocator, full_path, null, verbose, writer);
+            const result = try runSpecWithFailedSpecs(allocator, full_path, null, verbose, all_failed_specs, writer);
             total_passed.* += result.passed;
             total_failed.* += result.failed;
             total_ignored.* += result.ignored;
         } else if (entry.kind == .directory) {
             // Recursively search subdirectories
-            try runAllSpecsRecursive(allocator, full_path, verbose, writer, total_passed, total_failed, total_ignored, first_file);
+            try runAllSpecsRecursive(allocator, full_path, verbose, writer, total_passed, total_failed, total_ignored, all_failed_specs, first_file);
         }
     }
 }
@@ -727,20 +859,47 @@ pub fn runAllSpecs(
     var total_failed: usize = 0;
     var total_ignored: usize = 0;
     var first_file = true;
+    var all_failed_specs = std.ArrayList(FailedSpec){};
+    defer {
+        for (all_failed_specs.items) |failed_spec| {
+            allocator.free(failed_spec.file_path);
+            allocator.free(failed_spec.describe_path);
+            allocator.free(failed_spec.test_description);
+        }
+        all_failed_specs.deinit(allocator);
+    }
 
-    try runAllSpecsRecursive(allocator, spec_dir, verbose, writer, &total_passed, &total_failed, &total_ignored, &first_file);
+    try runAllSpecsRecursive(allocator, spec_dir, verbose, writer, &total_passed, &total_failed, &total_ignored, &all_failed_specs, &first_file);
+
+    // Print failed specs list if there are failures
+    if (total_failed > 0 and all_failed_specs.items.len > 0) {
+        try writer.writeAll("\n");
+        try writer.print("{s}Failed specs:{s}\n", .{ Color.red, Color.reset });
+        for (all_failed_specs.items) |failed_spec| {
+            // Format: spec/FooSpec.lazy # Foo / bar / it description
+            try writer.print("- {s}", .{failed_spec.file_path});
+            if (failed_spec.line_number) |line| {
+                try writer.print(":{d}", .{line});
+            }
+            try writer.print(" {s}#{s} ", .{ Color.dim, Color.reset });
+            if (failed_spec.describe_path.len > 0) {
+                try writer.print("{s} / ", .{failed_spec.describe_path});
+            }
+            try writer.print("{s}\n", .{failed_spec.test_description});
+        }
+    }
 
     // Print summary
     try writer.writeAll("\n");
     const total = total_passed + total_failed;
     if (total_failed == 0) {
-        try writer.print("{s}{s}✓ {d} test{s} passed{s}", .{ Color.bold, Color.green, total, if (total == 1) "" else "s", Color.reset });
+        try writer.print("{s}{s}✓ {d} spec{s} passed{s}", .{ Color.bold, Color.green, total, if (total == 1) "" else "s", Color.reset });
         if (total_ignored > 0) {
             try writer.print(", {s}{d} ignored{s}", .{ Color.grey, total_ignored, Color.reset });
         }
         try writer.writeAll("\n");
     } else {
-        try writer.print("{s}{s}{d}{s} test{s} passed, {s}{d} failed{s}", .{
+        try writer.print("{s}{s}{d}{s} spec{s} passed, {s}{d} failed{s}", .{
             Color.bold,
             Color.green,
             total_passed,
