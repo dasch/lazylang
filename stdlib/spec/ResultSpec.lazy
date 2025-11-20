@@ -1,7 +1,7 @@
 { describe, it, mustEq } = import "Spec"
 
-describe "Result" [
-  describe "ok" [
+describe #Result [
+  describe #ok [
     it "creates a success result with an integer" do
       result = Result.ok 42
       mustEq (#ok, 42) result
@@ -19,7 +19,7 @@ describe "Result" [
       mustEq (#ok, [1, 2, 3]) result
   ]
 
-  describe "error" [
+  describe #error [
     it "creates an error result with a string" do
       result = Result.error "not found"
       mustEq (#error, "not found") result
@@ -33,7 +33,7 @@ describe "Result" [
       mustEq (#error, null) result
   ]
 
-  describe "orDefault" [
+  describe #orDefault [
     it "returns the value when result is ok" do
       result = (#ok, 42)
       mustEq 42 (Result.orDefault 0 result)

@@ -1,8 +1,8 @@
 { describe, it, mustEq } = import 'Spec'
 Array = import 'Array'
 
-describe "Range" [
-  describe "inclusive" [
+describe #Range [
+  describe #inclusive [
     it "creates an inclusive range" do
       range = Range.inclusive 1 5
       mustEq [1, 2, 3, 4, 5] (Range.toArray range)
@@ -17,7 +17,7 @@ describe "Range" [
       mustEq [3] (Range.toArray (3..3))
   ]
 
-  describe "exclusive" [
+  describe #exclusive [
     it "creates an exclusive range" do
       range = Range.exclusive 1 5
       mustEq [1, 2, 3, 4] (Range.toArray range)
@@ -32,7 +32,7 @@ describe "Range" [
       mustEq [] (Range.toArray (5...1))
   ]
 
-  describe "toArray" [
+  describe #toArray [
     it "converts inclusive range to array" do
       mustEq [0, 1, 2, 3, 4] (Range.toArray (0..4))
 
@@ -73,7 +73,7 @@ describe "Range" [
       mustEq [11, 12, 12, 13] result
   ]
 
-  describe "covers" [
+  describe #covers [
     it "returns true when value is within inclusive range" do
       mustEq true (Range.covers (1..5) 3)
 
@@ -114,7 +114,7 @@ describe "Range" [
       mustEq false (Range.covers ((0 - 5)..5) (0 - 6))
   ]
 
-  describe "zip" [
+  describe #zip [
     it "pairs elements at the same position" do
       result = Range.zip (1..3) (10..12)
       mustEq [(1, 10), (2, 11), (3, 12)] result

@@ -1,8 +1,8 @@
 { describe, it, mustEq } = import 'Spec'
 Array = import 'Array'
 
-describe "Array" [
-  describe "get" [
+describe #Array [
+  describe #get [
     it "returns `(#ok, value)` when the index is _in-bounds_" do
       arr = [10, 20, 30]
       mustEq (#ok, 20) (Array.get 1 arr)
@@ -24,12 +24,12 @@ describe "Array" [
       mustEq #outOfBounds (Array.get 10 arr)
   ]
 
-  describe "empty" [
+  describe #empty [
     it "returns an empty array" do
       mustEq [] (Array.empty)
   ]
 
-  describe "isEmpty" [
+  describe #isEmpty [
     it "returns `true` for *empty* array" do
       mustEq true (Array.isEmpty [])
 
@@ -37,7 +37,7 @@ describe "Array" [
       mustEq false (Array.isEmpty [1, 2, 3])
   ]
 
-  describe "slice" [
+  describe #slice [
     it "extracts a middle slice" do
       mustEq [1, 2] (Array.slice 1 3 [0, 1, 2, 3, 4])
 
@@ -54,7 +54,7 @@ describe "Array" [
       mustEq [3, 4] (Array.slice (0 - 2) 5 [1, 2, 3, 4])
   ]
 
-  describe "sort" [
+  describe #sort [
     it "sorts integers in ascending order" do
       mustEq [1, 1, 3, 4, 5] (Array.sort [3, 1, 4, 1, 5])
 
@@ -68,7 +68,7 @@ describe "Array" [
       mustEq [42] (Array.sort [42])
   ]
 
-  describe "sortBy" [
+  describe #sortBy [
     it "sorts by computed key" do
       arr = [{name: "Alice", age: 30}, {name: "Bob", age: 25}, {name: "Charlie", age: 35}]
       result = Array.sortBy .age arr
@@ -78,7 +78,7 @@ describe "Array" [
       mustEq 25 (first.age)
   ]
 
-  describe "uniq" [
+  describe #uniq [
     it "removes duplicate integers" do
       mustEq [1, 2, 3, 4] (Array.uniq [1, 2, 2, 3, 1, 4])
 
@@ -92,7 +92,7 @@ describe "Array" [
       mustEq [1, 2, 3] (Array.uniq [1, 2, 3])
   ]
 
-  describe "all" [
+  describe #all [
     it "returns `true` when *all* elements satisfy predicate" do
       mustEq true (Array.all (x -> x > 0) [1, 2, 3])
 
@@ -103,7 +103,7 @@ describe "Array" [
       mustEq true (Array.all (x -> x > 0) [])
   ]
 
-  describe "any" [
+  describe #any [
     it "returns `true` when _some_ element satisfies predicate" do
       mustEq true (Array.any (x -> x > 2) [1, 2, 3])
 
@@ -114,7 +114,7 @@ describe "Array" [
       mustEq false (Array.any (x -> x > 0) [])
   ]
 
-  describe "none" [
+  describe #none [
     it "returns `true` when _no_ element satisfies predicate" do
       mustEq true (Array.none (x -> x > 5) [1, 2, 3])
 
@@ -125,7 +125,7 @@ describe "Array" [
       mustEq true (Array.none (x -> x > 0) [])
   ]
 
-  describe "groupBy" [
+  describe #groupBy [
     it "groups elements by computed key" do
       arr = [
         {category: "fruit", name: "apple"},
@@ -144,7 +144,7 @@ describe "Array" [
       mustEq ([1, 2, 3], [4, 5, 6]) (result.small, result.big)
   ]
 
-  describe "zip" [
+  describe #zip [
     it "pairs elements at the same index" do
       result = Array.zip [1, 2, 3] [4, 5, 6]
       mustEq [(1, 4), (2, 5), (3, 6)] result

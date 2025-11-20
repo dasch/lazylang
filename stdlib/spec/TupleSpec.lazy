@@ -1,7 +1,7 @@
 { describe, it, mustEq } = import "Spec"
 
-describe "Tuple" [
-  describe "mapBoth" [
+describe #Tuple [
+  describe #mapBoth [
     it "applies function to both elements of a tuple" do
       result = Tuple.mapBoth (x -> x * 2) (3, 4)
       mustEq (6, 8) result

@@ -243,17 +243,25 @@ fn runTestItem(ctx: anytype, item: eval_module.Value) anyerror!void {
 }
 
 fn runDescribe(ctx: anytype, desc: eval_module.ObjectValue) anyerror!void {
-    // Get description
+    // Get description (can be string or symbol)
     var description: ?[]const u8 = null;
+    var description_is_symbol = false;
     var children: ?eval_module.ArrayValue = null;
 
     for (desc.fields) |field| {
         if (std.mem.eql(u8, field.key, "description")) {
             const forced_value = eval_module.force(ctx.allocator, field.value) catch field.value;
-            description = switch (forced_value) {
-                .string => |s| s,
-                else => null,
-            };
+            switch (forced_value) {
+                .string => |s| {
+                    description = s;
+                    description_is_symbol = false;
+                },
+                .symbol => |s| {
+                    description = s;
+                    description_is_symbol = true;
+                },
+                else => {},
+            }
         } else if (std.mem.eql(u8, field.key, "children")) {
             const forced_value = eval_module.force(ctx.allocator, field.value) catch field.value;
             children = switch (forced_value) {
@@ -292,9 +300,17 @@ fn runDescribe(ctx: anytype, desc: eval_module.ObjectValue) anyerror!void {
         }
 
         try ctx.writeIndent();
-        const formatted_desc = try formatDescription(ctx.allocator, description.?);
-        defer ctx.allocator.free(formatted_desc);
-        try ctx.writer.print("{s}{s}{s}\n", .{ Color.cyan, formatted_desc, Color.reset });
+
+        // Format description based on type
+        if (description_is_symbol) {
+            // Symbols are formatted like code (blue)
+            try ctx.writer.print("{s}{s}{s}\n", .{ Color.blue, description.?, Color.reset });
+        } else {
+            // Strings use the full markdown-light formatting
+            const formatted_desc = try formatDescription(ctx.allocator, description.?);
+            defer ctx.allocator.free(formatted_desc);
+            try ctx.writer.print("{s}{s}{s}\n", .{ Color.cyan, formatted_desc, Color.reset });
+        }
     }
 
     if (should_run_children) {

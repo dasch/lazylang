@@ -1,8 +1,8 @@
 { describe, it, mustEq } = import "Spec"
 Object = import "Object"
 
-describe "Object" [
-  describe "get" [
+describe #Object [
+  describe #get [
     it "returns `(#ok, value)` when the key exists" do
       obj = { name: "Alice", age: 30 }
       mustEq (#ok, "Alice") (Object.get "name" obj)
@@ -20,7 +20,7 @@ describe "Object" [
       mustEq (#ok, { name: "Bob" }) (Object.get "user" obj)
   ]
 
-  describe "zip" [
+  describe #zip [
     it "pairs values for matching keys" do
       obj1 = { x: 1, y: 2 }
       obj2 = { x: 3, y: 4 }

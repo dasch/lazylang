@@ -1,7 +1,7 @@
 { describe, it, mustEq } = import 'Spec'
 
-describe "Basics" [
-  describe "isInteger" [
+describe #Basics [
+  describe #isInteger [
     it "returns true for integers" do
       mustEq true (isInteger 42)
 
@@ -12,7 +12,7 @@ describe "Basics" [
       mustEq false (isInteger 3.14)
   ]
 
-  describe "isFloat" [
+  describe #isFloat [
     it "returns true for floats" do
       mustEq true (isFloat 3.14)
 
@@ -20,7 +20,7 @@ describe "Basics" [
       mustEq false (isFloat 42)
   ]
 
-  describe "isBoolean" [
+  describe #isBoolean [
     it "returns true for true" do
       mustEq true (isBoolean true)
 
@@ -31,7 +31,7 @@ describe "Basics" [
       mustEq false (isBoolean 1)
   ]
 
-  describe "isNull" [
+  describe #isNull [
     it "returns true for null" do
       mustEq true (isNull null)
 
@@ -39,7 +39,7 @@ describe "Basics" [
       mustEq false (isNull 0)
   ]
 
-  describe "isSymbol" [
+  describe #isSymbol [
     it "returns true for symbols" do
       mustEq true (isSymbol #ok)
 
@@ -47,7 +47,7 @@ describe "Basics" [
       mustEq false (isSymbol "ok")
   ]
 
-  describe "isString" [
+  describe #isString [
     it "returns true for strings" do
       mustEq true (isString "hello")
 
@@ -55,7 +55,7 @@ describe "Basics" [
       mustEq false (isString 42)
   ]
 
-  describe "isArray" [
+  describe #isArray [
     it "returns true for arrays" do
       mustEq true (isArray [1, 2, 3])
 
@@ -63,7 +63,7 @@ describe "Basics" [
       mustEq false (isArray (1, 2, 3))
   ]
 
-  describe "isTuple" [
+  describe #isTuple [
     it "returns true for tuples" do
       mustEq true (isTuple (1, 2))
 
@@ -71,7 +71,7 @@ describe "Basics" [
       mustEq false (isTuple [1, 2, 3])
   ]
 
-  describe "isObject" [
+  describe #isObject [
     it "returns true for objects" do
       mustEq true (isObject { x: 1 })
 
@@ -79,7 +79,7 @@ describe "Basics" [
       mustEq false (isObject [1, 2, 3])
   ]
 
-  describe "isFunction" [
+  describe #isFunction [
     it "returns true for lambda functions" do
       mustEq true (isFunction (x -> x + 1))
 
@@ -90,7 +90,7 @@ describe "Basics" [
       mustEq false (isFunction 42)
   ]
 
-  describe "crash" [
+  describe #crash [
     it "is a function" do
       mustEq true (isFunction crash)
   ]
