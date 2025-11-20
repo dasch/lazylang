@@ -17,6 +17,9 @@
 /// // Merge objects
 /// Object.merge { a: 1 } { b: 2 }  // Returns { a: 1, b: 2 }
 /// ```
+Result = import 'Result'
+Tuple = import 'Tuple'
+
 {
   /// Returns an array of all keys in an object.
   ///

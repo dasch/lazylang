@@ -392,7 +392,7 @@ fn evalSourceWithValue(
         };
     };
 
-    const env = try builtin_env.createBuiltinEnvironment(arena.allocator());
+    const env = try evaluator.createStdlibEnvironment(arena.allocator(), current_dir, &context);
     const value = evaluateExpression(arena.allocator(), expression, env, current_dir, &context) catch |err| {
         arena.deinit();
         return EvalValueResult{
