@@ -1,0 +1,92 @@
+/// Provides utilities for working with integer ranges in Lazylang.
+///
+/// Ranges represent sequences of integers without materializing them into arrays.
+/// This makes them memory-efficient for large sequences.
+///
+/// ## Creating Ranges
+///
+/// - `Range.inclusive start end`: Creates an inclusive range [start..end]
+/// - `Range.exclusive start end`: Creates an exclusive range [start...end)
+///
+/// ## Converting to Arrays
+///
+/// - `Range.toArray range`: Converts a range to an array
+///
+/// ## Syntactic Sugar
+///
+/// - `start..end`: Creates an inclusive range (same as `Range.inclusive start end`)
+/// - `start...end`: Creates an exclusive range (same as `Range.exclusive start end`)
+///
+/// ## Examples
+///
+/// ```
+/// // Using functions
+/// Range.inclusive 1 5      // Range from 1 to 5 (inclusive)
+/// Range.exclusive 1 5      // Range from 1 to 4 (exclusive)
+///
+/// // Using syntactic sugar
+/// 1..5                     // Range from 1 to 5 (inclusive)
+/// 1...5                    // Range from 1 to 4 (exclusive)
+///
+/// // Converting to arrays
+/// Range.toArray (1..5)     // [1, 2, 3, 4, 5]
+/// Range.toArray (1...5)    // [1, 2, 3, 4]
+///
+/// // Using in for loops
+/// [x * 2 for x in 1..5]    // [2, 4, 6, 8, 10]
+/// ```
+/// ---
+{
+  /// Creates an inclusive range from start to end.
+  /// The end value is included in the range.
+  ///
+  /// **Parameters:**
+  /// - `start`: The starting integer (inclusive)
+  /// - `end`: The ending integer (inclusive)
+  ///
+  /// **Returns:**
+  /// A Range value representing the sequence [start, start+1, ..., end]
+  ///
+  /// **Example:**
+  /// ```
+  /// Range.inclusive 1 5      // Range: 1, 2, 3, 4, 5
+  /// Range.inclusive 0 0      // Range: 0
+  /// Range.inclusive 5 3      // Empty range (start > end)
+  /// ```
+  inclusive: start -> end -> __range_inclusive (start, end)
+
+  /// Creates an exclusive range from start to end.
+  /// The end value is NOT included in the range.
+  ///
+  /// **Parameters:**
+  /// - `start`: The starting integer (inclusive)
+  /// - `end`: The ending integer (exclusive)
+  ///
+  /// **Returns:**
+  /// A Range value representing the sequence [start, start+1, ..., end-1]
+  ///
+  /// **Example:**
+  /// ```
+  /// Range.exclusive 1 5      // Range: 1, 2, 3, 4
+  /// Range.exclusive 0 1      // Range: 0
+  /// Range.exclusive 5 5      // Empty range (start >= end)
+  /// ```
+  exclusive: start -> end -> __range_exclusive (start, end)
+
+  /// Converts a range to an array.
+  ///
+  /// **Parameter:**
+  /// - `range`: The range to convert
+  ///
+  /// **Returns:**
+  /// An array containing all integers in the range
+  ///
+  /// **Example:**
+  /// ```
+  /// Range.toArray (Range.inclusive 1 5)    // [1, 2, 3, 4, 5]
+  /// Range.toArray (Range.exclusive 1 5)    // [1, 2, 3, 4]
+  /// Range.toArray (1..5)                   // [1, 2, 3, 4, 5]
+  /// Range.toArray (1...5)                  // [1, 2, 3, 4]
+  /// ```
+  toArray: range -> __range_to_array range
+}

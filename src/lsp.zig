@@ -370,7 +370,7 @@ pub const Server = struct {
             .comma, .colon, .semicolon, .equals, .arrow, .backslash, .dot => 3, // operator
             .plus, .minus, .star, .slash, .ampersand, .ampersand_ampersand, .pipe_pipe, .bang => 3, // operator
             .equals_equals, .bang_equals, .less, .greater, .less_equals, .greater_equals => 3, // operator
-            .dot_dot_dot => 3, // operator
+            .dot_dot, .dot_dot_dot => 3, // operator
             .l_paren, .r_paren, .l_bracket, .r_bracket, .l_brace, .r_brace => 3, // operator
             .eof => 0, // keyword (shouldn't happen)
         };

@@ -219,5 +219,25 @@ fn encodeValue(value: eval.Value, buf: *std.ArrayList(u8), indent: usize, arena:
             eval.setUserCrashMessage(message_copy);
             return error.UserCrash;
         },
+        .range => |r| {
+            // Convert range to array for JSON output
+            const actual_end = if (r.inclusive) r.end else r.end - 1;
+
+            if (r.start > actual_end) {
+                try buf.appendSlice(arena, "[]");
+                return;
+            }
+
+            try buf.append(arena, '[');
+            var current = r.start;
+            var first = true;
+            while (current <= actual_end) : (current += 1) {
+                if (!first) try buf.appendSlice(arena, ", ");
+                first = false;
+                const num_str = try std.fmt.allocPrint(arena, "{d}", .{current});
+                try buf.appendSlice(arena, num_str);
+            }
+            try buf.append(arena, ']');
+        },
     }
 }

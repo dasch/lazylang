@@ -99,6 +99,7 @@ pub const Value = union(enum) {
     object: ObjectValue,
     string: []const u8,
     thunk: *Thunk,
+    range: RangeValue,
 };
 
 /// ArrayValue represents a homogeneous array of values.
@@ -109,6 +110,14 @@ pub const ArrayValue = struct {
 /// TupleValue represents a fixed-size heterogeneous collection.
 pub const TupleValue = struct {
     elements: []Value,
+};
+
+/// RangeValue represents an integer range for efficient iteration.
+/// Ranges can be inclusive (1..5) or exclusive (1...5).
+pub const RangeValue = struct {
+    start: i64,
+    end: i64,
+    inclusive: bool,
 };
 
 /// ObjectFieldValue represents a single field in an object.
