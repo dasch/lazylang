@@ -143,4 +143,34 @@ describe "Array" [
       result = Array.groupBy (x -> if x > 3 then "big" else "small") [1, 2, 3, 4, 5, 6]
       mustEq ([1, 2, 3], [4, 5, 6]) (result.small, result.big)
   ]
+
+  describe "zip" [
+    it "pairs elements at the same index" do
+      result = Array.zip [1, 2, 3] [4, 5, 6]
+      mustEq [(1, 4), (2, 5), (3, 6)] result
+
+    it "fills with null when first array is shorter" do
+      result = Array.zip [1, 2] [3, 4, 5]
+      mustEq [(1, 3), (2, 4), (null, 5)] result
+
+    it "fills with null when second array is shorter" do
+      result = Array.zip ["a", "b", "c"] [1, 2]
+      mustEq [("a", 1), ("b", 2), ("c", null)] result
+
+    it "handles both arrays empty" do
+      result = Array.zip [] []
+      mustEq [] result
+
+    it "handles first array empty" do
+      result = Array.zip [] [1, 2, 3]
+      mustEq [(null, 1), (null, 2), (null, 3)] result
+
+    it "handles second array empty" do
+      result = Array.zip ["x", "y"] []
+      mustEq [("x", null), ("y", null)] result
+
+    it "handles single element arrays" do
+      result = Array.zip [42] ["hello"]
+      mustEq [(42, "hello")] result
+  ]
 ]

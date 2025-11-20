@@ -113,4 +113,42 @@ describe "Range" [
     it "works with negative numbers - out of range" do
       mustEq false (Range.covers ((0 - 5)..5) (0 - 6))
   ]
+
+  describe "zip" [
+    it "pairs elements at the same position" do
+      result = Range.zip (1..3) (10..12)
+      mustEq [(1, 10), (2, 11), (3, 12)] result
+
+    it "fills with null when first range is shorter" do
+      result = Range.zip (1..2) (10..14)
+      mustEq [(1, 10), (2, 11), (null, 12), (null, 13), (null, 14)] result
+
+    it "fills with null when second range is shorter" do
+      result = Range.zip (1..5) (10..11)
+      mustEq [(1, 10), (2, 11), (3, null), (4, null), (5, null)] result
+
+    it "works with exclusive ranges" do
+      result = Range.zip (1...3) (10...12)
+      mustEq [(1, 10), (2, 11)] result
+
+    it "works with mixed inclusive and exclusive" do
+      result = Range.zip (1..3) (10...12)
+      mustEq [(1, 10), (2, 11), (3, null)] result
+
+    it "handles empty ranges" do
+      result = Range.zip (5..1) (10..12)
+      mustEq [(null, 10), (null, 11), (null, 12)] result
+
+    it "handles both ranges empty" do
+      result = Range.zip (5..1) (10..5)
+      mustEq [] result
+
+    it "works with negative numbers" do
+      result = Range.zip ((0 - 2)..0) (5..7)
+      mustEq [((0 - 2), 5), ((0 - 1), 6), (0, 7)] result
+
+    it "works with single-element ranges" do
+      result = Range.zip (5..5) (10..10)
+      mustEq [(5, 10)] result
+  ]
 ]
