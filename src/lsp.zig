@@ -972,17 +972,20 @@ pub const Server = struct {
         var items = std.ArrayList(CompletionItem){};
         errdefer items.deinit(self.allocator);
 
-        // Add stdlib modules
+        // Add stdlib modules (both auto-imported and available for explicit import)
         const stdlib_modules = [_][]const u8{
             "Array",
-            "String",
+            "Basics",
+            "Float",
+            "JSON",
             "Math",
             "Object",
+            "Range",
             "Result",
-            "Tuple",
-            "JSON",
-            "YAML",
             "Spec",
+            "String",
+            "Tuple",
+            "YAML",
         };
 
         for (stdlib_modules) |module| {

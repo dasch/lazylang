@@ -214,12 +214,12 @@ pub const Environment = struct {
 Certain stdlib modules are automatically imported and available without explicit `import` statements. These are defined in the `stdlib_modules` array in `evaluator.zig`:
 
 ```zig
-const stdlib_modules = [_][]const u8{ "Array", "Basics", "Float", "Math", "Object", "Range", "String" };
+const stdlib_modules = [_][]const u8{ "Array", "Basics", "Float", "Math", "Object", "Range", "Result", "String", "Tuple" };
 ```
 
 **Special handling**:
 - **Basics module**: All exported fields are exposed as unqualified identifiers (e.g., `isInteger`, `isFloat` are available directly, not just as `Basics.isInteger`)
-- **Other modules**: Available by module name (e.g., `Array.map`, `String.split`, `Range.toArray`)
+- **Other modules**: Available by module name (e.g., `Array.map`, `String.split`, `Range.toArray`, `Result.ok`, `Tuple.first`)
 
 **To add a new auto-imported module**:
 1. Create the module file in `stdlib/lib/ModuleName.lazy`
