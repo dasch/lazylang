@@ -645,6 +645,14 @@ pub fn writeIndexHtmlContent(allocator: std.mem.Allocator, file: anytype, module
         \\    const modulesList = document.querySelector('.sidebar ul');
         \\    const modules = Array.from(modulesList.querySelectorAll('li'));
         \\
+        \\    // CMD+K / Ctrl+K to focus search
+        \\    document.addEventListener('keydown', (e) => {
+        \\      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        \\        e.preventDefault();
+        \\        searchInput.focus();
+        \\      }
+        \\    });
+        \\
         \\    searchInput.addEventListener('input', (e) => {
         \\      const query = e.target.value.toLowerCase();
         \\      modules.forEach(module => {
