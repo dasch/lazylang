@@ -140,7 +140,7 @@ test "LSP initialization sequence" {
     // For now, this test will be skipped
     if (true) return error.SkipZigTest;
 
-    var client = try LspClient.init(allocator, "./zig-out/bin/lazylang-lsp");
+    var client = try LspClient.init(allocator, "./bin/lazy-lsp");
     defer client.deinit();
 
     // Send initialize request
@@ -179,7 +179,7 @@ test "LSP semantic tokens for syntax highlighting" {
     // TODO: Build the LSP server first
     if (true) return error.SkipZigTest;
 
-    var client = try LspClient.init(allocator, "./zig-out/bin/lazylang-lsp");
+    var client = try LspClient.init(allocator, "./bin/lazy-lsp");
     defer client.deinit();
 
     // Initialize
@@ -247,7 +247,7 @@ test "LSP diagnostics for syntax errors" {
     // TODO: Build the LSP server first
     if (true) return error.SkipZigTest;
 
-    var client = try LspClient.init(allocator, "./zig-out/bin/lazylang-lsp");
+    var client = try LspClient.init(allocator, "./bin/lazy-lsp");
     defer client.deinit();
 
     // Initialize
@@ -293,7 +293,7 @@ test "LSP diagnostics clear for valid code" {
     // TODO: Build the LSP server first
     if (true) return error.SkipZigTest;
 
-    var client = try LspClient.init(allocator, "./zig-out/bin/lazylang-lsp");
+    var client = try LspClient.init(allocator, "./bin/lazy-lsp");
     defer client.deinit();
 
     // Initialize
@@ -338,7 +338,7 @@ test "LSP code completion for keywords" {
     // TODO: Build the LSP server first
     if (true) return error.SkipZigTest;
 
-    var client = try LspClient.init(allocator, "./zig-out/bin/lazylang-lsp");
+    var client = try LspClient.init(allocator, "./bin/lazy-lsp");
     defer client.deinit();
 
     // Initialize
@@ -409,7 +409,7 @@ test "LSP document highlights for identifiers" {
     // TODO: Build the LSP server first
     if (true) return error.SkipZigTest;
 
-    var client = try LspClient.init(allocator, "./zig-out/bin/lazylang-lsp");
+    var client = try LspClient.init(allocator, "./bin/lazy-lsp");
     defer client.deinit();
 
     // Initialize
@@ -473,7 +473,7 @@ test "LSP folding ranges for code blocks" {
     // TODO: Build the LSP server first
     if (true) return error.SkipZigTest;
 
-    var client = try LspClient.init(allocator, "./zig-out/bin/lazylang-lsp");
+    var client = try LspClient.init(allocator, "./bin/lazy-lsp");
     defer client.deinit();
 
     // Initialize

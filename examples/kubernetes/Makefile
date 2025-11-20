@@ -1,4 +1,4 @@
-lazylang=../../zig-out/bin/lazylang
+lazy=../../bin/lazy
 
 manifests: manifests.lazy
-	$(lazylang) eval manifests.lazy
+	$(lazy) eval manifests.lazy

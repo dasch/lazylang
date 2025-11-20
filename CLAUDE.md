@@ -663,7 +663,7 @@ test "feature: description" {
 
 **Location**: examples/*.lazy
 
-**Pattern**: Create `.lazy` file, run with `./zig-out/bin/lazylang eval examples/foo.lazy`
+**Pattern**: Create `.lazy` file, run with `./bin/lazy eval examples/foo.lazy`
 
 **Automated**: tests/examples_test.zig runs all example files and checks they don't crash
 
@@ -684,7 +684,7 @@ describe "Array" [
 ]
 ```
 
-**Run**: `./zig-out/bin/lazylang test stdlib/tests/`
+**Run**: `./bin/lazy spec stdlib/tests/`
 
 **Features**:
 - Nested describe blocks
@@ -745,22 +745,22 @@ describe "Array" [
 
 **Evaluate expression**:
 ```bash
-./zig-out/bin/lazylang eval examples/hello.lazy
+./bin/lazy eval examples/hello.lazy
 ```
 
 **Run program** (expects function taking `{args, env}`):
 ```bash
-./zig-out/bin/lazylang run script.lazy
+./bin/lazy run script.lazy
 ```
 
 **Run tests**:
 ```bash
-./zig-out/bin/lazylang test stdlib/tests/
+./bin/lazy spec stdlib/tests/
 ```
 
 **Format code**:
 ```bash
-./zig-out/bin/lazylang format file.lazy
+./bin/lazy format file.lazy
 ```
 
 ---
@@ -867,7 +867,7 @@ zig build test 2>&1 | grep FAIL   # See only failures
 **Run interpreter**:
 ```bash
 zig build
-./zig-out/bin/lazylang eval -e "1 + 2"
+./bin/lazy eval -e "1 + 2"
 ```
 
 **Quick iteration**:
@@ -878,7 +878,7 @@ export LAZYLANG_PATH=./stdlib/lib
 # Run examples
 for file in examples/*.lazy; do
     echo "=== $file ==="
-    ./zig-out/bin/lazylang eval $file
+    ./bin/lazy eval $file
 done
 ```
 

@@ -3,3 +3,4 @@ zig-out/
 .zig-cache
 .worktrees
 /docs/
+bin

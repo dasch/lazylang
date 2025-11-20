@@ -4,12 +4,12 @@
 //! files or inline expressions and outputs the result in various formats.
 //!
 //! Usage:
-//!   lazylang eval <file>                - Evaluate file
-//!   lazylang eval -e <expr>             - Evaluate inline expression
-//!   lazylang eval --json <file>         - Output as JSON
-//!   lazylang eval --yaml <file>         - Output as YAML
-//!   lazylang eval --manifest <file>     - Write object fields to files
-//!   lazylang eval --color/--no-color    - Control colored output
+//!   lazy eval <file>                - Evaluate file
+//!   lazy eval -e <expr>             - Evaluate inline expression
+//!   lazy eval --json <file>         - Output as JSON
+//!   lazy eval --yaml <file>         - Output as YAML
+//!   lazy eval --manifest <file>     - Write object fields to files
+//!   lazy eval --color/--no-color    - Control colored output
 
 const std = @import("std");
 const evaluator = @import("eval.zig");

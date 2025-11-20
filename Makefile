@@ -2,12 +2,12 @@
 
 all: test
 
-# Build the lazylang binary
+# Build the lazy binary
 build:
 	zig build
 
 # Alias for build target
-lazylang: build
+lazy: build
 
 # Run Zig unit tests
 test-zig: build
@@ -15,14 +15,14 @@ test-zig: build
 
 # Run Lazylang stdlib specs
 test-spec: build
-	./zig-out/bin/lazylang spec stdlib/spec
+	./bin/lazy spec stdlib/spec
 
 # Run all tests (both Zig tests and stdlib specs)
 test: test-zig test-spec
 
 # Launch the interactive REPL
 repl: build
-	./zig-out/bin/lazylang repl
+	./bin/lazy repl
 
 # Generate stdlib documentation
 docs: build
@@ -30,4 +30,4 @@ docs: build
 
 # Clean build artifacts
 clean:
-	rm -rf zig-out zig-cache
+	rm -rf zig-out zig-cache bin

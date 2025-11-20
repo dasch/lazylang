@@ -2,4 +2,4 @@
 
 # Generate stdlib documentation
 docs:
-	../zig-out/bin/lazylang docs lib
+	../bin/lazy docs lib
