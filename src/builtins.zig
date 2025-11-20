@@ -363,6 +363,34 @@ pub fn rangeToArray(arena: std.mem.Allocator, args: []const eval.Value) eval.Eva
     return eval.Value{ .array = .{ .elements = result } };
 }
 
+pub fn rangeCovers(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple_arg = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
+
+    const range = switch (tuple_arg.elements[0]) {
+        .range => |r| r,
+        else => return error.TypeMismatch,
+    };
+
+    const value = switch (tuple_arg.elements[1]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    // Check if value is within range
+    const actual_end = if (range.inclusive) range.end else range.end - 1;
+    const is_covered = value >= range.start and value <= actual_end;
+
+    return eval.Value{ .boolean = is_covered };
+}
+
 fn valuesEqual(arena: std.mem.Allocator, a: eval.Value, b: eval.Value) bool {
     // Force thunks before comparison
     const a_forced = eval.force(arena, a) catch a;

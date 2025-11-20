@@ -2228,7 +2228,7 @@ pub fn createStdlibEnvironment(
     var env = try builtin_env.createBuiltinEnvironment(arena);
 
     // Import standard library modules (if available)
-    const stdlib_modules = [_][]const u8{ "Array", "Basics", "Float", "Math", "Object", "String" };
+    const stdlib_modules = [_][]const u8{ "Array", "Basics", "Float", "Math", "Object", "Range", "String" };
     for (stdlib_modules) |module_name| {
         // Try to import the module, but continue if it's not found
         const module_value = importModule(arena, module_name, current_dir, ctx) catch |err| {

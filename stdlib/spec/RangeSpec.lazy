@@ -1,0 +1,116 @@
+{ describe, it, mustEq } = import 'Spec'
+Array = import 'Array'
+
+describe "Range" [
+  describe "inclusive" [
+    it "creates an inclusive range" do
+      range = Range.inclusive 1 5
+      mustEq [1, 2, 3, 4, 5] (Range.toArray range)
+
+    it "works with syntactic sugar" do
+      mustEq [1, 2, 3, 4, 5] (Range.toArray (1..5))
+
+    it "creates empty range when start > end" do
+      mustEq [] (Range.toArray (5..1))
+
+    it "creates single-element range when start == end" do
+      mustEq [3] (Range.toArray (3..3))
+  ]
+
+  describe "exclusive" [
+    it "creates an exclusive range" do
+      range = Range.exclusive 1 5
+      mustEq [1, 2, 3, 4] (Range.toArray range)
+
+    it "works with syntactic sugar" do
+      mustEq [1, 2, 3, 4] (Range.toArray (1...5))
+
+    it "creates empty range when start equals end" do
+      mustEq [] (Range.toArray (5...5))
+
+    it "creates empty range when start > end" do
+      mustEq [] (Range.toArray (5...1))
+  ]
+
+  describe "toArray" [
+    it "converts inclusive range to array" do
+      mustEq [0, 1, 2, 3, 4] (Range.toArray (0..4))
+
+    it "converts exclusive range to array" do
+      mustEq [0, 1, 2, 3] (Range.toArray (0...4))
+
+    it "handles negative numbers" do
+      mustEq [(0 - 2), (0 - 1), 0, 1, 2] (Range.toArray ((0 - 2)..2))
+
+    it "handles large ranges - length" do
+      arr = Range.toArray (1..100)
+      mustEq 100 (Array.length arr)
+
+    it "handles large ranges - first element" do
+      arr = Range.toArray (1..100)
+      mustEq (#ok, 1) (Array.get 0 arr)
+
+    it "handles large ranges - last element" do
+      arr = Range.toArray (1..100)
+      mustEq (#ok, 100) (Array.get 99 arr)
+  ]
+
+  describe "for loop iteration" [
+    it "iterates over inclusive range" do
+      result = [x * 2 for x in 1..3]
+      mustEq [2, 4, 6] result
+
+    it "iterates over exclusive range" do
+      result = [x * 2 for x in 1...3]
+      mustEq [2, 4] result
+
+    it "works with filtering" do
+      result = [x for x in 1..10 when x > 5]
+      mustEq [6, 7, 8, 9, 10] result
+
+    it "works in nested loops" do
+      result = [x + y for x in 1..2 for y in 10..11]
+      mustEq [11, 12, 12, 13] result
+  ]
+
+  describe "covers" [
+    it "returns true when value is within inclusive range" do
+      mustEq true (Range.covers (1..5) 3)
+
+    it "returns true for start of inclusive range" do
+      mustEq true (Range.covers (1..5) 1)
+
+    it "returns true for end of inclusive range" do
+      mustEq true (Range.covers (1..5) 5)
+
+    it "returns false when value is below inclusive range" do
+      mustEq false (Range.covers (1..5) 0)
+
+    it "returns false when value is above inclusive range" do
+      mustEq false (Range.covers (1..5) 6)
+
+    it "returns true when value is within exclusive range" do
+      mustEq true (Range.covers (1...5) 3)
+
+    it "returns true for start of exclusive range" do
+      mustEq true (Range.covers (1...5) 1)
+
+    it "returns false for end of exclusive range" do
+      mustEq false (Range.covers (1...5) 5)
+
+    it "returns false when value is below exclusive range" do
+      mustEq false (Range.covers (1...5) 0)
+
+    it "returns false when value is above exclusive range" do
+      mustEq false (Range.covers (1...5) 6)
+
+    it "works with negative numbers - zero" do
+      mustEq true (Range.covers ((0 - 5)..5) 0)
+
+    it "works with negative numbers - negative value" do
+      mustEq true (Range.covers ((0 - 5)..5) (0 - 3))
+
+    it "works with negative numbers - out of range" do
+      mustEq false (Range.covers ((0 - 5)..5) (0 - 6))
+  ]
+]

@@ -89,4 +89,25 @@
   /// Range.toArray (1...5)                  // [1, 2, 3, 4]
   /// ```
   toArray: range -> __range_to_array range
+
+  /// Checks if a value is within a range.
+  ///
+  /// **Parameters:**
+  /// - `range`: The range to check against
+  /// - `x`: The integer value to check
+  ///
+  /// **Returns:**
+  /// true if x is within the range, false otherwise
+  ///
+  /// **Example:**
+  /// ```
+  /// Range.covers (1..5) 3      // true
+  /// Range.covers (1..5) 1      // true (inclusive start)
+  /// Range.covers (1..5) 5      // true (inclusive end)
+  /// Range.covers (1..5) 0      // false
+  /// Range.covers (1..5) 6      // false
+  /// Range.covers (1...5) 5     // false (exclusive end)
+  /// Range.covers (1...5) 4     // true
+  /// ```
+  covers: range -> x -> __range_covers (range, x)
 }
