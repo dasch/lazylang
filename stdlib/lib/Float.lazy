@@ -8,8 +8,6 @@
 /// ## Examples
 ///
 /// ```
-/// Float = import 'Float'
-///
 /// // Round a float
 /// Float.round 3.7  // Returns 4
 ///

@@ -8,8 +8,6 @@
 /// ## Examples
 ///
 /// ```
-/// Object = import 'Object'
-///
 /// // Get all keys
 /// Object.keys { name: "John", age: 30 }  // Returns ["name", "age"]
 ///

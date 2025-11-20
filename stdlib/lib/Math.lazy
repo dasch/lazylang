@@ -9,8 +9,6 @@
 /// ## Examples
 ///
 /// ```
-/// Math = import 'Math'
-///
 /// // Find maximum
 /// Math.max 5 10  // Returns 10
 ///

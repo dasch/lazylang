@@ -9,8 +9,6 @@
 /// ## Examples
 ///
 /// ```
-/// String = import 'String'
-///
 /// // Transform strings
 /// String.toUpperCase "hello"  // Returns "HELLO"
 ///
