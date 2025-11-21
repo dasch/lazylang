@@ -353,3 +353,222 @@ test "eval --yaml errors on function in array" {
     try std.testing.expectEqual(@as(u8, 1), outcome.result.exit_code);
     try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "Cannot represent function in YAML output") != null);
 }
+
+// Help command tests
+
+test "no subcommand shows help" {
+    const args = [_][]const u8{"lazylang"};
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 1), outcome.result.exit_code);
+    try std.testing.expectEqualStrings("", outcome.stdout);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "Lazylang - A pure, lazy functional language") != null);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "Commands:") != null);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "eval") != null);
+}
+
+test "help command shows help" {
+    const args = [_][]const u8{ "lazylang", "help" };
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), outcome.result.exit_code);
+    try std.testing.expectEqualStrings("", outcome.stdout);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "Lazylang - A pure, lazy functional language") != null);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "Commands:") != null);
+}
+
+test "help eval shows eval help" {
+    const args = [_][]const u8{ "lazylang", "help", "eval" };
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), outcome.result.exit_code);
+    try std.testing.expectEqualStrings("", outcome.stdout);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "Evaluate a Lazylang file") != null);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "--expr") != null);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "--json") != null);
+}
+
+test "eval -h shows eval help" {
+    const args = [_][]const u8{ "lazylang", "eval", "-h" };
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), outcome.result.exit_code);
+    try std.testing.expectEqualStrings("", outcome.stdout);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "Evaluate a Lazylang file") != null);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "--expr") != null);
+}
+
+test "run --help shows run help" {
+    const args = [_][]const u8{ "lazylang", "run", "--help" };
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), outcome.result.exit_code);
+    try std.testing.expectEqualStrings("", outcome.stdout);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "Execute a Lazylang program") != null);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "args") != null);
+}
+
+test "help unknown_command shows error" {
+    const args = [_][]const u8{ "lazylang", "help", "unknown" };
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 1), outcome.result.exit_code);
+    try std.testing.expectEqualStrings("", outcome.stdout);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "error: unknown command 'unknown'") != null);
+}
+
+test "unknown subcommand shows error and help" {
+    const args = [_][]const u8{ "lazylang", "invalid" };
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 1), outcome.result.exit_code);
+    try std.testing.expectEqualStrings("", outcome.stdout);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "error: unknown subcommand 'invalid'") != null);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "Commands:") != null);
+}
+
+// Spec command tests
+
+test "spec -h shows spec help" {
+    const args = [_][]const u8{ "lazylang", "spec", "-h" };
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), outcome.result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "Run Lazylang test files") != null);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "--verbose") != null);
+}
+
+test "spec with invalid flag shows error" {
+    const args = [_][]const u8{ "lazylang", "spec", "--invalid" };
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 1), outcome.result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "error: unknown flag '--invalid'") != null);
+}
+
+test "spec with nonexistent path shows error" {
+    const args = [_][]const u8{ "lazylang", "spec", "/nonexistent/path.lazy" };
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 1), outcome.result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "error: path not found") != null);
+}
+
+test "spec with directory line number shows error" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(tmp_path);
+
+    const path_with_line = try std.fmt.allocPrint(allocator, "{s}:42", .{tmp_path});
+    defer allocator.free(path_with_line);
+
+    const args = [_][]const u8{ "lazylang", "spec", path_with_line };
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 1), outcome.result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "cannot specify line number for directory") != null);
+}
+
+// Format command tests
+
+test "format -h shows format help" {
+    const args = [_][]const u8{ "lazylang", "format", "-h" };
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), outcome.result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "Format Lazylang source code") != null);
+}
+
+test "format requires a file path" {
+    const args = [_][]const u8{ "lazylang", "format" };
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 1), outcome.result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "error: missing file path") != null);
+}
+
+test "format rejects multiple arguments" {
+    const args = [_][]const u8{ "lazylang", "format", "file1.lazy", "file2.lazy" };
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 1), outcome.result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "error: too many arguments") != null);
+}
+
+test "format outputs formatted code" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const file_name = "unformatted.lazy";
+    var file = try tmp.dir.createFile(file_name, .{ .read = true });
+    try file.writeAll("{  x:   1,   y:   2  }");
+    file.close();
+
+    const file_path = try tmp.dir.realpathAlloc(allocator, file_name);
+    defer allocator.free(file_path);
+
+    const args = [_][]const u8{ "lazylang", "format", file_path };
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), outcome.result.exit_code);
+    // Formatted output should have normalized spacing
+    try std.testing.expect(outcome.stdout.len > 0);
+}
+
+// Docs command tests
+
+test "docs -h shows docs help" {
+    const args = [_][]const u8{ "lazylang", "docs", "-h" };
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), outcome.result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "Generate HTML documentation") != null);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "--output") != null);
+}
+
+test "docs with --output requires a value" {
+    const args = [_][]const u8{ "lazylang", "docs", "--output" };
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 1), outcome.result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "error: --output requires a value") != null);
+}
+
+test "docs with nonexistent path shows error" {
+    const args = [_][]const u8{ "lazylang", "docs", "/nonexistent/path" };
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 1), outcome.result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "error: path not found") != null);
+}
+
+test "spec --help shows spec help" {
+    const args = [_][]const u8{ "lazylang", "spec", "--help" };
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), outcome.result.exit_code);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "Run Lazylang test files") != null);
+}
