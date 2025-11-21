@@ -1,0 +1,25 @@
+// config = {
+//   server: {
+//     host: "localhost"
+//     port: 8080
+//   }
+//   database: {
+//     name: "mydb"
+//     connection: {
+//       timeout: 5000
+//     }
+//   }
+// }
+
+config = {
+server: {
+host: "localhost"
+port: 8080
+}
+database: {
+name: "mydb"
+connection: {
+timeout: 5000
+}
+}
+}

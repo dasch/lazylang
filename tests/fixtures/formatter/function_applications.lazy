@@ -1,0 +1,9 @@
+// result1 = f x
+// result2 = g x y
+// result3 = add 5 10
+// nested = f (g x) (h y)
+
+result1 = f x
+result2 = g x y
+result3 = add 5 10
+nested = f (g x) (h y)

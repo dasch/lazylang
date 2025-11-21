@@ -1,0 +1,7 @@
+// name = person.name
+// nested = config.server.host
+// projection = obj.{ x, y, z }
+
+name = person.name
+nested = config.server.host
+projection = obj.{x,y,z}

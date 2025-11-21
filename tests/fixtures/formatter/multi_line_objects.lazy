@@ -1,0 +1,11 @@
+// person = {
+//   name: "Alice"
+//   age: 30
+//   city: "NYC"
+// }
+
+person = {
+name: "Alice"
+age: 30
+city: "NYC"
+}

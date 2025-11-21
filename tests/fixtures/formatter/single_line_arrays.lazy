@@ -1,0 +1,7 @@
+// numbers = [1, 2, 3, 4, 5]
+// strings = ["hello", "world"]
+// empty = []
+
+numbers = [1,2,3,4,5]
+strings = ["hello","world"]
+empty = []

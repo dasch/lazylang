@@ -1,0 +1,31 @@
+// config = {
+//   servers: [
+//     {
+//       name: "prod"
+//       settings: { port: 8080, host: "localhost" }
+//     }
+//     {
+//       name: "dev"
+//       settings: { port: 3000, host: "0.0.0.0" }
+//     }
+//   ]
+//   database: {
+//     connections: [1, 2, 3]
+//   }
+// }
+
+config = {
+servers: [
+{
+name: "prod"
+settings: {port: 8080, host: "localhost"}
+}
+{
+name: "dev"
+settings: {port: 3000, host: "0.0.0.0"}
+}
+]
+database: {
+connections: [1,2,3]
+}
+}

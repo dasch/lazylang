@@ -156,8 +156,13 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
         }
 
         // Calculate if we need space before this token
+        // Get the token before prev_token for unary operator detection
+        var token_before_prev: ?evaluator.TokenKind = null;
+        if (i >= 2) {
+            token_before_prev = tokens.items[i - 2].token.kind;
+        }
         const needs_space_before = !at_line_start and prev_token != null and
-            needsSpaceBefore(prev_token.?, token.kind, brace_stack.items);
+            needsSpaceBefore(token_before_prev, prev_token.?, token.kind, brace_stack.items);
 
         // Reset do_indent_level if we're starting a new statement at array level
         if (at_line_start and token.kind == .identifier and do_indent_level > 0) {
@@ -216,7 +221,11 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                 do_indent_level = 0;
             }
         } else if (token.kind == .l_paren) {
-            try brace_stack.append(allocator, BraceInfo{ .brace_type = .paren, .is_single_line = true });
+            const is_single = brace_is_single_line.get(i) orelse true;
+            try brace_stack.append(allocator, BraceInfo{ .brace_type = .paren, .is_single_line = is_single });
+            if (!is_single) {
+                indent_level += 1;
+            }
         }
 
         prev_token = token.kind;
@@ -233,15 +242,15 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
     };
 }
 
-/// Analyze which braces/brackets are single-line
+/// Analyze which braces/brackets/parens are single-line
 fn analyzeBraces(tokens: []const evaluator.Token, map: *std.AutoHashMap(usize, bool)) !void {
     var stack = std.ArrayList(usize){};
     defer stack.deinit(map.allocator);
 
     for (tokens, 0..) |token, i| {
-        if (token.kind == .l_brace or token.kind == .l_bracket) {
+        if (token.kind == .l_brace or token.kind == .l_bracket or token.kind == .l_paren) {
             try stack.append(map.allocator, i);
-        } else if (token.kind == .r_brace or token.kind == .r_bracket) {
+        } else if (token.kind == .r_brace or token.kind == .r_bracket or token.kind == .r_paren) {
             if (stack.items.len > 0) {
                 const open_idx = stack.items[stack.items.len - 1];
                 _ = stack.pop();
@@ -274,7 +283,7 @@ pub fn formatFile(allocator: std.mem.Allocator, file_path: []const u8) Formatter
     return formatSource(allocator, source);
 }
 
-fn needsSpaceBefore(prev: evaluator.TokenKind, current: evaluator.TokenKind, brace_stack: []const BraceInfo) bool {
+fn needsSpaceBefore(token_before_prev: ?evaluator.TokenKind, prev: evaluator.TokenKind, current: evaluator.TokenKind, brace_stack: []const BraceInfo) bool {
     _ = brace_stack; // Not currently used, but may be needed for future rules
 
     // Space before opening paren after number/identifier/symbol (function call)
@@ -345,9 +354,33 @@ fn needsSpaceBefore(prev: evaluator.TokenKind, current: evaluator.TokenKind, bra
         return true;
     }
 
-    // Space around operators
-    if (prev == .plus or prev == .minus or prev == .star or
-        current == .plus or current == .minus or current == .star)
+    // Unary operators: no space after ! or - when used as unary
+    // Unary context: after =, (, [, ,, or other operators
+    const prev_is_unary_context = if (token_before_prev) |before|
+        before == .equals or before == .l_paren or before == .l_bracket or
+            before == .comma or before == .l_brace or
+            before == .plus or before == .minus or before == .star or before == .slash or
+            before == .ampersand_ampersand or before == .pipe_pipe
+    else
+        true; // At start of expression, treat as unary context
+
+    // No space after unary ! or -
+    if (prev_is_unary_context and (prev == .bang or prev == .minus)) {
+        return false;
+    }
+
+    // Space around arithmetic operators (binary)
+    if (prev == .plus or prev == .minus or prev == .star or prev == .slash or
+        current == .plus or current == .minus or current == .star or current == .slash)
+    {
+        return true;
+    }
+
+    // Space around comparison operators
+    if (prev == .less or prev == .greater or prev == .less_equals or prev == .greater_equals or
+        prev == .equals_equals or prev == .bang_equals or
+        current == .less or current == .greater or current == .less_equals or current == .greater_equals or
+        current == .equals_equals or current == .bang_equals)
     {
         return true;
     }

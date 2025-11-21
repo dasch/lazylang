@@ -1,0 +1,9 @@
+// add = x -> y -> x + y
+// double = n -> n * 2
+// identity = x -> x
+// complex = a -> b -> c -> a + b * c
+
+add = x->y->x+y
+double = n->n*2
+identity = x->x
+complex = a->b->c->a+b*c

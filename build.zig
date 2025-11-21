@@ -171,11 +171,25 @@ pub fn build(b: *std.Build) void {
         .root_module = formatter_test_module,
     });
 
+    // Formatter fixture test module
+    const format_fixture_test_module = b.createModule(.{
+        .root_source_file = b.path("tests/format_fixture_test.zig"),
+        .target = target,
+        .optimize = optimize,
+    });
+
+    format_fixture_test_module.addImport("formatter", formatter_module);
+
+    const format_fixture_tests = b.addTest(.{
+        .root_module = format_fixture_test_module,
+    });
+
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&b.addRunArtifact(tests).step);
     test_step.dependOn(&b.addRunArtifact(examples_tests).step);
     test_step.dependOn(&b.addRunArtifact(lsp_tests).step);
     test_step.dependOn(&b.addRunArtifact(formatter_tests).step);
+    test_step.dependOn(&b.addRunArtifact(format_fixture_tests).step);
 
     for (eval_test_files) |test_file| {
         const eval_test_module = b.createModule(.{
