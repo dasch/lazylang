@@ -47,34 +47,24 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
     var tokens = std.ArrayList(TokenInfo){};
     defer tokens.deinit(allocator);
 
-    var src_index: usize = 0;
     var tokenizer = evaluator.Tokenizer.init(source, allocator);
     while (true) {
-        // Find where this token starts in source (after whitespace)
-        while (src_index < source.len) {
-            const c = source[src_index];
-            if (c != ' ' and c != '\t' and c != '\n' and c != '\r') break;
-            src_index += 1;
-        }
-        const tok_start = src_index;
-
         const token = tokenizer.next() catch {
             return FormatterError.ParseError;
         };
         if (token.kind == .eof) break;
 
-        // Find where this token ends
+        // Use token's offset for accurate source position tracking
+        const tok_start = token.offset;
+        var tok_end = tok_start + token.lexeme.len;
         if (token.kind == .string) {
-            // String tokens don't include quotes in lexeme
-            src_index = tok_start + token.lexeme.len + 2; // +2 for quotes
-        } else {
-            src_index = tok_start + token.lexeme.len;
+            tok_end += 2; // Account for quotes
         }
 
         try tokens.append(allocator, .{
             .token = token,
             .source_start = tok_start,
-            .source_end = src_index,
+            .source_end = tok_end,
         });
     }
 
@@ -133,7 +123,7 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                     indent_level -= 1;
                 }
                 // Reset do_indent_level when exiting bracket/brace blocks
-                if (brace_info.brace_type == .bracket and !brace_info.is_single_line) {
+                if (!brace_info.is_single_line) {
                     do_indent_level = 0;
                 }
             }
@@ -159,11 +149,15 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
 
         // Handle newlines
         if (token.preceded_by_newline) {
-            // Check if previous token was `do` or `where` to increase indent
+            // Check if previous token was `do`, `where`, `matches`, or `->` to increase indent
             if (i > 0) {
                 const prev_tok = tokens.items[i - 1].token;
-                if (prev_tok.kind == .identifier and
-                    (std.mem.eql(u8, prev_tok.lexeme, "do") or std.mem.eql(u8, prev_tok.lexeme, "where"))) {
+                if (prev_tok.kind == .arrow) {
+                    do_indent_level += 1;
+                } else if (prev_tok.kind == .identifier and
+                    (std.mem.eql(u8, prev_tok.lexeme, "do") or
+                     std.mem.eql(u8, prev_tok.lexeme, "where") or
+                     std.mem.eql(u8, prev_tok.lexeme, "matches"))) {
                     do_indent_level += 1;
                 }
             }
@@ -173,14 +167,33 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
             if (i > 0) {
                 const prev_info = tokens.items[i - 1];
                 const between = source[prev_info.source_end..info.source_start];
-                newline_count = countNewlines(between);
-            }
+                const raw_newline_count = countNewlines(between);
 
-            // Output the appropriate number of newlines
-            for (0..newline_count) |_| {
-                try output.appendSlice(allocator, "\n");
+                // If this token has doc comments, the space between includes those doc comment lines.
+                // We only want to preserve blank lines, not count doc comment lines.
+                // So limit to 2 newlines (one blank line max) when doc comments are present.
+                if (token.doc_comments != null) {
+                    newline_count = @min(raw_newline_count, 2);
+                } else {
+                    newline_count = raw_newline_count;
+                    // Still limit excessive blank lines to 2 (meaning 3 newlines)
+                    if (newline_count > 3) newline_count = 3;
+                }
+
+                // Output the appropriate number of newlines
+                for (0..newline_count) |_| {
+                    try output.appendSlice(allocator, "\n");
+                }
+                at_line_start = true;
+            } else {
+                // First token - don't output newlines before it if it has doc comments
+                if (token.doc_comments == null) {
+                    for (0..newline_count) |_| {
+                        try output.appendSlice(allocator, "\n");
+                    }
+                }
+                at_line_start = true;
             }
-            at_line_start = true;
         }
 
         // Calculate if we need space before this token
@@ -201,6 +214,25 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
             }
         }
 
+        // Output doc comments before the token
+        if (token.doc_comments) |docs| {
+            // Split doc comments by newlines and output each line with proper indentation
+            var lines = std.mem.splitScalar(u8, docs, '\n');
+            while (lines.next()) |line| {
+                // Write indentation if at line start
+                if (at_line_start) {
+                    const total_indent = indent_level + do_indent_level;
+                    for (0..total_indent) |_| {
+                        try output.appendSlice(allocator, "  ");
+                    }
+                }
+                try output.appendSlice(allocator, "/// ");
+                try output.appendSlice(allocator, line);
+                try output.appendSlice(allocator, "\n");
+                at_line_start = true;
+            }
+        }
+
         // Write indentation at line start
         if (at_line_start and token.kind != .eof) {
             const total_indent = indent_level + do_indent_level;
@@ -214,13 +246,17 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
 
         // For single-line objects, add space after opening brace
         // For object projections (e.g., obj.{ x, y }), also add spaces
+        // NOTE: If the brace has doc comments, it should always be treated as multi-line
         if (token.kind == .l_brace) {
-            if (brace_is_single_line.get(i)) |is_single| {
-                if (is_single) {
-                    try output.appendSlice(allocator, "{ ");
-                    try brace_stack.append(allocator, BraceInfo{ .brace_type = .brace, .is_single_line = true });
-                    prev_token = token.kind;
-                    continue;
+            const has_docs = token.doc_comments != null;
+            if (!has_docs) {
+                if (brace_is_single_line.get(i)) |is_single| {
+                    if (is_single) {
+                        try output.appendSlice(allocator, "{ ");
+                        try brace_stack.append(allocator, BraceInfo{ .brace_type = .brace, .is_single_line = true });
+                        prev_token = token.kind;
+                        continue;
+                    }
                 }
             }
         }

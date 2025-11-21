@@ -1,0 +1,19 @@
+// /// Module-level documentation
+// /// This module provides utilities
+// {
+//
+//   /// Function documentation
+//   foo: x -> x + 1
+//
+//   /// Another function
+//   bar: y -> y * 2
+// }
+
+/// Module-level documentation
+/// This module provides utilities
+{
+  /// Function documentation
+  foo: x -> x + 1
+  /// Another function
+  bar: y -> y * 2
+}

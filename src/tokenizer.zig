@@ -429,6 +429,9 @@ pub const Tokenizer = struct {
     }
 
     fn makeToken(self: *Tokenizer, kind: ast.TokenKind, start: usize, start_line: usize, start_column: usize) ast.Token {
+        // Automatically consume pending doc comments and attach to this token
+        const docs = self.consumeDocComments();
+
         return .{
             .kind = kind,
             .lexeme = self.source[start..self.index],
@@ -437,7 +440,7 @@ pub const Tokenizer = struct {
             .line = start_line,
             .column = start_column,
             .offset = start,
-            .doc_comments = null,
+            .doc_comments = docs,
         };
     }
 
