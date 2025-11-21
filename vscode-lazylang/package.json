@@ -64,10 +64,15 @@
       "type": "object",
       "title": "Lazylang",
       "properties": {
+        "lazylang.lazyPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the Lazylang executable (lazy CLI). If empty, will look for 'lazy' or 'lazylang' in PATH or in the workspace."
+        },
         "lazylang.lspPath": {
           "type": "string",
           "default": "",
-          "description": "Path to the Lazylang LSP server executable. If empty, will look for 'lazylang-lsp' in PATH or in the workspace."
+          "description": "Path to the Lazylang LSP server executable. If empty, will look for 'lazy-lsp' in PATH or in the workspace."
         },
         "lazylang.trace.server": {
           "type": "string",

@@ -144,11 +144,20 @@ export function deactivate(): Thenable<void> | undefined {
 /**
  * Find the Lazylang formatter executable (lazy CLI).
  * Priority order:
- * 1. In workspace bin/lazy
- * 2. In workspace ../bin/lazy (for worktrees)
- * 3. In PATH
+ * 1. User-configured path in settings
+ * 2. In workspace bin/lazy
+ * 3. In workspace ../bin/lazy (for worktrees)
+ * 4. In PATH
  */
 function findFormatter(context: ExtensionContext): string | null {
+    // Check user configuration
+    const config = workspace.getConfiguration('lazylang');
+    const configuredPath = config.get<string>('lazyPath');
+
+    if (configuredPath && fs.existsSync(configuredPath)) {
+        return configuredPath;
+    }
+
     // Check workspace directory
     const workspaceFolders = workspace.workspaceFolders;
     if (workspaceFolders && workspaceFolders.length > 0) {
@@ -309,32 +318,45 @@ function registerCommands(context: ExtensionContext) {
 }
 
 /**
- * Find the Lazylang executable (lazylang CLI).
+ * Find the Lazylang executable (lazy CLI).
+ * Priority order:
+ * 1. User-configured path in settings
+ * 2. In workspace bin/lazy
+ * 3. In workspace ../bin/lazy (for worktrees)
+ * 4. In PATH
  */
 function findLazyLangExecutable(): string | null {
+    // Check user configuration
+    const config = workspace.getConfiguration('lazylang');
+    const configuredPath = config.get<string>('lazyPath');
+
+    if (configuredPath && fs.existsSync(configuredPath)) {
+        return configuredPath;
+    }
+
     const workspaceFolders = workspace.workspaceFolders;
     if (workspaceFolders && workspaceFolders.length > 0) {
         const workspaceRoot = workspaceFolders[0].uri.fsPath;
 
-        // Check zig-out/bin in workspace
-        const workspacePath = path.join(workspaceRoot, 'zig-out', 'bin', 'lazylang');
-        if (fs.existsSync(workspacePath)) {
-            return workspacePath;
+        // Check bin/lazy in workspace
+        const workspaceLazyPath = path.join(workspaceRoot, 'bin', 'lazy');
+        if (fs.existsSync(workspaceLazyPath)) {
+            return workspaceLazyPath;
         }
 
         // Check parent directory (for git worktrees)
-        const parentPath = path.join(workspaceRoot, '..', 'zig-out', 'bin', 'lazylang');
-        if (fs.existsSync(parentPath)) {
-            return path.resolve(parentPath);
+        const parentLazyPath = path.join(workspaceRoot, '..', 'bin', 'lazy');
+        if (fs.existsSync(parentLazyPath)) {
+            return path.resolve(parentLazyPath);
         }
     }
 
     // Try to find in PATH
     const pathDirs = (process.env.PATH || '').split(path.delimiter);
     for (const dir of pathDirs) {
-        const execPath = path.join(dir, 'lazylang');
-        if (fs.existsSync(execPath)) {
-            return execPath;
+        const lazyPath = path.join(dir, 'lazy');
+        if (fs.existsSync(lazyPath)) {
+            return lazyPath;
         }
     }
 
