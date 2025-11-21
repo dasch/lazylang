@@ -1,4 +1,4 @@
-.PHONY: all build test test-zig test-stdlib docs clean repl
+.PHONY: all build test test-zig test-stdlib stdlib-docspecs docs clean repl
 
 all: test docs
 
@@ -27,6 +27,10 @@ repl: build
 # Generate stdlib documentation
 docs: build
 	cd stdlib && $(MAKE) docs
+
+# Run stdlib documentation specs
+stdlib-docspecs: build
+	cd stdlib && $(MAKE) docspecs
 
 # Clean build artifacts
 clean:

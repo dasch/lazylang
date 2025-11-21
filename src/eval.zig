@@ -341,6 +341,10 @@ pub fn evalInlineWithValue(allocator: std.mem.Allocator, source: []const u8) Eva
     return evalSourceWithValue(allocator, source, null);
 }
 
+pub fn evalInlineWithValueAndDir(allocator: std.mem.Allocator, source: []const u8, current_dir: ?[]const u8) EvalError!EvalValueResult {
+    return evalSourceWithValue(allocator, source, current_dir);
+}
+
 pub fn evalFileWithValue(allocator: std.mem.Allocator, path: []const u8) EvalError!EvalValueResult {
     var file = try std.fs.cwd().openFile(path, .{});
     defer file.close();

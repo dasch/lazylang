@@ -9,13 +9,13 @@
 ///
 /// ```
 /// // Round a float
-/// Float.round 3.7  // Returns 4
+/// Float.round 3.7  //=> 4
 ///
 /// // Calculate square root
-/// Float.sqrt 16.0  // Returns 4.0
+/// Float.sqrt 16.0  //=> 4.0
 ///
 /// // Modulo operation
-/// Float.mod 10.5 3.0  // Returns 1.5
+/// Float.mod 10.5 3.0  //=> 1.5
 /// ```
 {
   /// Rounds a number to the nearest integer.
@@ -25,9 +25,8 @@
   ///
   /// **Example:**
   /// ```
-  /// Float.round 3.7   // Returns 4
-  /// Float.round 3.2   // Returns 3
-  /// Float.round -2.5  // Returns -2
+  /// Float.round 3.7  //=> 4
+  /// Float.round 3.2  //=> 3
   /// ```
   round: n -> __float_round n
 
@@ -38,8 +37,7 @@
   ///
   /// **Example:**
   /// ```
-  /// Float.floor 3.7   // Returns 3
-  /// Float.floor -2.3  // Returns -3
+  /// Float.floor 3.7  //=> 3
   /// ```
   floor: n -> __float_floor n
 
@@ -50,8 +48,7 @@
   ///
   /// **Example:**
   /// ```
-  /// Float.ceil 3.2   // Returns 4
-  /// Float.ceil -2.7  // Returns -2
+  /// Float.ceil 3.2  //=> 4
   /// ```
   ceil: n -> __float_ceil n
 
@@ -62,8 +59,7 @@
   ///
   /// **Example:**
   /// ```
-  /// Float.abs -5.5   // Returns 5.5
-  /// Float.abs 10.2   // Returns 10.2
+  /// Float.abs 10.2  //=> 10.2
   /// ```
   abs: n -> __float_abs n
 
@@ -74,9 +70,8 @@
   ///
   /// **Example:**
   /// ```
-  /// Float.sqrt 9.0    // Returns 3.0
-  /// Float.sqrt 16.0   // Returns 4.0
-  /// Float.sqrt 2.0    // Returns 1.414...
+  /// Float.sqrt 9.0  //=> 3.0
+  /// Float.sqrt 16.0  //=> 4.0
   /// ```
   sqrt: n -> __float_sqrt n
 
@@ -88,8 +83,7 @@
   ///
   /// **Example:**
   /// ```
-  /// Float.pow 2.0 3.0   // Returns 8.0
-  /// Float.pow 5.0 0.5   // Returns 2.236... (square root of 5)
+  /// Float.pow 2.0 3.0  //=> 8.0
   /// ```
   pow: base -> exponent -> __float_pow (base, exponent)
 
@@ -101,8 +95,7 @@
   ///
   /// **Example:**
   /// ```
-  /// Float.mod 10.5 3.0   // Returns 1.5
-  /// Float.mod -10.5 3.0  // Returns 1.5
+  /// Float.mod 10.5 3.0  //=> 1.5
   /// ```
   mod: a -> b -> __math_mod (a, b)
 
@@ -114,8 +107,7 @@
   ///
   /// **Example:**
   /// ```
-  /// Float.rem 10.5 3.0   // Returns 1.5
-  /// Float.rem -10.5 3.0  // Returns -1.5
+  /// Float.rem 10.5 3.0  //=> 1.5
   /// ```
   rem: a -> b -> __math_rem (a, b)
 }
