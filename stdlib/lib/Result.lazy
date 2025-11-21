@@ -83,4 +83,24 @@
     when result matches
       (#ok, value) then value
       otherwise default
+
+  /// Applies a function to the error value if the result is an error, otherwise returns the original result.
+  ///
+  /// **Parameters:**
+  /// - `f`: A function that takes an error value and returns a new result
+  /// - `result`: The result to process
+  ///
+  /// **Returns:**
+  /// The result of applying `f` to the error if result is an error, otherwise the original result
+  ///
+  /// **Example:**
+  /// ```
+  /// result = (#error, "not found")
+  /// Result.orElse (err -> Result.error (err + "!!!")) result
+  /// //=> (#error, "not found!!!")
+  /// ```
+  orElse: f -> result ->
+    when result matches
+      (#error, error) then f error
+      otherwise result
 }

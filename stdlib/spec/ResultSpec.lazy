@@ -69,4 +69,14 @@ describe #Result [
       result = (#error, "failed")
       mustEq "default" (Result.orDefault "default" result)
   ]
+
+  describe #orElse [
+    it "does nothing if the result is ok" do
+      result = (#ok, 42)
+      mustEq (#ok, 42) (Result.orElse (err -> crash "oh no") result)
+
+    it "passes the error to the provided function is the result is an error" do
+      result = (#error, "failed")
+      mustEq (#ok, "FAILED") (Result.orElse (err -> Result.ok (String.toUpperCase err)) result)
+  ]
 ]
