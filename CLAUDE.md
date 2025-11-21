@@ -10,7 +10,8 @@ This document is designed to help AI assistants (and humans) effectively impleme
 5. [Testing Strategy](#testing-strategy)
 6. [Common Tasks](#common-tasks)
 7. [Code Conventions](#code-conventions)
-8. [Debugging Tips](#debugging-tips)
+8. [Code Formatter](#code-formatter)
+9. [Debugging Tips](#debugging-tips)
 
 ---
 
@@ -31,7 +32,18 @@ Lazylang is a pure, dynamically typed, lazy functional language for configuratio
 - **Architecture**: Single-pass tree-walking interpreter with modular design
 - **Memory Management**: Arena allocation (no manual free needed)
 - **Lines of Code**: ~5500 total (evaluator ~2500, parser ~1600, value_format ~800, builtins ~600, tokenizer ~650, ast ~500)
-- **Distribution**: Single static binary (`lazylang` and `lazylang-lsp`)
+- **Distribution**: Single static binary (`lazy` and `lazy-lsp`)
+- **Code Formatter**: Built-in token-based formatter (`lazy format`) with comprehensive test suite
+
+### Important: Always Format Code!
+
+When writing Lazylang code, **always run the formatter** to ensure consistency:
+
+```bash
+./bin/lazy format file.lazy
+```
+
+If the formatter doesn't produce the desired output, create a test fixture and update the formatter (see [Code Formatter](#code-formatter) section).
 
 ### Key Design Decisions
 
@@ -692,9 +704,85 @@ describe "Array" [
 - Colored output
 - Deep value equality
 
+### Formatter Tests (Fixture-based)
+
+**Location**: tests/fixtures/formatter/*.lazy
+
+**Pattern**:
+Each fixture file contains expected output in `//` comments followed by input code:
+```lazy
+// squared = [x * x for x in numbers]
+// filtered = [x for x in items when x > 5]
+//
+// longerSquared = [
+//   x * x
+//   for x in numbers
+// ]
+
+squared = [x*x for x in numbers]
+filtered = [x for x in items when x>5]
+
+longerSquared = [
+  x * x for x in numbers ]
+```
+
+**Test infrastructure**: tests/format_fixture_test.zig
+- Extracts expected output from `//` comment lines
+- Extracts input code from non-comment lines
+- Runs formatter and compares output
+- Beautiful color-coded diff output with visual whitespace indicators
+
+**Run**: `zig build test` (includes formatter tests)
+
+**Creating New Formatter Tests**:
+
+**IMPORTANT**: When you write Lazylang code and the user asks for different formatting, you should:
+
+1. Create a new fixture file in `tests/fixtures/formatter/` or add a test case to an existing one
+2. Put the desired formatted output as comments at the top (with `//` prefix)
+3. Put the unformatted input code below
+4. Run `zig build test` to verify the formatter produces the expected output
+5. If the formatter fails, update the formatter implementation to handle the new case
+
+This helps build up a comprehensive formatting test suite over time!
+
+**Example workflow**:
+```bash
+# User: "Format this code with proper spacing"
+# AI: Writes code, user asks for different formatting
+
+# 1. Create fixture
+cat > tests/fixtures/formatter/my_feature.lazy << 'EOF'
+// result = { x: 10, y: 20 }
+
+result = {x:10,y:20}
+EOF
+
+# 2. Run tests to see if formatter handles it
+zig build test
+
+# 3. If it fails, fix the formatter in src/formatter.zig
+# 4. Re-run tests until passing
+```
+
 ---
 
 ## Common Tasks
+
+### Writing Lazylang Code
+
+**ALWAYS** run the formatter on any Lazylang code you write:
+
+```bash
+./bin/lazy format file.lazy
+```
+
+If the user requests different formatting than what the formatter produces:
+1. Create a test fixture in `tests/fixtures/formatter/`
+2. Add the desired formatting as comments
+3. Add the input code below
+4. Run tests and fix the formatter to handle the new case
+5. See "Formatter Tests" section above for details
 
 ### Adding a Language Feature Checklist
 
@@ -706,6 +794,7 @@ describe "Array" [
 - [ ] Write unit tests
 - [ ] Update README.md documentation
 - [ ] Add example file
+- [ ] **Run formatter on example code**: `./bin/lazy format examples/feature.lazy`
 
 ### Adding a Builtin Function Checklist
 
@@ -782,14 +871,89 @@ describe "Array" [
 
 ### Lazylang Style (stdlib)
 
+**IMPORTANT**: Always run `./bin/lazy format` on Lazylang code you write to ensure consistent formatting!
+
+#### Basic Style Rules
+
 - **Indentation**: 2 spaces
 - **Naming**:
   - Variables and functions: `camelCase` (e.g., `jsonString`, `toUpper`, `myValue`)
   - Modules: `PascalCase` (e.g., `Array`, `String`, `JSON`)
   - **Always use camelCase, never snake_case**
-- **Operators**: Space around binary operators
 - **Line length**: Prefer 80 characters, max 100
-- **If-expressions**: For multiline if-then-else expressions assigned to variables, place the `if` keyword on a new line after the `=`, with `then` on the same line as the condition. Indent branches one additional level:
+
+#### Spacing Rules
+
+- **Operators**: Space around binary operators (`a + b`, `x * y`, `a == b`)
+- **Unary operators**: No space after unary operators (`!flag`, `-5`)
+- **Arrows**: Space around arrows (`x -> x + 1`)
+- **Commas**: Space after commas (`[1, 2, 3]`, `(a, b, c)`)
+- **Colons**: Space after colons in objects (`{ x: 10, y: 20 }`)
+- **Function application**: Space between function and argument (`f x`, `map fn list`)
+
+#### Objects
+
+- **Single-line objects**: Space inside braces: `{ x: 10, y: 20 }`
+- **Empty objects**: Two spaces inside braces: `{  }`
+- **Multi-line objects**: No spaces inside braces, indent fields:
+  ```
+  person = {
+    name: "Alice"
+    age: 30
+  }
+  ```
+- **Object projections**: Space inside braces: `obj.{ x, y, z }`
+
+#### Arrays
+
+- **Single-line arrays**: No space inside brackets: `[1, 2, 3]`
+- **Multi-line arrays**: No spaces inside brackets, indent elements:
+  ```
+  items = [
+    1
+    2
+    3
+  ]
+  ```
+
+#### Comprehensions
+
+- **Single-line**: Keep on one line: `[x * x for x in numbers]`
+- **Multi-line**: Put `for` on separate line, indent properly:
+  ```
+  squared = [
+    x * x
+    for x in numbers
+  ]
+
+  objComp = {
+    x: x * 2
+    for x in range
+  }
+  ```
+
+#### Functions & Lambdas
+
+- **Lambda syntax**: Space around arrow: `x -> x + 1`
+- **Multi-parameter**: Chain arrows: `x -> y -> x + y`
+- **Function application**: Space between function and arguments: `map fn list`
+
+#### Let Bindings & Parentheses
+
+- **Multi-line parenthesized blocks**: Omit semicolons between statements:
+  ```
+  result = (
+    x = 10
+    y = 20
+    x + y
+  )
+  ```
+- **Note**: Semicolons in source are removed by formatter in multi-line parens
+
+#### If-Expressions
+
+- **Single-line**: Keep on one line: `x = if cond then a else b`
+- **Multi-line**: Place `if` on new line after `=`, indent branches:
   ```
   result =
     if condition then
@@ -799,13 +963,97 @@ describe "Array" [
     else
       value3
   ```
-  Single-line if-expressions can remain on one line: `x = if cond then a else b`
+
+#### Do Blocks
+
+- Indent contents by 2 spaces
+- Multiple statements allowed (converted to let-bindings internally)
 
 ### Error Messages
 
 - **Be specific**: "Expected ')' after function argument" not "Unexpected token"
 - **Be helpful**: Suggest corrections, show context
 - **Be consistent**: Use similar phrasing for similar errors
+
+---
+
+## Code Formatter
+
+### Overview
+
+Lazylang has a built-in code formatter (`./bin/lazy format`) that enforces consistent style across all code. The formatter is **token-based** (not AST-aware), which means it works by analyzing the token stream and adjusting whitespace/indentation.
+
+### Using the Formatter
+
+**IMPORTANT**: Always format Lazylang code you write!
+
+```bash
+# Format a file (prints to stdout)
+./bin/lazy format file.lazy
+
+# Format in-place (if flag exists)
+./bin/lazy format -w file.lazy
+```
+
+### When to Create Formatter Tests
+
+If you write Lazylang code and the user requests formatting that differs from the formatter's output:
+
+1. **Don't manually format** - Instead, create a test fixture!
+2. Add a new file to `tests/fixtures/formatter/` (or extend an existing one)
+3. Put the desired formatted output as `//` comments
+4. Put the unformatted input code below
+5. Run `zig build test` to see if formatter handles it
+6. If it fails, fix `src/formatter.zig` to implement the formatting rule
+7. Iterate until tests pass
+
+This ensures formatting rules are tested and consistent!
+
+### Current Formatter Capabilities
+
+✅ **Supported**:
+- Spacing around operators, arrows, commas, colons
+- Single-line vs multi-line detection for objects/arrays/parens
+- Proper indentation (2 spaces)
+- Multi-line comprehensions (puts `for` on separate line)
+- Semicolon removal in multi-line parenthesized blocks
+- Blank line preservation
+- Special handling for `do` blocks
+
+❌ **Not Supported** (requires AST awareness):
+- Adding missing parentheses around sequential statements
+- Reordering imports or statements
+- Reformatting deeply nested expressions
+- Smart line breaking based on line length
+
+### Formatter Architecture
+
+**Location**: `src/formatter.zig`
+
+**Key components**:
+1. **Token collection**: Tracks source positions for each token
+2. **Brace analysis**: Determines which braces/brackets/parens are single-line vs multi-line
+3. **Formatting pass**: Outputs formatted code with proper spacing and indentation
+
+**Key functions**:
+- `formatSource`: Main entry point
+- `analyzeBraces`: Detects single-line vs multi-line structures
+- `needsSpaceBefore`: Determines spacing rules between tokens
+
+### Extending the Formatter
+
+To add new formatting rules:
+
+1. **Identify the pattern**: What tokens/structure needs special handling?
+2. **Add test fixture**: Create `tests/fixtures/formatter/my_feature.lazy`
+3. **Update formatter logic**: Modify `src/formatter.zig`
+4. **Run tests**: `zig build test` to verify
+
+**Example locations to modify**:
+- Spacing rules: `needsSpaceBefore` function
+- Indentation: Brace/bracket handling in main loop
+- Special keywords: Add checks like the `for` keyword handler
+- Token skipping: Add logic to skip semicolons, etc.
 
 ---
 
