@@ -119,8 +119,8 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
             if (brace_stack.items.len > 0) {
                 const brace_info = brace_stack.items[brace_stack.items.len - 1];
 
-                // For multi-line brackets in comprehensions, ensure closing bracket is on new line
-                if (brace_info.brace_type == .bracket and !brace_info.is_single_line and !token.preceded_by_newline) {
+                // For multi-line brackets/braces in comprehensions, ensure closing bracket/brace is on new line
+                if ((brace_info.brace_type == .bracket or brace_info.brace_type == .brace) and !brace_info.is_single_line and !token.preceded_by_newline) {
                     // Check if we recently saw a 'for' keyword (likely a comprehension)
                     if (i > 0 and prev_token == .identifier) {
                         try output.appendSlice(allocator, "\n");
@@ -140,17 +140,17 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
         }
 
         // Special handling for 'for' keyword in multi-line comprehensions
-        // If we're in a multi-line bracket and see 'for', it should be on its own line
+        // If we're in a multi-line bracket/brace and see 'for', it should be on its own line
         if (token.kind == .identifier and std.mem.eql(u8, token.lexeme, "for")) {
-            var in_multiline_bracket = false;
+            var in_multiline_comprehension = false;
             for (brace_stack.items) |brace_info| {
-                if (brace_info.brace_type == .bracket and !brace_info.is_single_line) {
-                    in_multiline_bracket = true;
+                if ((brace_info.brace_type == .bracket or brace_info.brace_type == .brace) and !brace_info.is_single_line) {
+                    in_multiline_comprehension = true;
                     break;
                 }
             }
 
-            if (in_multiline_bracket and !token.preceded_by_newline) {
+            if (in_multiline_comprehension and !token.preceded_by_newline) {
                 // Add a newline before 'for' in multi-line comprehensions
                 try output.appendSlice(allocator, "\n");
                 at_line_start = true;
