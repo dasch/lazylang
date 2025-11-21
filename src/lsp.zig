@@ -208,7 +208,13 @@ pub const Server = struct {
         const text = text_document.get("text").?.string;
         const version = @as(i32, @intCast(text_document.get("version").?.integer));
 
-        // Store document
+        // Check if document already exists and free old memory
+        if (self.documents.fetchRemove(uri)) |entry| {
+            self.allocator.free(entry.key);
+            self.allocator.free(entry.value.text);
+        }
+
+        // Store new document
         const uri_copy = try self.allocator.dupe(u8, uri);
         const text_copy = try self.allocator.dupe(u8, text);
 
@@ -312,8 +318,6 @@ pub const Server = struct {
 
         var prev_line: u32 = 0;
         var prev_col: u32 = 0;
-        var line: u32 = 0;
-        var col: u32 = 0;
 
         while (true) {
             const token = tokenizer.next() catch |err| {
@@ -323,22 +327,10 @@ pub const Server = struct {
 
             if (token.kind == .eof) break;
 
-            // Calculate line and column from lexeme position
-            const token_start = @intFromPtr(token.lexeme.ptr) - @intFromPtr(text.ptr);
-            var current_line: u32 = 0;
-            var current_col: u32 = 0;
-
-            for (text[0..token_start]) |c| {
-                if (c == '\n') {
-                    current_line += 1;
-                    current_col = 0;
-                } else {
-                    current_col += 1;
-                }
-            }
-
-            line = current_line;
-            col = current_col;
+            // Use token's built-in line/column information (1-based)
+            // Convert to 0-based for LSP
+            const line: u32 = @intCast(if (token.line > 0) token.line - 1 else 0);
+            const col: u32 = @intCast(if (token.column > 0) token.column - 1 else 0);
 
             const token_type = getTokenType(token.kind);
             const token_length: u32 = @intCast(token.lexeme.len);
