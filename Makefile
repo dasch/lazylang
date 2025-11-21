@@ -1,6 +1,6 @@
-.PHONY: all build test test-zig test-spec docs clean repl
+.PHONY: all build test test-zig test-stdlib docs clean repl
 
-all: test
+all: test docs
 
 # Build the lazy binary
 build:
@@ -14,11 +14,11 @@ test-zig: build
 	zig build test
 
 # Run Lazylang stdlib specs
-test-spec: build
+test-stdlib: build
 	./bin/lazy spec stdlib/spec
 
 # Run all tests (both Zig tests and stdlib specs)
-test: test-zig test-spec
+test: test-zig test-stdlib
 
 # Launch the interactive REPL
 repl: build
