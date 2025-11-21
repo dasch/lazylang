@@ -597,7 +597,7 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
                 .string => |msg| {
                     // Simple string message
                     try ctx.writeIndent();
-                    try ctx.writer.print("{s}  {s}{s}\n", .{ Color.dim, msg, Color.reset });
+                    try ctx.writer.print("{s}    {s}{s}\n", .{ Color.dim, msg, Color.reset });
                 },
                 .object => |obj| {
                     // Structured failure details with kind, expected, actual, condition
@@ -631,9 +631,9 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
                                 const actual_str = try eval_module.formatValue(ctx.allocator, fail_actual.?);
                                 defer ctx.allocator.free(actual_str);
                                 try ctx.writeIndent();
-                                try ctx.writer.print("{s}  Expected: {s}{s}\n", .{ Color.dim, expected_str, Color.reset });
+                                try ctx.writer.print("{s}    Expected: {s}{s}\n", .{ Color.dim, expected_str, Color.reset });
                                 try ctx.writeIndent();
-                                try ctx.writer.print("{s}  Actual:   {s}{s}\n", .{ Color.dim, actual_str, Color.reset });
+                                try ctx.writer.print("{s}    Actual:   {s}{s}\n", .{ Color.dim, actual_str, Color.reset });
                             }
                         } else if (std.mem.eql(u8, k, "notEq")) {
                             // mustNotEq failure
@@ -641,9 +641,9 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
                                 const value_str = try eval_module.formatValue(ctx.allocator, fail_actual.?);
                                 defer ctx.allocator.free(value_str);
                                 try ctx.writeIndent();
-                                try ctx.writer.print("{s}  Expected not to equal: {s}{s}\n", .{ Color.dim, value_str, Color.reset });
+                                try ctx.writer.print("{s}    Expected not to equal: {s}{s}\n", .{ Color.dim, value_str, Color.reset });
                                 try ctx.writeIndent();
-                                try ctx.writer.print("{s}  But got:               {s}{s}\n", .{ Color.dim, value_str, Color.reset });
+                                try ctx.writer.print("{s}    But got:               {s}{s}\n", .{ Color.dim, value_str, Color.reset });
                             }
                         } else if (std.mem.eql(u8, k, "truthy")) {
                             // must failure
@@ -651,9 +651,9 @@ fn runIt(ctx: anytype, test_case: eval_module.ObjectValue, is_ignored: bool) any
                                 const condition_str = try eval_module.formatValue(ctx.allocator, fail_condition.?);
                                 defer ctx.allocator.free(condition_str);
                                 try ctx.writeIndent();
-                                try ctx.writer.print("{s}  Expected condition to be truthy{s}\n", .{ Color.dim, Color.reset });
+                                try ctx.writer.print("{s}    Expected condition to be truthy{s}\n", .{ Color.dim, Color.reset });
                                 try ctx.writeIndent();
-                                try ctx.writer.print("{s}  But got: {s}{s}\n", .{ Color.dim, condition_str, Color.reset });
+                                try ctx.writer.print("{s}    But got: {s}{s}\n", .{ Color.dim, condition_str, Color.reset });
                             }
                         }
                     }
