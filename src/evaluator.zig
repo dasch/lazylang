@@ -1679,17 +1679,31 @@ pub fn evaluateExpression(
                 switch (field.key) {
                     .static => |static_key| {
                         const key_copy = try arena.dupe(u8, static_key);
-                        // Wrap field value in a thunk for lazy evaluation
-                        const thunk = try arena.create(Thunk);
-                        thunk.* = .{
-                            .expr = field.value,
-                            .env = env,
-                            .current_dir = current_dir,
-                            .ctx = ctx,
-                            .state = .unevaluated,
-                            .field_key_location = field.key_location,
+                        // Special handling for lambdas with docstrings
+                        const field_value = if (field.doc != null and field.value.data == .lambda) blk2: {
+                            const lambda = field.value.data.lambda;
+                            const function = try arena.create(FunctionValue);
+                            function.* = .{
+                                .param = lambda.param,
+                                .body = lambda.body,
+                                .env = env,
+                                .docstring = field.doc,
+                            };
+                            break :blk2 Value{ .function = function };
+                        } else blk2: {
+                            // Wrap field value in a thunk for lazy evaluation
+                            const thunk = try arena.create(Thunk);
+                            thunk.* = .{
+                                .expr = field.value,
+                                .env = env,
+                                .current_dir = current_dir,
+                                .ctx = ctx,
+                                .state = .unevaluated,
+                                .field_key_location = field.key_location,
+                            };
+                            break :blk2 Value{ .thunk = thunk };
                         };
-                        try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch });
+                        try fields_list.append(arena, .{ .key = key_copy, .value = field_value, .is_patch = field.is_patch });
                     },
                     .dynamic => |key_expr| {
                         // Evaluate the key expression
@@ -1703,16 +1717,30 @@ pub fn evaluateExpression(
                             .string => |key_string| {
                                 // Single string key
                                 const key_copy = try arena.dupe(u8, key_string);
-                                const thunk = try arena.create(Thunk);
-                                thunk.* = .{
-                                    .expr = field.value,
-                                    .env = env,
-                                    .current_dir = current_dir,
-                                    .ctx = ctx,
-                                    .state = .unevaluated,
-                                    .field_key_location = field.key_location,
+                                // Special handling for lambdas with docstrings
+                                const field_value = if (field.doc != null and field.value.data == .lambda) blk2: {
+                                    const lambda = field.value.data.lambda;
+                                    const function = try arena.create(FunctionValue);
+                                    function.* = .{
+                                        .param = lambda.param,
+                                        .body = lambda.body,
+                                        .env = env,
+                                        .docstring = field.doc,
+                                    };
+                                    break :blk2 Value{ .function = function };
+                                } else blk2: {
+                                    const thunk = try arena.create(Thunk);
+                                    thunk.* = .{
+                                        .expr = field.value,
+                                        .env = env,
+                                        .current_dir = current_dir,
+                                        .ctx = ctx,
+                                        .state = .unevaluated,
+                                        .field_key_location = field.key_location,
+                                    };
+                                    break :blk2 Value{ .thunk = thunk };
                                 };
-                                try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch });
+                                try fields_list.append(arena, .{ .key = key_copy, .value = field_value, .is_patch = field.is_patch });
                             },
                             .array => |arr| {
                                 // Array of keys: create multiple fields with same value
@@ -1724,16 +1752,30 @@ pub fn evaluateExpression(
                                         },
                                         .string => |key_string| {
                                             const key_copy = try arena.dupe(u8, key_string);
-                                            const thunk = try arena.create(Thunk);
-                                            thunk.* = .{
-                                                .expr = field.value,
-                                                .env = env,
-                                                .current_dir = current_dir,
-                                                .ctx = ctx,
-                                                .state = .unevaluated,
-                                                .field_key_location = field.key_location,
+                                            // Special handling for lambdas with docstrings
+                                            const field_value = if (field.doc != null and field.value.data == .lambda) blk2: {
+                                                const lambda = field.value.data.lambda;
+                                                const function = try arena.create(FunctionValue);
+                                                function.* = .{
+                                                    .param = lambda.param,
+                                                    .body = lambda.body,
+                                                    .env = env,
+                                                    .docstring = field.doc,
+                                                };
+                                                break :blk2 Value{ .function = function };
+                                            } else blk2: {
+                                                const thunk = try arena.create(Thunk);
+                                                thunk.* = .{
+                                                    .expr = field.value,
+                                                    .env = env,
+                                                    .current_dir = current_dir,
+                                                    .ctx = ctx,
+                                                    .state = .unevaluated,
+                                                    .field_key_location = field.key_location,
+                                                };
+                                                break :blk2 Value{ .thunk = thunk };
                                             };
-                                            try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch });
+                                            try fields_list.append(arena, .{ .key = key_copy, .value = field_value, .is_patch = field.is_patch });
                                         },
                                         else => return error.TypeMismatch,
                                     }
