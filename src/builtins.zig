@@ -1483,3 +1483,20 @@ pub fn isFunction(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalE
     if (args.len != 1) return error.WrongNumberOfArguments;
     return eval.Value{ .boolean = args[0] == .function or args[0] == .native_fn };
 }
+
+/// Get the docstring of a function
+pub fn docstring(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const func = switch (args[0]) {
+        .function => |f| f,
+        else => return .null_value,
+    };
+
+    if (func.docstring) |doc| {
+        return .{ .string = doc };
+    } else {
+        return .null_value;
+    }
+}

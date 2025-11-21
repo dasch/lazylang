@@ -896,7 +896,7 @@ pub fn evaluateExpression(
         },
         .lambda => |lambda| blk: {
             const function = try arena.create(FunctionValue);
-            function.* = .{ .param = lambda.param, .body = lambda.body, .env = env };
+            function.* = .{ .param = lambda.param, .body = lambda.body, .env = env, .docstring = null };
             break :blk Value{ .function = function };
         },
         .let => |let_expr| blk: {
@@ -918,7 +918,18 @@ pub fn evaluateExpression(
                 };
 
                 // Evaluate value with recursive environment
-                const value = try evaluateExpression(arena, let_expr.value, recursive_env, current_dir, ctx);
+                // Special handling for lambdas with docstrings
+                const value = if (let_expr.doc != null and let_expr.value.data == .lambda) blk2: {
+                    const lambda = let_expr.value.data.lambda;
+                    const function = try arena.create(FunctionValue);
+                    function.* = .{
+                        .param = lambda.param,
+                        .body = lambda.body,
+                        .env = recursive_env,
+                        .docstring = let_expr.doc,
+                    };
+                    break :blk2 Value{ .function = function };
+                } else try evaluateExpression(arena, let_expr.value, recursive_env, current_dir, ctx);
 
                 // Update the environment entry with the actual value
                 recursive_env.value = value;
@@ -927,7 +938,19 @@ pub fn evaluateExpression(
                 break :blk try evaluateExpression(arena, let_expr.body, recursive_env, current_dir, ctx);
             } else {
                 // Non-recursive case: evaluate value first, then pattern match
-                const value = try evaluateExpression(arena, let_expr.value, env, current_dir, ctx);
+                // Special handling for lambdas with docstrings
+                const value = if (let_expr.doc != null and let_expr.value.data == .lambda) blk2: {
+                    const lambda = let_expr.value.data.lambda;
+                    const function = try arena.create(FunctionValue);
+                    function.* = .{
+                        .param = lambda.param,
+                        .body = lambda.body,
+                        .env = env,
+                        .docstring = let_expr.doc,
+                    };
+                    break :blk2 Value{ .function = function };
+                } else try evaluateExpression(arena, let_expr.value, env, current_dir, ctx);
+
                 const new_env = try matchPattern(arena, let_expr.pattern, value, env, ctx);
                 break :blk try evaluateExpression(arena, let_expr.body, new_env, current_dir, ctx);
             }
@@ -1904,6 +1927,7 @@ pub fn evaluateExpression(
                 .param = param,
                 .body = body_expr,
                 .env = env,
+                .docstring = null,
             };
 
             break :blk Value{ .function = func_value };
@@ -1962,6 +1986,7 @@ pub fn evaluateExpression(
                 .param = param_x,
                 .body = inner_lambda_expr,
                 .env = env,
+                .docstring = null,
             };
 
             break :blk Value{ .function = outer_func };
