@@ -46,8 +46,8 @@ fn loadActualCode(allocator: std.mem.Allocator, file_path: []const u8) ![]const 
     var lines = std.mem.splitScalar(u8, content, '\n');
     var found_code = false;
     while (lines.next()) |line| {
-        // Skip comment lines
-        if (std.mem.startsWith(u8, line, "//")) {
+        // Skip comment lines (both // and # style)
+        if (std.mem.startsWith(u8, line, "//") or std.mem.startsWith(u8, line, "#")) {
             continue;
         }
 
@@ -67,6 +67,62 @@ fn loadActualCode(allocator: std.mem.Allocator, file_path: []const u8) ![]const 
     return result.toOwnedSlice(allocator);
 }
 
+/// Visualize a string with special characters visible
+fn visualizeString(s: []const u8) void {
+    for (s) |c| {
+        switch (c) {
+            ' ' => std.debug.print("\x1b[90m·\x1b[0m", .{}), // Gray middle dot for space
+            '\t' => std.debug.print("\x1b[90m→\x1b[0m", .{}), // Gray arrow for tab
+            '\n' => std.debug.print("\x1b[90m¬\x1b[0m\n", .{}), // Gray not sign for newline
+            else => std.debug.print("{c}", .{c}),
+        }
+    }
+}
+
+/// Print a nice diff between expected and actual output
+fn printDiff(expected: []const u8, actual: []const u8) void {
+    var exp_lines = std.mem.splitScalar(u8, expected, '\n');
+    var act_lines = std.mem.splitScalar(u8, actual, '\n');
+
+    var line_num: usize = 1;
+    var has_diff = false;
+
+    while (true) {
+        const exp_line = exp_lines.next();
+        const act_line = act_lines.next();
+
+        if (exp_line == null and act_line == null) break;
+
+        const exp_str = exp_line orelse "";
+        const act_str = act_line orelse "";
+
+        if (!std.mem.eql(u8, exp_str, act_str)) {
+            if (!has_diff) {
+                std.debug.print("\n\x1b[1m━━━ Differences ━━━\x1b[0m\n", .{});
+                has_diff = true;
+            }
+
+            std.debug.print("\n\x1b[33mLine {d}:\x1b[0m\n", .{line_num});
+
+            // Expected line
+            std.debug.print("  \x1b[32m- Expected:\x1b[0m ", .{});
+            visualizeString(exp_str);
+            if (exp_line != null) std.debug.print("\n", .{});
+
+            // Actual line
+            std.debug.print("  \x1b[31m+ Got:     \x1b[0m ", .{});
+            visualizeString(act_str);
+            if (act_line != null) std.debug.print("\n", .{});
+        }
+
+        line_num += 1;
+    }
+
+    if (!has_diff) {
+        std.debug.print("\n\x1b[33mNote: Strings differ but all lines match. Check trailing whitespace or final newline.\x1b[0m\n", .{});
+    }
+}
+
 /// Helper to run formatter and compare with expected output
 fn testFormatterFixture(allocator: std.mem.Allocator, file_path: []const u8) !void {
     const expected = try loadExpectedOutput(allocator, file_path);
@@ -79,11 +135,17 @@ fn testFormatterFixture(allocator: std.mem.Allocator, file_path: []const u8) !vo
     defer formatted.deinit();
 
     if (!std.mem.eql(u8, formatted.text, expected)) {
-        std.debug.print("\n=== Formatter Test Failed: {s} ===\n", .{file_path});
-        std.debug.print("Input:\n{s}\n", .{actual_code});
-        std.debug.print("Expected:\n{s}\n", .{expected});
-        std.debug.print("Got:\n{s}\n", .{formatted.text});
-        std.debug.print("====================================\n", .{});
+        std.debug.print("\n\x1b[1;31m✗ Formatter Test Failed\x1b[0m\n", .{});
+        std.debug.print("\x1b[36mFile:\x1b[0m {s}\n", .{file_path});
+
+        std.debug.print("\n\x1b[1m━━━ Input ━━━\x1b[0m\n", .{});
+        visualizeString(actual_code);
+        std.debug.print("\n", .{});
+
+        printDiff(expected, formatted.text);
+
+        std.debug.print("\n\x1b[90mLegend: · = space, → = tab, ¬ = newline\x1b[0m\n", .{});
+
         return error.FormatterMismatch;
     }
 }

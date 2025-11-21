@@ -1,7 +1,15 @@
 // squared = [x * x for x in numbers]
 // filtered = [x for x in items when x > 5]
 // objComp = { x: x * 2 for x in range }
+//
+// longerSquared = [
+//   x * x
+//   for x in numbers
+// ]
 
 squared = [x*x for x in numbers]
 filtered = [x for x in items when x>5]
 objComp = {x: x*2 for x in range}
+
+longerSquared = [
+  x * x for x in numbers ]

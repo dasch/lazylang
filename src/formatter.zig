@@ -118,6 +118,16 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
         if (token.kind == .r_brace or token.kind == .r_bracket or token.kind == .r_paren) {
             if (brace_stack.items.len > 0) {
                 const brace_info = brace_stack.items[brace_stack.items.len - 1];
+
+                // For multi-line brackets in comprehensions, ensure closing bracket is on new line
+                if (brace_info.brace_type == .bracket and !brace_info.is_single_line and !token.preceded_by_newline) {
+                    // Check if we recently saw a 'for' keyword (likely a comprehension)
+                    if (i > 0 and prev_token == .identifier) {
+                        try output.appendSlice(allocator, "\n");
+                        at_line_start = true;
+                    }
+                }
+
                 _ = brace_stack.pop();
                 if (!brace_info.is_single_line and indent_level > 0) {
                     indent_level -= 1;
@@ -126,6 +136,24 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                 if (brace_info.brace_type == .bracket and !brace_info.is_single_line) {
                     do_indent_level = 0;
                 }
+            }
+        }
+
+        // Special handling for 'for' keyword in multi-line comprehensions
+        // If we're in a multi-line bracket and see 'for', it should be on its own line
+        if (token.kind == .identifier and std.mem.eql(u8, token.lexeme, "for")) {
+            var in_multiline_bracket = false;
+            for (brace_stack.items) |brace_info| {
+                if (brace_info.brace_type == .bracket and !brace_info.is_single_line) {
+                    in_multiline_bracket = true;
+                    break;
+                }
+            }
+
+            if (in_multiline_bracket and !token.preceded_by_newline) {
+                // Add a newline before 'for' in multi-line comprehensions
+                try output.appendSlice(allocator, "\n");
+                at_line_start = true;
             }
         }
 
@@ -185,6 +213,7 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
         }
 
         // For single-line objects, add space after opening brace
+        // For object projections (e.g., obj.{ x, y }), also add spaces
         if (token.kind == .l_brace) {
             if (brace_is_single_line.get(i)) |is_single| {
                 if (is_single) {
@@ -193,6 +222,24 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                     prev_token = token.kind;
                     continue;
                 }
+            }
+        }
+
+        // Skip semicolons in multi-line parenthesized blocks
+        // (They're used for sequencing in let-bindings but shouldn't appear in formatted output)
+        if (token.kind == .semicolon) {
+            // Check if we're in a multi-line paren block
+            var in_multiline_paren = false;
+            for (brace_stack.items) |brace_info| {
+                if (brace_info.brace_type == .paren and !brace_info.is_single_line) {
+                    in_multiline_paren = true;
+                    break;
+                }
+            }
+
+            if (in_multiline_paren) {
+                prev_token = token.kind;
+                continue; // Skip this semicolon
             }
         }
 
