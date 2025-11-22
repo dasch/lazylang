@@ -168,12 +168,12 @@
   /// ```
   isFunction: value -> __is_function value
 
-  /// Returns the docstring of a function, or null if none exists.
+  /// Returns the docstring of a function or module documentation of an object.
   ///
   /// **Parameter:**
-  /// - `value`: The function to get the docstring from
+  /// - `value`: The function or object to get the docstring from
   ///
-  /// **Returns:** The docstring as a string, or `null` if the value is not a function or has no docstring
+  /// **Returns:** The docstring/module doc as a string, or `null` if the value has no documentation
   ///
   /// **Example:**
   /// ```
@@ -181,6 +181,7 @@
   /// double = x -> x * 2
   ///
   /// docstring double   // Returns "Doubles a number"
+  /// docstring Array    // Returns "Provides utilities for working with arrays..."
   ///
   /// triple = x -> x * 3
   /// docstring triple   // Returns null
