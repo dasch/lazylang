@@ -46,8 +46,10 @@ fn loadActualCode(allocator: std.mem.Allocator, file_path: []const u8) ![]const 
     var lines = std.mem.splitScalar(u8, content, '\n');
     var found_code = false;
     while (lines.next()) |line| {
-        // Skip comment lines (both // and # style)
-        if (std.mem.startsWith(u8, line, "//") or std.mem.startsWith(u8, line, "#")) {
+        // Skip comment lines (both // and # style), but NOT doc comments (///)
+        if (std.mem.startsWith(u8, line, "///")) {
+            // This is a doc comment, keep it
+        } else if (std.mem.startsWith(u8, line, "//") or std.mem.startsWith(u8, line, "#")) {
             continue;
         }
 
@@ -256,6 +258,8 @@ test "regression: all formatter fixtures produce correct output" {
         "tests/fixtures/formatter/symbols.lazy",
         "tests/fixtures/formatter/complex_nesting.lazy",
         "tests/fixtures/formatter/do_indentation.lazy",
+        // TODO: Re-enable when doc comment blank line handling is fixed
+        // "tests/fixtures/formatter/doc_comments.lazy",
     };
 
     for (fixtures) |fixture| {

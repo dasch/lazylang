@@ -3,6 +3,7 @@
 /// This module includes functions for:
 /// - **Type Checking**: [isInteger], [isFloat], [isBoolean], [isNull], [isSymbol],
 ///   [isString], [isArray], [isTuple], [isObject], [isFunction]
+/// - **Reflection**: [docstring]
 /// - **Error Handling**: [crash]
 ///
 /// The functions in this module are typically available without qualification
@@ -166,6 +167,26 @@
   /// isFunction "hello"  //=> false
   /// ```
   isFunction: value -> __is_function value
+
+  /// Returns the docstring of a function or module documentation of an object.
+  ///
+  /// **Parameter:**
+  /// - `value`: The function or object to get the docstring from
+  ///
+  /// **Returns:** The docstring/module doc as a string, or `null` if the value has no documentation
+  ///
+  /// **Example:**
+  /// ```
+  /// /// Doubles a number
+  /// double = x -> x * 2
+  ///
+  /// docstring double   // Returns "Doubles a number"
+  /// docstring Array    // Returns "Provides utilities for working with arrays..."
+  ///
+  /// triple = x -> x * 3
+  /// docstring triple   // Returns null
+  /// ```
+  docstring: value -> __docstring value
 
   /// Terminates program execution with a custom error message.
   ///

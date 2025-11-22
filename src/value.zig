@@ -59,6 +59,7 @@ pub const FunctionValue = struct {
     param: *Pattern,
     body: *Expression,
     env: ?*Environment,
+    docstring: ?[]const u8,
 };
 
 /// NativeFn is a Zig function that implements a builtin.
