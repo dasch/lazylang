@@ -9,13 +9,13 @@
 ///
 /// ```
 /// // Transform elements
-/// Array.map (x -> x * 2) [1, 2, 3]  // Returns [2, 4, 6]
+/// Array.map (x -> x * 2) [1, 2, 3]  //=> [2, 4, 6]
 ///
 /// // Filter elements
-/// Array.filter (x -> x > 2) [1, 2, 3, 4]  // Returns [3, 4]
+/// Array.filter (x -> x > 2) [1, 2, 3, 4]  //=> [3, 4]
 ///
 /// // Reduce to a single value
-/// Array.fold (acc -> x -> acc + x) 0 [1, 2, 3]  // Returns 6
+/// Array.fold (acc -> x -> acc + x) 0 [1, 2, 3]  //=> 6
 /// ```
 /// ---
 Result = import 'Result'
@@ -29,7 +29,7 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Array.length [1, 2, 3]  // Returns 3
+  /// Array.length [1, 2, 3]  //=> 3
   /// ```
   length: arr -> __array_length arr
 
@@ -46,8 +46,8 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Array.get 1 [10, 20, 30]  // Returns (#ok, 20)
-  /// Array.get 5 [10, 20, 30]  // Returns #outOfBounds
+  /// Array.get 1 [10, 20, 30]  //=> (#ok, 20)
+  /// Array.get 5 [10, 20, 30]  //=> #outOfBounds
   /// ```
   get: idx -> arr -> __array_get (arr, idx)
 
@@ -59,7 +59,7 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Array.map (x -> x * 2) [1, 2, 3]  // Returns [2, 4, 6]
+  /// Array.map (x -> x * 2) [1, 2, 3]  //=> [2, 4, 6]
   /// ```
   map: fn -> arr -> [fn x for x in arr]
 
@@ -71,7 +71,7 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Array.flatMap (x -> [x, x]) [1, 2]  // Returns [1, 1, 2, 2]
+  /// Array.flatMap (x -> [x, x]) [1, 2]  //=> [1, 1, 2, 2]
   /// ```
   flatMap: fn -> arr -> [y for x in arr for y in (fn x)]
 
@@ -83,7 +83,7 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Array.filter (x -> x > 2) [1, 2, 3, 4]  // Returns [3, 4]
+  /// Array.filter (x -> x > 2) [1, 2, 3, 4]  //=> [3, 4]
   /// ```
   filter: pred -> arr -> [x for x in arr when pred x]
 
@@ -95,7 +95,7 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Array.skip (x -> x > 2) [1, 2, 3, 4]  // Returns [1, 2]
+  /// Array.skip (x -> x > 2) [1, 2, 3, 4]  //=> [1, 2]
   /// ```
   skip: pred -> arr -> [x for x in arr when !(pred x)]
 
@@ -108,8 +108,8 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Array.fold (acc -> x -> acc + x) 0 [1, 2, 3]  // Returns 6
-  /// Array.fold (acc -> x -> acc * x) 1 [2, 3, 4]  // Returns 24
+  /// Array.fold (acc -> x -> acc + x) 0 [1, 2, 3]  //=> 6
+  /// Array.fold (acc -> x -> acc * x) 1 [2, 3, 4]  //=> 24
   /// ```
   fold: fn -> init -> arr ->
     foldHelper = f -> acc -> xs -> idx ->
@@ -128,8 +128,8 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Array.reverse [1, 2, 3]  // Returns [3, 2, 1]
-  /// Array.reverse []          // Returns []
+  /// Array.reverse [1, 2, 3]  //=> [3, 2, 1]
+  /// Array.reverse []  //=> []
   /// ```
   reverse: arr -> __array_reverse arr
 
@@ -137,7 +137,7 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Array.empty  // Returns []
+  /// Array.empty  //=> []
   /// ```
   empty: []
 
@@ -148,8 +148,8 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Array.isEmpty []        // Returns true
-  /// Array.isEmpty [1, 2, 3] // Returns false
+  /// Array.isEmpty []  //=> true
+  /// Array.isEmpty [1, 2, 3]  //=> false
   /// ```
   isEmpty: arr -> __array_length arr == 0
 
@@ -163,9 +163,9 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Array.slice 1 3 [0, 1, 2, 3, 4]    // Returns [1, 2]
-  /// Array.slice 0 2 ["a", "b", "c"]    // Returns ["a", "b"]
-  /// Array.slice (0 - 2) 5 [1, 2, 3, 4]  // Returns [3, 4]
+  /// Array.slice 1 3 [0, 1, 2, 3, 4]  //=> [1, 2]
+  /// Array.slice 0 2 ["a", "b", "c"]  //=> ["a", "b"]
+  /// Array.slice (0 - 2) 5 [1, 2, 3, 4]  //=> [3, 4]
   /// ```
   slice: start -> end -> arr -> __array_slice (start, end, arr)
 
@@ -177,8 +177,8 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Array.sort [3, 1, 4, 1, 5]      // Returns [1, 1, 3, 4, 5]
-  /// Array.sort ["c", "a", "b"]      // Returns ["a", "b", "c"]
+  /// Array.sort [3, 1, 4, 1, 5]  //=> [1, 1, 3, 4, 5]
+  /// Array.sort ["c", "a", "b"]  //=> ["a", "b", "c"]
   /// ```
   sort: arr -> __array_sort arr
 
@@ -190,8 +190,8 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Array.sortBy .age [{name: "Alice", age: 30}, {name: "Bob", age: 25}]
-  /// // Returns [{name: "Bob", age: 25}, {name: "Alice", age: 30}]
+  /// Array.sortBy .age [{name: "Alice", age: 30}, {name: "Bob", age: 25}] \
+  ///   //=> [{name: "Bob", age: 25}, {name: "Alice", age: 30}]
   /// ```
   sortBy: keyFn -> arr ->
     // Create array of (key, value) pairs
@@ -209,8 +209,8 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Array.uniq [1, 2, 2, 3, 1, 4]  // Returns [1, 2, 3, 4]
-  /// Array.uniq ["a", "b", "a"]     // Returns ["a", "b"]
+  /// Array.uniq [1, 2, 2, 3, 1, 4]  //=> [1, 2, 3, 4]
+  /// Array.uniq ["a", "b", "a"]  //=> ["a", "b"]
   /// ```
   uniq: arr -> __array_uniq arr
 
@@ -222,9 +222,9 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Array.all (x -> x > 0) [1, 2, 3]    // Returns true
-  /// Array.all (x -> x > 0) [1, -2, 3]   // Returns false
-  /// Array.all (x -> x > 0) []           // Returns true
+  /// Array.all (x -> x > 0) [1, 2, 3]  //=> true
+  /// Array.all (x -> x > 0) [1, -2, 3]  //=> false
+  /// Array.all (x -> x > 0) []  //=> true
   /// ```
   all: pred -> arr -> __array_fold ((acc -> x -> acc && pred x), true, arr)
 
@@ -236,9 +236,9 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Array.any (x -> x > 2) [1, 2, 3]  // Returns true
-  /// Array.any (x -> x > 5) [1, 2, 3]  // Returns false
-  /// Array.any (x -> x > 0) []         // Returns false
+  /// Array.any (x -> x > 2) [1, 2, 3]  //=> true
+  /// Array.any (x -> x > 5) [1, 2, 3]  //=> false
+  /// Array.any (x -> x > 0) []  //=> false
   /// ```
   any: pred -> arr -> __array_fold ((acc -> x -> acc || pred x), false, arr)
 
@@ -250,9 +250,9 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Array.none (x -> x > 5) [1, 2, 3]  // Returns true
-  /// Array.none (x -> x > 2) [1, 2, 3]  // Returns false
-  /// Array.none (x -> x > 0) []         // Returns true
+  /// Array.none (x -> x > 5) [1, 2, 3]  //=> true
+  /// Array.none (x -> x > 2) [1, 2, 3]  //=> false
+  /// Array.none (x -> x > 0) []  //=> true
   /// ```
   none: pred -> arr -> __array_fold ((acc -> x -> acc && !(pred x)), true, arr)
 
@@ -266,15 +266,14 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Array.groupBy .type [
-  ///   {type: "fruit", name: "apple"},
-  ///   {type: "fruit", name: "banana"},
-  ///   {type: "vegetable", name: "carrot"}
-  /// ]
-  /// // Returns {
-  /// //   fruit: [{type: "fruit", name: "apple"}, {type: "fruit", name: "banana"}],
-  /// //   vegetable: [{type: "vegetable", name: "carrot"}]
-  /// // }
+  /// Array.groupBy .type [ \
+  ///   {type: "fruit", name: "apple"}, \
+  ///   {type: "fruit", name: "banana"}, \
+  ///   {type: "vegetable", name: "carrot"} \
+  /// ] //=> { \
+  ///   fruit: [{type: "fruit", name: "apple"}, {type: "fruit", name: "banana"}], \
+  ///   vegetable: [{type: "vegetable", name: "carrot"}] \
+  /// }
   /// ```
   groupBy: keyFn -> arr ->
     keys = __array_uniq [keyFn x for x in arr]
@@ -293,14 +292,14 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Array.zip ["a", "b", "c"] [1, 2]
-  /// // Returns [("a", 1), ("b", 2), ("c", null)]
+  /// Array.zip ["a", "b", "c"] [1, 2] \
+  ///   //=> [("a", 1), ("b", 2), ("c", null)]
   ///
-  /// Array.zip [1, 2] [3, 4, 5]
-  /// // Returns [(1, 3), (2, 4), (null, 5)]
+  /// Array.zip [1, 2] [3, 4, 5] \
+  ///   //=> [(1, 3), (2, 4), (null, 5)]
   ///
-  /// Array.zip [] [1, 2]
-  /// // Returns [(null, 1), (null, 2)]
+  /// Array.zip [] [1, 2] \
+  ///   //=> [(null, 1), (null, 2)]
   /// ```
   zip: arr1 -> arr2 ->
     len1 = __array_length arr1;

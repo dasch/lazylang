@@ -16,17 +16,16 @@
 ///
 /// ```
 /// // Create results
-/// success = Result.ok 42             // (#ok, 42)
-/// failure = Result.error "not found" // (#error, "not found")
+/// Result.ok 42             //=> (#ok, 42)
+/// Result.error "not found" //=> (#error, "not found")
 ///
 /// // Extract values with defaults
-/// Result.orDefault 0 success         // 42
-/// Result.orDefault 0 failure         // 0
+/// Result.orDefault 0 (Result.ok 42)          //=> 42
+/// Result.orDefault 0 (Result.error "failed") //=> 0
 ///
 /// // Useful with Array.get
-/// arr = [10, 20, 30]
-/// Result.orDefault 0 (Array.get 1 arr)  // 20
-/// Result.orDefault 0 (Array.get 99 arr) // 0
+/// Result.orDefault 0 (Array.get 1 [10, 20, 30])  //=> 20
+/// Result.orDefault 0 (Array.get 99 [10, 20, 30]) //=> 0
 /// ```
 {
   /// Creates a success result.
@@ -39,8 +38,8 @@
   ///
   /// **Example:**
   /// ```
-  /// Result.ok 42        // Returns (#ok, 42)
-  /// Result.ok "hello"   // Returns (#ok, "hello")
+  /// Result.ok 42        //=> (#ok, 42)
+  /// Result.ok "hello"   //=> (#ok, "hello")
   /// ```
   ok: value -> (#ok, value)
 
@@ -54,8 +53,8 @@
   ///
   /// **Example:**
   /// ```
-  /// Result.error "not found"     // Returns (#error, "not found")
-  /// Result.error 404             // Returns (#error, 404)
+  /// Result.error "not found"     //=> (#error, "not found")
+  /// Result.error 404             //=> (#error, 404)
   /// ```
   error: error -> (#error, error)
 
@@ -70,17 +69,38 @@
   ///
   /// **Example:**
   /// ```
-  /// Result.orDefault 0 (#ok, 42)           // Returns 42
-  /// Result.orDefault 0 (#error, "failed")  // Returns 0
-  /// Result.orDefault 0 #notFound           // Returns 0
+  /// Result.orDefault 0 (#ok, 42)           //=> 42
+  /// Result.orDefault 0 (#error, "failed")  //=> 0
+  /// Result.orDefault 0 #notFound           //=> 0
   ///
   /// // Useful with Array.get
-  /// arr = [10, 20, 30]
-  /// Result.orDefault 0 (Array.get 1 arr)   // Returns 20
-  /// Result.orDefault 0 (Array.get 99 arr)  // Returns 0
+  /// Array.get 1 [10, 20, 30]
+  ///   \ Result.orDefault 0  //=> 20
+  ///
+  /// Array.get 99 [10, 20, 30]
+  ///   \ Result.orDefault 0  //=> 0
   /// ```
   orDefault: default -> result ->
     when result matches
       (#ok, value) then value
       otherwise default
+
+  /// Applies a function to the error value if the result is an error, otherwise returns the original result.
+  ///
+  /// **Parameters:**
+  /// - `f`: A function that takes an error value and returns a new result
+  /// - `result`: The result to process
+  ///
+  /// **Returns:**
+  /// The result of applying `f` to the error if result is an error, otherwise the original result
+  ///
+  /// **Example:**
+  /// ```
+  /// Result.orElse (err -> Result.error (String.append err "!!!")) (#error, "not found")
+  /// //=> (#error, "not found!!!")
+  /// ```
+  orElse: f -> result ->
+    when result matches
+      (#error, error) then f error
+      otherwise result
 }

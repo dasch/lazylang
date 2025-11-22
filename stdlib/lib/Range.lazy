@@ -20,20 +20,12 @@
 /// ## Examples
 ///
 /// ```
-/// // Using functions
-/// Range.inclusive 1 5      // Range from 1 to 5 (inclusive)
-/// Range.exclusive 1 5      // Range from 1 to 4 (exclusive)
-///
-/// // Using syntactic sugar
-/// 1..5                     // Range from 1 to 5 (inclusive)
-/// 1...5                    // Range from 1 to 4 (exclusive)
-///
 /// // Converting to arrays
-/// Range.toArray (1..5)     // [1, 2, 3, 4, 5]
-/// Range.toArray (1...5)    // [1, 2, 3, 4]
+/// Range.toArray (1..5)  //=> [1, 2, 3, 4, 5]
+/// Range.toArray (1...5)  //=> [1, 2, 3, 4]
 ///
 /// // Using in for loops
-/// [x * 2 for x in 1..5]    // [2, 4, 6, 8, 10]
+/// [x * 2 for x in 1..5]  //=> [2, 4, 6, 8, 10]
 /// ```
 Result = import 'Result'
 Tuple = import 'Tuple'
@@ -85,10 +77,10 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Range.toArray (Range.inclusive 1 5)    // [1, 2, 3, 4, 5]
-  /// Range.toArray (Range.exclusive 1 5)    // [1, 2, 3, 4]
-  /// Range.toArray (1..5)                   // [1, 2, 3, 4, 5]
-  /// Range.toArray (1...5)                  // [1, 2, 3, 4]
+  /// Range.toArray (Range.inclusive 1 5)  //=> [1, 2, 3, 4, 5]
+  /// Range.toArray (Range.exclusive 1 5)  //=> [1, 2, 3, 4]
+  /// Range.toArray (1..5)  //=> [1, 2, 3, 4, 5]
+  /// Range.toArray (1...5)  //=> [1, 2, 3, 4]
   /// ```
   toArray: range -> __range_to_array range
 
@@ -103,13 +95,13 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Range.covers (1..5) 3      // true
-  /// Range.covers (1..5) 1      // true (inclusive start)
-  /// Range.covers (1..5) 5      // true (inclusive end)
-  /// Range.covers (1..5) 0      // false
-  /// Range.covers (1..5) 6      // false
-  /// Range.covers (1...5) 5     // false (exclusive end)
-  /// Range.covers (1...5) 4     // true
+  /// Range.covers (1..5) 3  //=> true
+  /// Range.covers (1..5) 1  //=> true
+  /// Range.covers (1..5) 5  //=> true
+  /// Range.covers (1..5) 0  //=> false
+  /// Range.covers (1..5) 6  //=> false
+  /// Range.covers (1...5) 5  //=> false
+  /// Range.covers (1...5) 4  //=> true
   /// ```
   covers: range -> x -> __range_covers (range, x)
 
@@ -126,14 +118,14 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Range.zip (1..3) (10..12)
-  /// // Returns [(1, 10), (2, 11), (3, 12)]
+  /// Range.zip (1..3) (10..12) \
+  ///   //=> [(1, 10), (2, 11), (3, 12)]
   ///
-  /// Range.zip (1..5) (10..11)
-  /// // Returns [(1, 10), (2, 11), (3, null), (4, null), (5, null)]
+  /// Range.zip (1..5) (10..11) \
+  ///   //=> [(1, 10), (2, 11), (3, null), (4, null), (5, null)]
   ///
-  /// Range.zip (1...3) (10..15)
-  /// // Returns [(1, 10), (2, 11), (null, 12), (null, 13), (null, 14), (null, 15)]
+  /// Range.zip (1...3) (10..15) \
+  ///   //=> [(1, 10), (2, 11), (null, 12), (null, 13), (null, 14), (null, 15)]
   /// ```
   zip: range1 -> range2 ->
     arr1 = __range_to_array range1;

@@ -9,13 +9,13 @@
 ///
 /// ```
 /// // Get all keys
-/// Object.keys { name: "John", age: 30 }  // Returns ["name", "age"]
+/// Object.keys { name: "John", age: 30 }  //=> ["name", "age"]
 ///
 /// // Transform values
-/// Object.mapValues (x -> x * 2) { a: 1, b: 2 }  // Returns { a: 2, b: 4 }
+/// Object.mapValues (x -> x * 2) { a: 1, b: 2 }  //=> { a: 2, b: 4 }
 ///
 /// // Merge objects
-/// Object.merge { a: 1 } { b: 2 }  // Returns { a: 1, b: 2 }
+/// Object.merge { a: 1 } { b: 2 }  //=> { a: 1, b: 2 }
 /// ```
 Result = import 'Result'
 Tuple = import 'Tuple'
@@ -28,7 +28,7 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Object.keys { name: "John", age: 30 }  // Returns ["name", "age"]
+  /// Object.keys { name: "John", age: 30 }  //=> ["name", "age"]
   /// ```
   keys: obj -> __object_keys obj
 
@@ -39,7 +39,7 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Object.values { name: "John", age: 30 }  // Returns ["John", 30]
+  /// Object.values { name: "John", age: 30 }  //=> ["John", 30]
   /// ```
   values: obj -> __object_values obj
 
@@ -56,8 +56,8 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Object.get "name" { name: "John", age: 30 }  // Returns (#ok, "John")
-  /// Object.get "email" { name: "John", age: 30 }  // Returns #noSuchKey
+  /// Object.get "name" { name: "John", age: 30 }  //=> (#ok, "John")
+  /// Object.get "email" { name: "John", age: 30 }  //=> #noSuchKey
   /// ```
   get: key -> obj -> __object_get (obj, key)
 
@@ -70,7 +70,7 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Object.merge { a: 1, b: 2 } { b: 3, c: 4 }  // Returns { a: 1, b: 3, c: 4 }
+  /// Object.merge { a: 1, b: 2 } { b: 3, c: 4 }  //=> { a: 1, b: 3, c: 4 }
   /// ```
   merge: obj1 -> obj2 -> obj1 & obj2
 
@@ -82,7 +82,7 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Object.mapValues (x -> x * 2) { a: 1, b: 2 }  // Returns { a: 2, b: 4 }
+  /// Object.mapValues (x -> x * 2) { a: 1, b: 2 }  //=> { a: 2, b: 4 }
   /// ```
   mapValues: fn -> obj ->
     { [k]: fn v for (k, v) in obj }
@@ -95,8 +95,8 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Object.slice ["name", "age"] { name: "John", age: 30, city: "NYC" }
-  /// // Returns { name: "John", age: 30 }
+  /// Object.slice ["name", "age"] { name: "John", age: 30, city: "NYC" } \
+  ///   //=> { name: "John", age: 30 }
   /// ```
   slice: keys -> obj ->
     { [k]: v for (k, v) in obj when [key for key in keys when key == k] != [] }
@@ -113,14 +113,14 @@ Tuple = import 'Tuple'
   ///
   /// **Example:**
   /// ```
-  /// Object.zip { x: 1, y: 2 } { x: 3, y: 4, z: 5 }
-  /// // Returns { x: (1, 3), y: (2, 4), z: (null, 5) }
+  /// Object.zip { x: 1, y: 2 } { x: 3, y: 4, z: 5 } \
+  ///   //=> { x: (1, 3), y: (2, 4), z: (null, 5) }
   ///
-  /// Object.zip { a: "hello" } { b: "world" }
-  /// // Returns { a: ("hello", null), b: (null, "world") }
+  /// Object.zip { a: "hello" } { b: "world" } \
+  ///   //=> { a: ("hello", null), b: (null, "world") }
   ///
-  /// Object.zip {} { x: 1 }
-  /// // Returns { x: (null, 1) }
+  /// Object.zip {} { x: 1 } \
+  ///   //=> { x: (null, 1) }
   /// ```
   zip: obj1 -> obj2 ->
     keys1 = __object_keys obj1;

@@ -12,12 +12,9 @@
 ///
 /// ```
 /// // Type checking
-/// isString "hello"    // Returns true
-/// isInteger "hello"   // Returns false
-/// isArray [1, 2, 3]   // Returns true
-///
-/// // Error handling
-/// crash "Something went wrong!"
+/// isString "hello"  //=> true
+/// isInteger "hello"  //=> false
+/// isArray [1, 2, 3]  //=> true
 /// ```
 {
   /// Checks if a value is an integer.
@@ -29,9 +26,9 @@
   ///
   /// **Example:**
   /// ```
-  /// isInteger 42        // Returns true
-  /// isInteger 3.14      // Returns false
-  /// isInteger "hello"   // Returns false
+  /// isInteger 42  //=> true
+  /// isInteger 3.14  //=> false
+  /// isInteger "hello"  //=> false
   /// ```
   isInteger: value -> __is_integer value
 
@@ -44,9 +41,9 @@
   ///
   /// **Example:**
   /// ```
-  /// isFloat 3.14        // Returns true
-  /// isFloat 42          // Returns false
-  /// isFloat "hello"     // Returns false
+  /// isFloat 3.14  //=> true
+  /// isFloat 42  //=> false
+  /// isFloat "hello"  //=> false
   /// ```
   isFloat: value -> __is_float value
 
@@ -59,9 +56,9 @@
   ///
   /// **Example:**
   /// ```
-  /// isBoolean true      // Returns true
-  /// isBoolean false     // Returns true
-  /// isBoolean 1         // Returns false
+  /// isBoolean true  //=> true
+  /// isBoolean false  //=> true
+  /// isBoolean 1  //=> false
   /// ```
   isBoolean: value -> __is_boolean value
 
@@ -74,9 +71,9 @@
   ///
   /// **Example:**
   /// ```
-  /// isNull null         // Returns true
-  /// isNull 0            // Returns false
-  /// isNull ""           // Returns false
+  /// isNull null  //=> true
+  /// isNull 0  //=> false
+  /// isNull ""  //=> false
   /// ```
   isNull: value -> __is_null value
 
@@ -89,9 +86,9 @@
   ///
   /// **Example:**
   /// ```
-  /// isSymbol #ok        // Returns true
-  /// isSymbol "ok"       // Returns false
-  /// isSymbol 42         // Returns false
+  /// isSymbol #ok  //=> true
+  /// isSymbol "ok"  //=> false
+  /// isSymbol 42  //=> false
   /// ```
   isSymbol: value -> __is_symbol value
 
@@ -104,9 +101,9 @@
   ///
   /// **Example:**
   /// ```
-  /// isString "hello"    // Returns true
-  /// isString 42         // Returns false
-  /// isString [1, 2, 3]  // Returns false
+  /// isString "hello"  //=> true
+  /// isString 42  //=> false
+  /// isString [1, 2, 3]  //=> false
   /// ```
   isString: value -> __is_string value
 
@@ -119,9 +116,9 @@
   ///
   /// **Example:**
   /// ```
-  /// isArray [1, 2, 3]   // Returns true
-  /// isArray (1, 2, 3)   // Returns false (tuple)
-  /// isArray "hello"     // Returns false
+  /// isArray [1, 2, 3]  //=> true
+  /// isArray (1, 2, 3)  //=> false
+  /// isArray "hello"  //=> false
   /// ```
   isArray: value -> __is_array value
 
@@ -134,9 +131,9 @@
   ///
   /// **Example:**
   /// ```
-  /// isTuple (1, 2, 3)   // Returns true
-  /// isTuple [1, 2, 3]   // Returns false (array)
-  /// isTuple "hello"     // Returns false
+  /// isTuple (1, 2, 3)  //=> true
+  /// isTuple [1, 2, 3]  //=> false
+  /// isTuple "hello"  //=> false
   /// ```
   isTuple: value -> __is_tuple value
 
@@ -149,9 +146,9 @@
   ///
   /// **Example:**
   /// ```
-  /// isObject { x: 1, y: 2 }   // Returns true
-  /// isObject [1, 2, 3]        // Returns false
-  /// isObject "hello"          // Returns false
+  /// isObject { x: 1, y: 2 }  //=> true
+  /// isObject [1, 2, 3]  //=> false
+  /// isObject "hello"  //=> false
   /// ```
   isObject: value -> __is_object value
 
@@ -164,9 +161,9 @@
   ///
   /// **Example:**
   /// ```
-  /// isFunction (x -> x + 1)   // Returns true
-  /// isFunction 42             // Returns false
-  /// isFunction "hello"        // Returns false
+  /// isFunction (x -> x + 1)  //=> true
+  /// isFunction 42  //=> false
+  /// isFunction "hello"  //=> false
   /// ```
   isFunction: value -> __is_function value
 

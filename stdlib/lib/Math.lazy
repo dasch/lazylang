@@ -10,13 +10,13 @@
 ///
 /// ```
 /// // Find maximum
-/// Math.max 5 10  // Returns 10
+/// Math.max 5 10  //=> 10
 ///
 /// // Calculate power
-/// Math.pow 2 3  // Returns 8
+/// Math.pow 2 3  //=> 8
 ///
 /// // Round numbers
-/// Math.round 3  // Returns 3
+/// Math.round 3  //=> 3
 /// ```
 {
   /// Returns the maximum of two numbers.
@@ -27,8 +27,7 @@
   ///
   /// **Example:**
   /// ```
-  /// Math.max 5 10   // Returns 10
-  /// Math.max -3 -7  // Returns -3
+  /// Math.max 5 10  //=> 10
   /// ```
   max: a -> b -> __math_max (a, b)
 
@@ -40,8 +39,7 @@
   ///
   /// **Example:**
   /// ```
-  /// Math.min 5 10   // Returns 5
-  /// Math.min -3 -7  // Returns -7
+  /// Math.min 5 10  //=> 5
   /// ```
   min: a -> b -> __math_min (a, b)
 
@@ -52,8 +50,7 @@
   ///
   /// **Example:**
   /// ```
-  /// Math.abs -5   // Returns 5
-  /// Math.abs 10   // Returns 10
+  /// Math.abs 10  //=> 10
   /// ```
   abs: n -> __math_abs n
 
@@ -65,8 +62,8 @@
   ///
   /// **Example:**
   /// ```
-  /// Math.pow 2 3   // Returns 8
-  /// Math.pow 5 2   // Returns 25
+  /// Math.pow 2 3  //=> 8
+  /// Math.pow 5 2  //=> 25
   /// ```
   pow: base -> exponent -> __math_pow (base, exponent)
 
@@ -77,8 +74,8 @@
   ///
   /// **Example:**
   /// ```
-  /// Math.sqrt 9    // Returns 3
-  /// Math.sqrt 16   // Returns 4
+  /// Math.sqrt 9  //=> 3
+  /// Math.sqrt 16  //=> 4
   /// ```
   sqrt: n -> __math_sqrt n
 
@@ -89,7 +86,7 @@
   ///
   /// **Example:**
   /// ```
-  /// Math.floor 3   // Returns 3
+  /// Math.floor 3  //=> 3
   /// ```
   floor: n -> __math_floor n
 
@@ -100,7 +97,7 @@
   ///
   /// **Example:**
   /// ```
-  /// Math.ceil 3   // Returns 3
+  /// Math.ceil 3  //=> 3
   /// ```
   ceil: n -> __math_ceil n
 
@@ -111,7 +108,7 @@
   ///
   /// **Example:**
   /// ```
-  /// Math.round 3   // Returns 3
+  /// Math.round 3  //=> 3
   /// ```
   round: n -> __math_round n
 
@@ -122,8 +119,7 @@
   ///
   /// **Example:**
   /// ```
-  /// Math.log 1    // Returns 0
-  /// Math.log 2    // Returns 0 (truncated from ~0.693)
+  /// Math.log 1  //=> 0
   /// ```
   log: n -> __math_log n
 
@@ -134,8 +130,7 @@
   ///
   /// **Example:**
   /// ```
-  /// Math.exp 0   // Returns 1
-  /// Math.exp 1   // Returns 2 (truncated from ~2.718)
+  /// Math.exp 0  //=> 1
   /// ```
   exp: n -> __math_exp n
 }

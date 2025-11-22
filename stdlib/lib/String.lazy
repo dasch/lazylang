@@ -10,13 +10,13 @@
 ///
 /// ```
 /// // Transform strings
-/// String.toUpperCase "hello"  // Returns "HELLO"
+/// String.toUpperCase "hello"  //=> "HELLO"
 ///
 /// // Split into parts
-/// String.split "," "a,b,c"  // Returns ["a", "b", "c"]
+/// String.split "," "a,b,c"  //=> ["a", "b", "c"]
 ///
 /// // Check contents
-/// String.startsWith "hello" "hello world"  // Returns true
+/// String.startsWith "hello" "hello world"  //=> true
 /// ```
 {
   /// Returns the number of characters in a string.
@@ -26,7 +26,7 @@
   ///
   /// **Example:**
   /// ```
-  /// String.length "hello"  // Returns 5
+  /// String.length "hello"  //=> 5
   /// ```
   length: str -> __string_length str
 
@@ -38,7 +38,7 @@
   ///
   /// **Example:**
   /// ```
-  /// String.append "Hello, " "world!"  // Returns "Hello, world!"
+  /// String.append "Hello, " "world!"  //=> "Hello, world!"
   /// ```
   append: prefix -> str -> __string_concat (prefix, str)
 
@@ -50,9 +50,9 @@
   ///
   /// **Example:**
   /// ```
-  /// String.concat ["hello", " ", "world"]  // Returns "hello world"
-  /// String.concat ["a", "b", "c"]          // Returns "abc"
-  /// String.concat []                       // Returns ""
+  /// String.concat ["hello", " ", "world"]  //=> "hello world"
+  /// String.concat ["a", "b", "c"]  //=> "abc"
+  /// String.concat []  //=> ""
   /// ```
   concat: strs -> __array_concat_all strs
 
@@ -64,8 +64,8 @@
   ///
   /// **Example:**
   /// ```
-  /// String.split "," "apple,banana,cherry"  // Returns ["apple", "banana", "cherry"]
-  /// String.split " " "hello world"          // Returns ["hello", "world"]
+  /// String.split "," "apple,banana,cherry"  //=> ["apple", "banana", "cherry"]
+  /// String.split " " "hello world"  //=> ["hello", "world"]
   /// ```
   split: delimiter -> str -> __string_split (str, delimiter)
 
@@ -76,7 +76,7 @@
   ///
   /// **Example:**
   /// ```
-  /// String.toUpperCase "hello"  // Returns "HELLO"
+  /// String.toUpperCase "hello"  //=> "HELLO"
   /// ```
   toUpperCase: str -> __string_to_upper str
 
@@ -87,7 +87,7 @@
   ///
   /// **Example:**
   /// ```
-  /// String.toLowerCase "HELLO"  // Returns "hello"
+  /// String.toLowerCase "HELLO"  //=> "hello"
   /// ```
   toLowerCase: str -> __string_to_lower str
 
@@ -98,7 +98,7 @@
   ///
   /// **Example:**
   /// ```
-  /// String.chars "hello"  // Returns ["h", "e", "l", "l", "o"]
+  /// String.chars "hello"  //=> ["h", "e", "l", "l", "o"]
   /// ```
   chars: str -> __string_chars str
 
@@ -109,8 +109,8 @@
   ///
   /// **Example:**
   /// ```
-  /// String.isEmpty ""       // Returns true
-  /// String.isEmpty "hello"  // Returns false
+  /// String.isEmpty ""  //=> true
+  /// String.isEmpty "hello"  //=> false
   /// ```
   isEmpty: str -> __string_length str == 0
 
@@ -121,7 +121,7 @@
   ///
   /// **Example:**
   /// ```
-  /// String.trim "  hello  "  // Returns "hello"
+  /// String.trim "  hello  "  //=> "hello"
   /// ```
   trim: str -> __string_trim str
 
@@ -133,8 +133,8 @@
   ///
   /// **Example:**
   /// ```
-  /// String.startsWith "hello" "hello world"  // Returns true
-  /// String.startsWith "world" "hello world"  // Returns false
+  /// String.startsWith "hello" "hello world"  //=> true
+  /// String.startsWith "world" "hello world"  //=> false
   /// ```
   startsWith: prefix -> str -> __string_starts_with (str, prefix)
 
@@ -146,8 +146,8 @@
   ///
   /// **Example:**
   /// ```
-  /// String.endsWith "world" "hello world"  // Returns true
-  /// String.endsWith "hello" "hello world"  // Returns false
+  /// String.endsWith "world" "hello world"  //=> true
+  /// String.endsWith "hello" "hello world"  //=> false
   /// ```
   endsWith: suffix -> str -> __string_ends_with (str, suffix)
 
@@ -159,8 +159,8 @@
   ///
   /// **Example:**
   /// ```
-  /// String.contains "lo wo" "hello world"  // Returns true
-  /// String.contains "xyz" "hello world"    // Returns false
+  /// String.contains "lo wo" "hello world"  //=> true
+  /// String.contains "xyz" "hello world"  //=> false
   /// ```
   contains: substring -> str -> __string_contains (str, substring)
 
@@ -172,8 +172,8 @@
   ///
   /// **Example:**
   /// ```
-  /// String.repeat 3 "ha"   // Returns "hahaha"
-  /// String.repeat 0 "x"    // Returns ""
+  /// String.repeat 3 "ha"  //=> "hahaha"
+  /// String.repeat 0 "x"  //=> ""
   /// ```
   repeat: count -> str -> __string_repeat (count, str)
 
@@ -186,8 +186,8 @@
   ///
   /// **Example:**
   /// ```
-  /// String.replace "world" "Lazylang" "hello world"  // Returns "hello Lazylang"
-  /// String.replace "a" "o" "banana"                  // Returns "bonono"
+  /// String.replace "world" "Lazylang" "hello world"  //=> "hello Lazylang"
+  /// String.replace "a" "o" "banana"  //=> "bonono"
   /// ```
   replace: from -> to -> str -> __string_replace (from, to, str)
 
@@ -199,8 +199,8 @@
   ///
   /// **Example:**
   /// ```
-  /// String.join ", " ["a", "b", "c"]  // Returns "a, b, c"
-  /// String.join "" ["hello", "world"]  // Returns "helloworld"
+  /// String.join ", " ["a", "b", "c"]  //=> "a, b, c"
+  /// String.join "" ["hello", "world"]  //=> "helloworld"
   /// ```
   join: separator -> arr -> __string_join (separator, arr)
 
@@ -214,9 +214,8 @@
   ///
   /// **Example:**
   /// ```
-  /// String.slice 0 5 "hello world"        // Returns "hello"
-  /// String.slice 6 11 "hello world"       // Returns "world"
-  /// String.slice (0 - 5) 11 "hello world"  // Returns "world"
+  /// String.slice 0 5 "hello world"  //=> "hello"
+  /// String.slice 6 11 "hello world"  //=> "world"
   /// ```
   slice: start -> end -> str -> __string_slice (start, end, str)
 
@@ -228,7 +227,7 @@
   ///
   /// **Example:**
   /// ```
-  /// String.left 5 "hello world"  // Returns "hello"
+  /// String.left 5 "hello world"  //=> "hello"
   /// ```
   left: n -> str -> __string_slice (0, n, str)
 
@@ -240,7 +239,7 @@
   ///
   /// **Example:**
   /// ```
-  /// String.right 5 "hello world"  // Returns "world"
+  /// String.right 5 "hello world"  //=> "world"
   /// ```
   right: n -> str ->
     len = __string_length str
@@ -254,7 +253,7 @@
   ///
   /// **Example:**
   /// ```
-  /// String.dropLeft 6 "hello world"  // Returns "world"
+  /// String.dropLeft 6 "hello world"  //=> "world"
   /// ```
   dropLeft: n -> str ->
     len = __string_length str
@@ -268,7 +267,7 @@
   ///
   /// **Example:**
   /// ```
-  /// String.dropRight 6 "hello world"  // Returns "hello"
+  /// String.dropRight 6 "hello world"  //=> "hello"
   /// ```
   dropRight: n -> str ->
     len = __string_length str

@@ -9,6 +9,7 @@
 //! - spec: Run Lazylang test files (cli_spec_cmd.zig)
 //! - format: Format Lazylang source code (cli_format_cmd.zig)
 //! - docs: Generate HTML documentation (cli_docs_cmd.zig)
+//! - docspec: Test code examples in documentation (cli_docspec_cmd.zig)
 //!
 //! Each command is implemented in its own module for better organization
 //! and maintainability.
@@ -20,6 +21,7 @@ const cli_run_cmd = @import("cli_run_cmd.zig");
 const cli_spec_cmd = @import("cli_spec_cmd.zig");
 const cli_format_cmd = @import("cli_format_cmd.zig");
 const cli_docs_cmd = @import("cli_docs_cmd.zig");
+const cli_docspec_cmd = @import("cli_docspec_cmd.zig");
 
 pub const CommandResult = cli_types.CommandResult;
 
@@ -144,6 +146,27 @@ const commands = [_]CommandInfo{
         \\  lazy docs --output public/docs stdlib/lib
         ,
     },
+    .{
+        .name = "docspec",
+        .description = "Test code examples in documentation comments",
+        .usage = "lazy docspec [<path>]",
+        .help_text =
+        \\Test code examples in documentation comments (//=>).
+        \\
+        \\Usage:
+        \\  lazy docspec                     Test all modules in stdlib/lib
+        \\  lazy docspec <file>              Test specific file
+        \\  lazy docspec <dir>               Test all files in directory
+        \\
+        \\Options:
+        \\  -h, --help           Show this help message
+        \\
+        \\Examples:
+        \\  lazy docspec
+        \\  lazy docspec stdlib/lib
+        \\  lazy docspec stdlib/lib/Array.lazy
+        ,
+    },
 };
 
 fn printHelp(stderr: anytype) !void {
@@ -225,6 +248,10 @@ pub fn run(
 
     if (std.mem.eql(u8, subcommand, "docs")) {
         return try cli_docs_cmd.runDocs(allocator, args[2..], stdout, stderr);
+    }
+
+    if (std.mem.eql(u8, subcommand, "docspec")) {
+        return try cli_docspec_cmd.runDocSpec(allocator, args[2..], stdout, stderr);
     }
 
     if (std.mem.eql(u8, subcommand, "run")) {

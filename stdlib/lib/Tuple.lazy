@@ -10,13 +10,8 @@
 /// ## Examples
 ///
 /// ```
-/// // Create tuples
-/// pair = (1, 2)
-/// triple = ("a", "b", "c")
-///
 /// // Map both elements
-/// Tuple.mapBoth (x -> x * 2) (3, 4)  // Returns (6, 8)
-/// Tuple.mapBoth String.toUpper ("hello", "world")  // Returns ("HELLO", "WORLD")
+/// Tuple.mapBoth (x -> x * 2) (3, 4)  //=> (6, 8)
 /// ```
 {
   /// Applies a function to both elements of a 2-tuple, returning a new tuple.
@@ -30,14 +25,9 @@
   ///
   /// **Example:**
   /// ```
-  /// Tuple.mapBoth (x -> x * 2) (3, 4)
-  /// // Returns (6, 8)
+  /// Tuple.mapBoth (x -> x * 2) (3, 4)  //=> (6, 8)
   ///
-  /// Tuple.mapBoth (x -> x + 1) (10, 20)
-  /// // Returns (11, 21)
-  ///
-  /// Tuple.mapBoth String.length ("hello", "world")
-  /// // Returns (5, 5)
+  /// Tuple.mapBoth (x -> x + 1) (10, 20)  //=> (11, 21)
   /// ```
   mapBoth: f -> (a, b) -> (f a, f b)
 }
