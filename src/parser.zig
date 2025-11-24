@@ -163,44 +163,13 @@ pub const Parser = struct {
             return error.ExpectedExpression;
         }
 
-        // Consume module-level doc comments at the start of the file
-        const module_doc = self.tokenizer.consumeModuleLevelDocComments();
-
         const expr = try self.parseLambda();
         if (self.current.kind != .eof) {
             self.recordError();
             return error.UnexpectedToken;
         }
 
-        // If we have module docs, try to attach them to the final object
-        if (module_doc) |doc| {
-            self.attachModuleDocToObject(expr, doc);
-        }
-
         return expr;
-    }
-
-    /// Recursively finds the final object in a chain of let expressions and attaches module_doc to it
-    fn attachModuleDocToObject(self: *Parser, expr: *Expression, doc: []const u8) void {
-        switch (expr.data) {
-            .object => |*obj| {
-                // Only attach if object doesn't already have module_doc
-                if (obj.module_doc == null) {
-                    obj.module_doc = doc;
-                }
-            },
-            .let => |let_expr| {
-                // Recursively check the body of the let expression
-                self.attachModuleDocToObject(let_expr.body, doc);
-            },
-            .where_expr => |where_expr| {
-                // Recursively check the body of the where expression
-                self.attachModuleDocToObject(where_expr.expr, doc);
-            },
-            else => {
-                // Not an object or let/where, ignore
-            },
-        }
     }
 
     fn parseLambda(self: *Parser) ParseError!*Expression {
@@ -217,7 +186,7 @@ pub const Parser = struct {
 
         if (is_let_binding) {
             const start_token = self.current; // Capture start for location
-            const doc = self.current.doc_comments;
+            const doc = start_token.doc_comments; // Doc comments are already on the token
             const pattern = try self.parsePattern();
             try self.expectToken(.equals, "in let binding");
             const value = try self.parseLambda();

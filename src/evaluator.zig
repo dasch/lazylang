@@ -48,6 +48,30 @@ pub const Parser = parser_mod.Parser;
 const formatValueShort = value_format.formatValueShort;
 const valueToString = value_format.valueToString;
 
+/// Attach documentation and name to a value at its primary binding site.
+/// Only attaches if the value is a function or object and doesn't already have a docstring/name.
+fn attachDocAndName(value: *Value, doc: []const u8, name: []const u8) void {
+    switch (value.*) {
+        .function => |f| {
+            if (f.docstring == null) {
+                f.docstring = doc;
+            }
+            if (f.name == null) {
+                f.name = name;
+            }
+        },
+        .object => |*obj| {
+            if (obj.module_doc == null) {
+                obj.module_doc = doc;
+            }
+            if (obj.name == null) {
+                obj.name = name;
+            }
+        },
+        else => {}, // Ignore for other types
+    }
+}
+
 // Value comparison helper (depends on force, so kept here)
 fn valuesEqual(arena: std.mem.Allocator, a: Value, b: Value) bool {
     // Force thunks before comparison
@@ -918,19 +942,12 @@ pub fn evaluateExpression(
                 };
 
                 // Evaluate value with recursive environment
-                // Special handling for lambdas with docstrings
-                const value = if (let_expr.doc != null and let_expr.value.data == .lambda) blk2: {
-                    const lambda = let_expr.value.data.lambda;
-                    const function = try arena.create(FunctionValue);
-                    function.* = .{
-                        .param = lambda.param,
-                        .body = lambda.body,
-                        .env = recursive_env,
-                        .docstring = let_expr.doc,
-                        .name = null,
-                    };
-                    break :blk2 Value{ .function = function };
-                } else try evaluateExpression(arena, let_expr.value, recursive_env, current_dir, ctx);
+                var value = try evaluateExpression(arena, let_expr.value, recursive_env, current_dir, ctx);
+
+                // Attach doc and name if this is the primary binding site
+                if (let_expr.doc) |doc| {
+                    attachDocAndName(&value, doc, identifier);
+                }
 
                 // Update the environment entry with the actual value
                 recursive_env.value = value;
@@ -939,19 +956,14 @@ pub fn evaluateExpression(
                 break :blk try evaluateExpression(arena, let_expr.body, recursive_env, current_dir, ctx);
             } else {
                 // Non-recursive case: evaluate value first, then pattern match
-                // Special handling for lambdas with docstrings
-                const value = if (let_expr.doc != null and let_expr.value.data == .lambda) blk2: {
-                    const lambda = let_expr.value.data.lambda;
-                    const function = try arena.create(FunctionValue);
-                    function.* = .{
-                        .param = lambda.param,
-                        .body = lambda.body,
-                        .env = env,
-                        .docstring = let_expr.doc,
-                        .name = null,
-                    };
-                    break :blk2 Value{ .function = function };
-                } else try evaluateExpression(arena, let_expr.value, env, current_dir, ctx);
+                var value = try evaluateExpression(arena, let_expr.value, env, current_dir, ctx);
+
+                // Attach doc and name if pattern is simple identifier
+                if (let_expr.doc) |doc| {
+                    if (let_expr.pattern.data == .identifier) {
+                        attachDocAndName(&value, doc, let_expr.pattern.data.identifier);
+                    }
+                }
 
                 const new_env = try matchPattern(arena, let_expr.pattern, value, env, ctx);
                 break :blk try evaluateExpression(arena, let_expr.body, new_env, current_dir, ctx);
