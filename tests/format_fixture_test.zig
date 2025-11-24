@@ -268,6 +268,10 @@ test "formatter: semicolons stripped" {
     try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/semicolons_stripped.lazy");
 }
 
+test "formatter: trailing commas removed" {
+    try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/trailing_commas_removed.lazy");
+}
+
 // ============================================================================
 // REGRESSION TEST
 // Ensure all formatter fixtures work correctly
@@ -303,6 +307,7 @@ test "regression: all formatter fixtures produce correct output" {
         "tests/fixtures/formatter/multiline_comprehension_indentation.lazy",
         "tests/fixtures/formatter/nested_comprehension_indentation.lazy",
         "tests/fixtures/formatter/semicolons_stripped.lazy",
+        "tests/fixtures/formatter/trailing_commas_removed.lazy",
         // TODO: Re-enable when doc comment blank line handling is fixed
         // "tests/fixtures/formatter/doc_comments.lazy",
     };

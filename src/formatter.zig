@@ -314,6 +314,28 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
             }
         }
 
+        // Skip trailing commas in objects/arrays
+        // (Commas before closing braces/brackets are redundant)
+        if (token.kind == .comma) {
+            // Check if we're in an object or array
+            var in_collection = false;
+            for (brace_stack.items) |brace_info| {
+                if (brace_info.brace_type == .brace or brace_info.brace_type == .bracket) {
+                    in_collection = true;
+                    break;
+                }
+            }
+
+            // Check if next non-whitespace token is a closing brace/bracket
+            if (in_collection and i + 1 < tokens.items.len) {
+                const next_token = tokens.items[i + 1].token;
+                if (next_token.kind == .r_brace or next_token.kind == .r_bracket) {
+                    prev_token = token.kind;
+                    continue; // Skip this trailing comma
+                }
+            }
+        }
+
         // Write the token
         if (token.kind == .string) {
             try output.appendSlice(allocator, "\"");
