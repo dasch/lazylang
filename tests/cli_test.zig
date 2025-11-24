@@ -503,13 +503,36 @@ test "format requires a file path" {
     try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "error: missing file path") != null);
 }
 
-test "format rejects multiple arguments" {
-    const args = [_][]const u8{ "lazylang", "format", "file1.lazy", "file2.lazy" };
+test "format supports multiple files" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // Create first file
+    const file1_name = "file1.lazy";
+    var file1 = try tmp.dir.createFile(file1_name, .{});
+    try file1.writeAll("{x:1}");
+    file1.close();
+
+    // Create second file
+    const file2_name = "file2.lazy";
+    var file2 = try tmp.dir.createFile(file2_name, .{});
+    try file2.writeAll("[1,2,3]");
+    file2.close();
+
+    const file1_path = try tmp.dir.realpathAlloc(allocator, file1_name);
+    defer allocator.free(file1_path);
+    const file2_path = try tmp.dir.realpathAlloc(allocator, file2_name);
+    defer allocator.free(file2_path);
+
+    const args = [_][]const u8{ "lazylang", "format", file1_path, file2_path };
     var outcome = try runCli(&args);
     defer outcome.deinit();
 
-    try std.testing.expectEqual(@as(u8, 1), outcome.result.exit_code);
-    try std.testing.expect(std.mem.indexOf(u8, outcome.stderr, "error: too many arguments") != null);
+    try std.testing.expectEqual(@as(u8, 0), outcome.result.exit_code);
+    // Should have both formatted outputs with blank line between
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stdout, "{ x: 1 }") != null);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stdout, "[1, 2, 3]") != null);
 }
 
 test "format outputs formatted code" {

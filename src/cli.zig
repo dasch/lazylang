@@ -110,19 +110,23 @@ const commands = [_]CommandInfo{
     .{
         .name = "format",
         .description = "Format Lazylang source code",
-        .usage = "lazy format <path>",
+        .usage = "lazy format [options] <path>...",
         .help_text =
         \\Format Lazylang source code by normalizing whitespace and indentation.
         \\
         \\Usage:
-        \\  lazy format <file>               Format a file and print to stdout
+        \\  lazy format <file>...            Format file(s) and print to stdout
+        \\  lazy format -i <file>...         Format file(s) in-place
         \\
         \\Options:
+        \\  -i, --in-place       Modify files in-place instead of printing to stdout
         \\  -h, --help           Show this help message
         \\
         \\Examples:
         \\  lazy format script.lazy
-        \\  lazy format script.lazy > formatted.lazy
+        \\  lazy format file1.lazy file2.lazy file3.lazy
+        \\  lazy format -i script.lazy
+        \\  lazy format --in-place *.lazy
         ,
     },
     .{
