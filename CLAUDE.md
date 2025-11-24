@@ -164,6 +164,9 @@ examples/                     # Example .lazy files
 **CRITICAL: Always run `make` before committing or considering a task complete.**
 The `make` command runs all tests (Zig unit tests, Lazylang spec tests, formatter tests, and docs generation). Never commit without a successful `make` run.
 
+**IMPORTANT: Keep separate changes in separate commits.**
+Each commit should represent one logical change. If you fix multiple unrelated issues or add multiple features, split them into separate commits. This makes the git history clear, reviewable, and easier to revert if needed.
+
 For **implementing Lazylang features** (syntax, operators, builtins):
 → Use `/lazylang-zig` skill for detailed Zig implementation patterns
 
