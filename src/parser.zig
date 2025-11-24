@@ -185,8 +185,8 @@ pub const Parser = struct {
         };
 
         if (is_let_binding) {
-            const doc = self.tokenizer.consumeDocComments();
             const start_token = self.current; // Capture start for location
+            const doc = self.current.doc_comments;
             const pattern = try self.parsePattern();
             try self.expectToken(.equals, "in let binding");
             const value = try self.parseLambda();
@@ -252,7 +252,7 @@ pub const Parser = struct {
 
                 if (!is_binding) break;
 
-                const doc = self.tokenizer.consumeDocComments();
+                const doc = self.current.doc_comments;
                 const pattern = try self.parsePattern();
                 try self.expectToken(.equals, "in where binding");
                 const value = try self.parseBinary(0);
@@ -1107,8 +1107,8 @@ pub const Parser = struct {
                     });
                 } else if (self.current.kind == .identifier) {
                     // Static field
-                    const doc = self.tokenizer.consumeDocComments();
                     const field_token = self.current; // Capture for location
+                    const doc = self.current.doc_comments;
                     const static_key = self.current.lexeme;
                     try self.advance();
 
@@ -1155,10 +1155,9 @@ pub const Parser = struct {
                 return error.UnexpectedToken;
             }
 
-            // Consume doc comments for this field
-            const doc = self.tokenizer.consumeDocComments();
-
+            // Get doc comments from the token
             const key_token = self.current; // Capture for location
+            const doc = self.current.doc_comments;
             const key = self.current.lexeme;
             try self.advance();
 

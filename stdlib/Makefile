@@ -2,7 +2,7 @@
 
 # Generate stdlib documentation
 docs:
-	../bin/lazy docs lib
+	../bin/lazy docs lib --output ../docs
 
 # Run docspecs for stdlib documentation
 docspecs:

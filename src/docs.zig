@@ -340,6 +340,26 @@ fn extractDocs(expr: *const evaluator.Expression, items: *std.ArrayListUnmanaged
             }
             try extractDocs(let_expr.body, items, allocator);
         },
+        .where_expr => |where_expr| {
+            // Extract docs from where bindings
+            for (where_expr.bindings) |binding| {
+                if (binding.doc) |doc| {
+                    const name = switch (binding.pattern.data) {
+                        .identifier => |ident| ident,
+                        else => "unknown",
+                    };
+                    const signature = try buildSignature(allocator, name, binding.value);
+                    try items.append(allocator, .{
+                        .name = try allocator.dupe(u8, name),
+                        .signature = signature,
+                        .doc = try allocator.dupe(u8, doc),
+                        .kind = .variable,
+                    });
+                }
+            }
+            // Recursively extract from the main expression
+            try extractDocs(where_expr.expr, items, allocator);
+        },
         .object => |obj| {
             for (obj.fields) |field| {
                 // Only extract documentation from static keys
