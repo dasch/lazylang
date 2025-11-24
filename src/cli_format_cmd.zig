@@ -11,6 +11,26 @@ const formatter = @import("formatter.zig");
 const cli_types = @import("cli_types.zig");
 pub const CommandResult = cli_types.CommandResult;
 
+/// Recursively find all .lazy files in a directory
+fn findLazyFiles(allocator: std.mem.Allocator, dir_path: []const u8, files: *std.ArrayList([]const u8)) !void {
+    var dir = std.fs.cwd().openDir(dir_path, .{ .iterate = true }) catch |err| {
+        return err;
+    };
+    defer dir.close();
+
+    var walker = try dir.walk(allocator);
+    defer walker.deinit();
+
+    while (try walker.next()) |entry| {
+        if (entry.kind == .file) {
+            if (std.mem.endsWith(u8, entry.basename, ".lazy")) {
+                const full_path = try std.fs.path.join(allocator, &[_][]const u8{ dir_path, entry.path });
+                try files.append(allocator, full_path);
+            }
+        }
+    }
+}
+
 pub fn runFormat(
     allocator: std.mem.Allocator,
     args: []const []const u8,
@@ -18,8 +38,8 @@ pub fn runFormat(
     stderr: anytype,
 ) !CommandResult {
     var in_place = false;
-    var file_paths = std.ArrayList([]const u8){};
-    defer file_paths.deinit(allocator);
+    var paths = std.ArrayList([]const u8){};
+    defer paths.deinit(allocator);
 
     // Parse arguments
     var i: usize = 0;
@@ -32,13 +52,46 @@ pub fn runFormat(
             try stderr.print("usage: lazy format [options] <path>...\n", .{});
             return .{ .exit_code = 1 };
         } else {
-            try file_paths.append(allocator, arg);
+            try paths.append(allocator, arg);
+        }
+    }
+
+    if (paths.items.len == 0) {
+        try stderr.print("error: missing file path(s)\n", .{});
+        try stderr.print("usage: lazy format [options] <path>...\n", .{});
+        return .{ .exit_code = 1 };
+    }
+
+    // Resolve paths: expand directories into file lists
+    var file_paths = std.ArrayList([]const u8){};
+    defer {
+        for (file_paths.items) |path| {
+            allocator.free(path);
+        }
+        file_paths.deinit(allocator);
+    }
+
+    for (paths.items) |path| {
+        const stat = std.fs.cwd().statFile(path) catch |err| {
+            try stderr.print("error: failed to access path '{s}': {}\n", .{ path, err });
+            return .{ .exit_code = 1 };
+        };
+
+        if (stat.kind == .directory) {
+            // Recursively find all .lazy files
+            findLazyFiles(allocator, path, &file_paths) catch |err| {
+                try stderr.print("error: failed to scan directory '{s}': {}\n", .{ path, err });
+                return .{ .exit_code = 1 };
+            };
+        } else {
+            // Add the file directly (duplicate the string for consistent memory management)
+            const path_copy = try allocator.dupe(u8, path);
+            try file_paths.append(allocator, path_copy);
         }
     }
 
     if (file_paths.items.len == 0) {
-        try stderr.print("error: missing file path(s)\n", .{});
-        try stderr.print("usage: lazy format [options] <path>...\n", .{});
+        try stderr.print("error: no .lazy files found\n", .{});
         return .{ .exit_code = 1 };
     }
 

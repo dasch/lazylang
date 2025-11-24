@@ -557,6 +557,67 @@ test "format outputs formatted code" {
     try std.testing.expect(outcome.stdout.len > 0);
 }
 
+test "format recursively formats directories" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // Create directory structure
+    try tmp.dir.makeDir("subdir");
+
+    // Create files
+    var file1 = try tmp.dir.createFile("file1.lazy", .{});
+    try file1.writeAll("{x:1}");
+    file1.close();
+
+    var file2 = try tmp.dir.createFile("file2.lazy", .{});
+    try file2.writeAll("[1,2,3]");
+    file2.close();
+
+    var file3 = try tmp.dir.createFile("subdir/file3.lazy", .{});
+    try file3.writeAll("{a:1,b:2}");
+    file3.close();
+
+    const dir_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(dir_path);
+
+    const args = [_][]const u8{ "lazylang", "format", dir_path };
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), outcome.result.exit_code);
+    // All files should be formatted
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stdout, "{ x: 1 }") != null);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stdout, "[1, 2, 3]") != null);
+    try std.testing.expect(std.mem.indexOf(u8, outcome.stdout, "{ a: 1, b: 2 }") != null);
+}
+
+test "format in-place modifies directory files" {
+    const allocator = std.testing.allocator;
+    var tmp = std.testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    // Create file with unformatted content
+    const file_name = "file.lazy";
+    var file = try tmp.dir.createFile(file_name, .{});
+    try file.writeAll("{x:1}");
+    file.close();
+
+    const dir_path = try tmp.dir.realpathAlloc(allocator, ".");
+    defer allocator.free(dir_path);
+
+    const args = [_][]const u8{ "lazylang", "format", "-i", dir_path };
+    var outcome = try runCli(&args);
+    defer outcome.deinit();
+
+    try std.testing.expectEqual(@as(u8, 0), outcome.result.exit_code);
+
+    // Read file to verify it was modified
+    const modified = try tmp.dir.readFileAlloc(allocator, file_name, 1024);
+    defer allocator.free(modified);
+    try std.testing.expect(std.mem.eql(u8, modified, "{ x: 1 }\n"));
+}
+
 // Docs command tests
 
 test "docs -h shows docs help" {

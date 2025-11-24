@@ -115,8 +115,10 @@ const commands = [_]CommandInfo{
         \\Format Lazylang source code by normalizing whitespace and indentation.
         \\
         \\Usage:
-        \\  lazy format <file>...            Format file(s) and print to stdout
-        \\  lazy format -i <file>...         Format file(s) in-place
+        \\  lazy format <path>...            Format file(s)/dir(s) and print to stdout
+        \\  lazy format -i <path>...         Format file(s)/dir(s) in-place
+        \\
+        \\When a directory is provided, all .lazy files in it are recursively formatted.
         \\
         \\Options:
         \\  -i, --in-place       Modify files in-place instead of printing to stdout
@@ -127,6 +129,8 @@ const commands = [_]CommandInfo{
         \\  lazy format file1.lazy file2.lazy file3.lazy
         \\  lazy format -i script.lazy
         \\  lazy format --in-place *.lazy
+        \\  lazy format src/
+        \\  lazy format -i stdlib/lib
         ,
     },
     .{
