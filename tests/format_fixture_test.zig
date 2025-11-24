@@ -248,6 +248,14 @@ test "formatter: object no blank line after opening brace" {
     try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/object_no_blank_line.lazy");
 }
 
+test "formatter: when/matches indentation" {
+    try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/when_matches_indentation.lazy");
+}
+
+test "formatter: if/then/else indentation" {
+    try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/if_then_else_indentation.lazy");
+}
+
 // ============================================================================
 // REGRESSION TEST
 // Ensure all formatter fixtures work correctly
@@ -278,6 +286,8 @@ test "regression: all formatter fixtures produce correct output" {
         "tests/fixtures/formatter/trailing_whitespace.lazy",
         "tests/fixtures/formatter/object_field_comprehensions.lazy",
         "tests/fixtures/formatter/object_no_blank_line.lazy",
+        "tests/fixtures/formatter/when_matches_indentation.lazy",
+        "tests/fixtures/formatter/if_then_else_indentation.lazy",
         // TODO: Re-enable when doc comment blank line handling is fixed
         // "tests/fixtures/formatter/doc_comments.lazy",
     };

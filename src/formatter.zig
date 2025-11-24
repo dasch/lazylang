@@ -156,7 +156,23 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
 
         // Handle newlines
         if (token.preceded_by_newline) {
-            // Check if previous token was `do`, `where`, `matches`, or `->` to increase indent
+            // Check if this token is dedented in the source compared to expected indentation
+            // Only dedent if the source appears to be intentionally dedented (not just badly formatted)
+            if (do_indent_level > 0) {
+                const source_indent = if (token.column > 1) (token.column - 1) / 2 else 0;
+                const base_indent = indent_level;
+                const expected_indent = indent_level + do_indent_level;
+
+                // Only dedent if:
+                // 1. Source is indented at least as much as base level (not malformed)
+                // 2. Source is less indented than expected (indicates dedenting)
+                // Reset do_indent_level to match the source indentation
+                if (source_indent >= base_indent and source_indent < expected_indent) {
+                    do_indent_level = source_indent - base_indent;
+                }
+            }
+
+            // Check if previous token was `do`, `where`, `matches`, `then`, `else`, or `->` to increase indent
             if (i > 0) {
                 const prev_tok = tokens.items[i - 1].token;
                 if (prev_tok.kind == .arrow) {
@@ -164,7 +180,9 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                 } else if (prev_tok.kind == .identifier and
                     (std.mem.eql(u8, prev_tok.lexeme, "do") or
                      std.mem.eql(u8, prev_tok.lexeme, "where") or
-                     std.mem.eql(u8, prev_tok.lexeme, "matches"))) {
+                     std.mem.eql(u8, prev_tok.lexeme, "matches") or
+                     std.mem.eql(u8, prev_tok.lexeme, "then") or
+                     std.mem.eql(u8, prev_tok.lexeme, "else"))) {
                     do_indent_level += 1;
                 }
             }

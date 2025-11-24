@@ -1,0 +1,11 @@
+// foo = x ->
+//   when x matches
+//     #ok then 1
+//     #err then 2
+//   bar x
+
+foo = x ->
+  when x matches
+    #ok then 1
+    #err then 2
+  bar x
