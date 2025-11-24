@@ -309,10 +309,11 @@ pub const ErrorContext = struct {
                 // The expected and found strings are usually from formatPatternValue/formatValueShort
                 // which use page_allocator, so we don't free them here (they're leaked but acceptable)
                 // However, the operation string might be allocated with err_ctx.allocator if it's
-                // a custom operation like "calling function `f`"
+                // a custom operation like "calling function `f`" or "accessing field `.x` on ..."
                 if (old_data.operation) |op| {
-                    // Only free if it starts with "calling function" (our custom allocations)
-                    if (std.mem.startsWith(u8, op, "calling function `")) {
+                    // Only free if it's a dynamically allocated operation string
+                    if (std.mem.startsWith(u8, op, "calling function `") or
+                        std.mem.startsWith(u8, op, "accessing field ")) {
                         self.allocator.free(op);
                     }
                 }

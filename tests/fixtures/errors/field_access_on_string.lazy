@@ -1,0 +1,11 @@
+// error: Type mismatch
+//   --> tests/fixtures/errors/field_access_on_string.lazy:11:17
+//    |
+// 11 | docstring Array.map
+//    |                 ^--
+//
+// Expected `object` for accessing field `.map` on string, but found `string`.
+//
+// help: Make sure you're using compatible types for this operation.
+
+docstring Array.map
