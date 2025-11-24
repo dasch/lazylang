@@ -1,0 +1,13 @@
+// /// Module doc comment
+// {
+//   /// Field doc comment
+//   x: 1
+//   y: 2
+// }
+
+/// Module doc comment
+{
+  /// Field doc comment
+  x: 1
+  y: 2
+}

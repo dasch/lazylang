@@ -137,12 +137,13 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
 
         // Special handling for 'for' keyword in multi-line comprehensions
         // If we're in a multi-line bracket/brace and see 'for', it should be on its own line
+        // Check only the INNERMOST bracket/brace, not outer ones
         if (token.kind == .identifier and std.mem.eql(u8, token.lexeme, "for")) {
             var in_multiline_comprehension = false;
-            for (brace_stack.items) |brace_info| {
-                if ((brace_info.brace_type == .bracket or brace_info.brace_type == .brace) and !brace_info.is_single_line) {
+            if (brace_stack.items.len > 0) {
+                const innermost = brace_stack.items[brace_stack.items.len - 1];
+                if ((innermost.brace_type == .bracket or innermost.brace_type == .brace) and !innermost.is_single_line) {
                     in_multiline_comprehension = true;
-                    break;
                 }
             }
 
@@ -172,6 +173,7 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
             var newline_count: usize = 1;
             if (i > 0) {
                 const prev_info = tokens.items[i - 1];
+                const prev_tok = prev_info.token;
                 const between = source[prev_info.source_end..info.source_start];
                 const raw_newline_count = countNewlines(between);
 
@@ -179,7 +181,12 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                 // We only want to preserve blank lines, not count doc comment lines.
                 // So limit to 2 newlines (one blank line max) when doc comments are present.
                 if (token.doc_comments != null) {
-                    newline_count = @min(raw_newline_count, 2);
+                    // Special case: if previous token is opening brace/bracket, no blank lines
+                    if (prev_tok.kind == .l_brace or prev_tok.kind == .l_bracket) {
+                        newline_count = 1;
+                    } else {
+                        newline_count = @min(raw_newline_count, 2);
+                    }
                 } else {
                     newline_count = raw_newline_count;
                     // Still limit excessive blank lines to 2 (meaning 3 newlines)

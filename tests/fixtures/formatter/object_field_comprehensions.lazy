@@ -1,0 +1,9 @@
+// {
+//   filter: pred -> arr -> [x for x in arr when pred x]
+//   map: fn -> arr -> [fn x for x in arr]
+// }
+
+{
+  filter: pred -> arr -> [x for x in arr when pred x]
+  map: fn -> arr -> [fn x for x in arr]
+}

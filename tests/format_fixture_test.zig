@@ -240,6 +240,14 @@ test "formatter: trailing whitespace" {
     try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/trailing_whitespace.lazy");
 }
 
+test "formatter: object field comprehensions" {
+    try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/object_field_comprehensions.lazy");
+}
+
+test "formatter: object no blank line after opening brace" {
+    try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/object_no_blank_line.lazy");
+}
+
 // ============================================================================
 // REGRESSION TEST
 // Ensure all formatter fixtures work correctly
@@ -268,6 +276,8 @@ test "regression: all formatter fixtures produce correct output" {
         "tests/fixtures/formatter/do_indentation.lazy",
         "tests/fixtures/formatter/space_before_brackets.lazy",
         "tests/fixtures/formatter/trailing_whitespace.lazy",
+        "tests/fixtures/formatter/object_field_comprehensions.lazy",
+        "tests/fixtures/formatter/object_no_blank_line.lazy",
         // TODO: Re-enable when doc comment blank line handling is fixed
         // "tests/fixtures/formatter/doc_comments.lazy",
     };
