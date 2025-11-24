@@ -311,7 +311,7 @@ function registerCommands(context: ExtensionContext) {
             cwd: workspaceFolder || path.dirname(filePath)
         });
         terminal.show();
-        terminal.sendText(`"${lazyLangPath}" spec "${filePath}"`);
+        terminal.sendText(`"${lazyLangPath}" spec --verbose "${filePath}"`);
     });
 
     context.subscriptions.push(evalCommand, runCommand, testCommand);
