@@ -105,7 +105,7 @@ fn jsonValueToLazylang(arena: std.mem.Allocator, json_value: std.json.Value) (Js
                 fields[i] = .{ .key = key, .value = value, .is_patch = false };
                 i += 1;
             }
-            return eval.Value{ .object = .{ .fields = fields, .module_doc = null } };
+            return eval.Value{ .object = .{ .fields = fields, .module_doc = null, .name = null } };
         },
     };
 }

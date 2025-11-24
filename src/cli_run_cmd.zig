@@ -125,6 +125,7 @@ pub fn runRun(
         .object = .{
             .fields = try env_fields.toOwnedSlice(arena),
             .module_doc = null,
+            .name = null,
         },
     };
 
@@ -142,7 +143,7 @@ pub fn runRun(
     };
 
     const system_value = evaluator.Value{
-        .object = .{ .fields = system_fields, .module_doc = null },
+        .object = .{ .fields = system_fields, .module_doc = null, .name = null },
     };
 
     // Call the function with the system value

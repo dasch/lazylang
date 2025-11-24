@@ -260,7 +260,7 @@ const Parser = struct {
         }
 
         const field_slice = try fields.toOwnedSlice(self.arena);
-        return eval.Value{ .object = .{ .fields = field_slice, .module_doc = null } };
+        return eval.Value{ .object = .{ .fields = field_slice, .module_doc = null, .name = null } };
     }
 
     fn tryParseObject(self: *Parser, base_indent: usize) YamlError!?eval.Value {
@@ -346,7 +346,7 @@ const Parser = struct {
         }
 
         const field_slice = try fields.toOwnedSlice(self.arena);
-        return eval.Value{ .object = .{ .fields = field_slice, .module_doc = null } };
+        return eval.Value{ .object = .{ .fields = field_slice, .module_doc = null, .name = null } };
     }
 
     fn parseKey(self: *Parser) YamlError![]const u8 {

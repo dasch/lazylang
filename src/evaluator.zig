@@ -666,7 +666,7 @@ fn mergeObjects(arena: std.mem.Allocator, base: ObjectValue, extension: ObjectVa
 
     // Prefer extension's module_doc if it exists, otherwise use base's
     const module_doc = extension.module_doc orelse base.module_doc;
-    return Value{ .object = .{ .fields = try result_fields.toOwnedSlice(arena), .module_doc = module_doc } };
+    return Value{ .object = .{ .fields = try result_fields.toOwnedSlice(arena), .module_doc = module_doc, .name = null } };
 }
 
 /// Find field access locations in an expression for a given field name
@@ -896,7 +896,7 @@ pub fn evaluateExpression(
         },
         .lambda => |lambda| blk: {
             const function = try arena.create(FunctionValue);
-            function.* = .{ .param = lambda.param, .body = lambda.body, .env = env, .docstring = null };
+            function.* = .{ .param = lambda.param, .body = lambda.body, .env = env, .docstring = null, .name = null };
             break :blk Value{ .function = function };
         },
         .let => |let_expr| blk: {
@@ -927,6 +927,7 @@ pub fn evaluateExpression(
                         .body = lambda.body,
                         .env = recursive_env,
                         .docstring = let_expr.doc,
+                        .name = null,
                     };
                     break :blk2 Value{ .function = function };
                 } else try evaluateExpression(arena, let_expr.value, recursive_env, current_dir, ctx);
@@ -947,6 +948,7 @@ pub fn evaluateExpression(
                         .body = lambda.body,
                         .env = env,
                         .docstring = let_expr.doc,
+                        .name = null,
                     };
                     break :blk2 Value{ .function = function };
                 } else try evaluateExpression(arena, let_expr.value, env, current_dir, ctx);
@@ -1688,6 +1690,7 @@ pub fn evaluateExpression(
                                 .body = lambda.body,
                                 .env = env,
                                 .docstring = field.doc,
+                                .name = null,
                             };
                             break :blk2 Value{ .function = function };
                         } else blk2: {
@@ -1726,6 +1729,7 @@ pub fn evaluateExpression(
                                         .body = lambda.body,
                                         .env = env,
                                         .docstring = field.doc,
+                                        .name = null,
                                     };
                                     break :blk2 Value{ .function = function };
                                 } else blk2: {
@@ -1761,6 +1765,7 @@ pub fn evaluateExpression(
                                                     .body = lambda.body,
                                                     .env = env,
                                                     .docstring = field.doc,
+                                                    .name = null,
                                                 };
                                                 break :blk2 Value{ .function = function };
                                             } else blk2: {
@@ -1788,7 +1793,7 @@ pub fn evaluateExpression(
             }
 
             const fields = try fields_list.toOwnedSlice(arena);
-            break :blk Value{ .object = .{ .fields = fields, .module_doc = object.module_doc } };
+            break :blk Value{ .object = .{ .fields = fields, .module_doc = object.module_doc, .name = null } };
         },
         .object_extend => |extend| blk: {
             // Evaluate the base expression
@@ -1809,7 +1814,7 @@ pub fn evaluateExpression(
                         const key_copy = try arena.dupe(u8, static_key);
                         try fields_list.append(arena, .{ .key = key_copy, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx), .is_patch = field.is_patch });
                     }
-                    const obj_arg = Value{ .object = .{ .fields = try fields_list.toOwnedSlice(arena), .module_doc = null } };
+                    const obj_arg = Value{ .object = .{ .fields = try fields_list.toOwnedSlice(arena), .module_doc = null, .name = null } };
                     const bound_env = try matchPattern(arena, function_ptr.param, obj_arg, function_ptr.env, ctx);
                     break :blk try evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx);
                 },
@@ -1826,7 +1831,7 @@ pub fn evaluateExpression(
                         const key_copy = try arena.dupe(u8, static_key);
                         try fields_list.append(arena, .{ .key = key_copy, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx), .is_patch = field.is_patch });
                     }
-                    const obj_arg = Value{ .object = .{ .fields = try fields_list.toOwnedSlice(arena), .module_doc = null } };
+                    const obj_arg = Value{ .object = .{ .fields = try fields_list.toOwnedSlice(arena), .module_doc = null, .name = null } };
                     const args = [_]Value{obj_arg};
                     break :blk try native_fn(arena, &args);
                 },
@@ -1869,7 +1874,7 @@ pub fn evaluateExpression(
                     }
 
                     // Merge base with extension
-                    const extension_obj = ObjectValue{ .fields = try extension_fields.toOwnedSlice(arena), .module_doc = null };
+                    const extension_obj = ObjectValue{ .fields = try extension_fields.toOwnedSlice(arena), .module_doc = null, .name = null };
                     break :blk try mergeObjects(arena, base_obj, extension_obj);
                 },
                 else => return error.TypeMismatch,
@@ -1883,7 +1888,7 @@ pub fn evaluateExpression(
         .object_comprehension => |comp| blk: {
             var result_fields = std.ArrayListUnmanaged(ObjectFieldValue){};
             try evaluateObjectComprehension(arena, &result_fields, comp, 0, env, current_dir, ctx);
-            break :blk Value{ .object = .{ .fields = try result_fields.toOwnedSlice(arena), .module_doc = null } };
+            break :blk Value{ .object = .{ .fields = try result_fields.toOwnedSlice(arena), .module_doc = null, .name = null } };
         },
         .import_expr => |import_expr| blk: {
             // Import the module - error location will be set inside importModule if it fails
@@ -1970,6 +1975,7 @@ pub fn evaluateExpression(
                 .body = body_expr,
                 .env = env,
                 .docstring = null,
+                .name = null,
             };
 
             break :blk Value{ .function = func_value };
@@ -2029,6 +2035,7 @@ pub fn evaluateExpression(
                 .body = inner_lambda_expr,
                 .env = env,
                 .docstring = null,
+                .name = null,
             };
 
             break :blk Value{ .function = outer_func };
@@ -2053,7 +2060,7 @@ pub fn evaluateExpression(
                 };
             }
 
-            break :blk Value{ .object = .{ .fields = new_fields, .module_doc = null } };
+            break :blk Value{ .object = .{ .fields = new_fields, .module_doc = null, .name = null } };
         },
     };
 }
