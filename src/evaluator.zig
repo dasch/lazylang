@@ -53,11 +53,11 @@ const valueToString = value_format.valueToString;
 fn attachDocAndName(value: *Value, doc: []const u8, name: []const u8) void {
     switch (value.*) {
         .function => |f| {
-            if (f.docstring == null) {
-                f.docstring = doc;
+            if (f.*.docstring == null) {
+                f.*.docstring = doc;
             }
-            if (f.name == null) {
-                f.name = name;
+            if (f.*.name == null) {
+                f.*.name = name;
             }
         },
         .object => |*obj| {
@@ -1693,18 +1693,12 @@ pub fn evaluateExpression(
                 switch (field.key) {
                     .static => |static_key| {
                         const key_copy = try arena.dupe(u8, static_key);
-                        // Special handling for lambdas with docstrings
-                        const field_value = if (field.doc != null and field.value.data == .lambda) blk2: {
-                            const lambda = field.value.data.lambda;
-                            const function = try arena.create(FunctionValue);
-                            function.* = .{
-                                .param = lambda.param,
-                                .body = lambda.body,
-                                .env = env,
-                                .docstring = field.doc,
-                                .name = null,
-                            };
-                            break :blk2 Value{ .function = function };
+                        // If field has doc, evaluate immediately and attach doc+name
+                        // Otherwise, wrap in thunk for lazy evaluation
+                        const field_value = if (field.doc) |doc| blk2: {
+                            var value = try evaluateExpression(arena, field.value, env, current_dir, ctx);
+                            attachDocAndName(&value, doc, static_key);
+                            break :blk2 value;
                         } else blk2: {
                             // Wrap field value in a thunk for lazy evaluation
                             const thunk = try arena.create(Thunk);
@@ -1732,18 +1726,11 @@ pub fn evaluateExpression(
                             .string => |key_string| {
                                 // Single string key
                                 const key_copy = try arena.dupe(u8, key_string);
-                                // Special handling for lambdas with docstrings
-                                const field_value = if (field.doc != null and field.value.data == .lambda) blk2: {
-                                    const lambda = field.value.data.lambda;
-                                    const function = try arena.create(FunctionValue);
-                                    function.* = .{
-                                        .param = lambda.param,
-                                        .body = lambda.body,
-                                        .env = env,
-                                        .docstring = field.doc,
-                                        .name = null,
-                                    };
-                                    break :blk2 Value{ .function = function };
+                                // If field has doc, evaluate immediately and attach doc+name
+                                const field_value = if (field.doc) |doc| blk2: {
+                                    var value = try evaluateExpression(arena, field.value, env, current_dir, ctx);
+                                    attachDocAndName(&value, doc, key_string);
+                                    break :blk2 value;
                                 } else blk2: {
                                     const thunk = try arena.create(Thunk);
                                     thunk.* = .{
@@ -1768,18 +1755,11 @@ pub fn evaluateExpression(
                                         },
                                         .string => |key_string| {
                                             const key_copy = try arena.dupe(u8, key_string);
-                                            // Special handling for lambdas with docstrings
-                                            const field_value = if (field.doc != null and field.value.data == .lambda) blk2: {
-                                                const lambda = field.value.data.lambda;
-                                                const function = try arena.create(FunctionValue);
-                                                function.* = .{
-                                                    .param = lambda.param,
-                                                    .body = lambda.body,
-                                                    .env = env,
-                                                    .docstring = field.doc,
-                                                    .name = null,
-                                                };
-                                                break :blk2 Value{ .function = function };
+                                            // If field has doc, evaluate immediately and attach doc+name
+                                            const field_value = if (field.doc) |doc| blk2: {
+                                                var value = try evaluateExpression(arena, field.value, env, current_dir, ctx);
+                                                attachDocAndName(&value, doc, key_string);
+                                                break :blk2 value;
                                             } else blk2: {
                                                 const thunk = try arena.create(Thunk);
                                                 thunk.* = .{
