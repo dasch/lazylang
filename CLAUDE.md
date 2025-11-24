@@ -161,6 +161,9 @@ examples/                     # Example .lazy files
 
 ## Development Workflow
 
+**CRITICAL: Always run `make` before committing or considering a task complete.**
+The `make` command runs all tests (Zig unit tests, Lazylang spec tests, formatter tests, and docs generation). Never commit without a successful `make` run.
+
 For **implementing Lazylang features** (syntax, operators, builtins):
 → Use `/lazylang-zig` skill for detailed Zig implementation patterns
 

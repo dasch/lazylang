@@ -43,11 +43,17 @@ fn countNewlines(text: []const u8) usize {
 
 /// Format a Lazylang source string
 pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterError!FormatterOutput {
+    // Create an arena for tokenizer allocations (doc comments, etc.)
+    var tokenizer_arena = std.heap.ArenaAllocator.init(allocator);
+    defer tokenizer_arena.deinit();
+
     // First pass: collect all tokens with their source positions
     var tokens = std.ArrayList(TokenInfo){};
     defer tokens.deinit(allocator);
 
-    var tokenizer = evaluator.Tokenizer.init(source, allocator);
+    var tokenizer = evaluator.Tokenizer.init(source, tokenizer_arena.allocator());
+    defer tokenizer.deinit();
+
     while (true) {
         const token = tokenizer.next() catch {
             return FormatterError.ParseError;

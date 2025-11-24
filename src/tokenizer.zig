@@ -50,6 +50,10 @@ pub const Tokenizer = struct {
         };
     }
 
+    pub fn deinit(self: *Tokenizer) void {
+        self.pending_doc_comments.deinit(self.arena);
+    }
+
     pub fn next(self: *Tokenizer) TokenizerError!ast.Token {
         const ws_info = self.skipWhitespace();
         self.last_whitespace_had_newline = ws_info.saw_newline;
