@@ -256,6 +256,14 @@ test "formatter: if/then/else indentation" {
     try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/if_then_else_indentation.lazy");
 }
 
+test "formatter: multiline comprehension indentation" {
+    try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/multiline_comprehension_indentation.lazy");
+}
+
+test "formatter: nested comprehension indentation" {
+    try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/nested_comprehension_indentation.lazy");
+}
+
 // ============================================================================
 // REGRESSION TEST
 // Ensure all formatter fixtures work correctly
@@ -288,6 +296,8 @@ test "regression: all formatter fixtures produce correct output" {
         "tests/fixtures/formatter/object_no_blank_line.lazy",
         "tests/fixtures/formatter/when_matches_indentation.lazy",
         "tests/fixtures/formatter/if_then_else_indentation.lazy",
+        "tests/fixtures/formatter/multiline_comprehension_indentation.lazy",
+        "tests/fixtures/formatter/nested_comprehension_indentation.lazy",
         // TODO: Re-enable when doc comment blank line handling is fixed
         // "tests/fixtures/formatter/doc_comments.lazy",
     };

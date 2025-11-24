@@ -128,10 +128,7 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                 if (!brace_info.is_single_line and indent_level > 0) {
                     indent_level -= 1;
                 }
-                // Reset do_indent_level when exiting bracket/brace blocks
-                if (!brace_info.is_single_line) {
-                    do_indent_level = 0;
-                }
+                // Don't reset do_indent_level when exiting - maintain outer context indentation
             }
         }
 
@@ -338,8 +335,7 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
             try brace_stack.append(allocator, BraceInfo{ .brace_type = .bracket, .is_single_line = is_single });
             if (!is_single) {
                 indent_level += 1;
-                // Reset do indent when entering a bracket block
-                do_indent_level = 0;
+                // Don't reset do_indent_level - maintain accumulated indentation
             }
         } else if (token.kind == .l_paren) {
             const is_single = brace_is_single_line.get(i) orelse true;

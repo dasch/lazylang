@@ -1,0 +1,9 @@
+// foo = [
+//   x * 2
+//   for x in xs
+// ]
+
+foo = [
+  x * 2
+  for x in xs
+]
