@@ -379,8 +379,13 @@ fn needsSpaceBefore(token_before_prev: ?evaluator.TokenKind, prev: evaluator.Tok
         return false;
     }
 
-    // Space before opening bracket after identifier/string/r_paren
-    if (current == .l_bracket and (prev == .identifier or prev == .string or prev == .r_paren)) {
+    // Space before opening bracket after identifier/string/symbol/r_paren
+    if (current == .l_bracket and (prev == .identifier or prev == .string or prev == .symbol or prev == .r_paren)) {
+        return true;
+    }
+
+    // Space before opening brace after identifier/string/symbol/r_paren/r_bracket
+    if (current == .l_brace and (prev == .identifier or prev == .string or prev == .symbol or prev == .r_paren or prev == .r_bracket)) {
         return true;
     }
 
