@@ -525,8 +525,105 @@ pub const Parser = struct {
         return self.parseApplication();
     }
 
-    fn parseApplication(self: *Parser) ParseError!*Expression {
+    /// Parse a primary expression followed by any tight-binding postfix operations.
+    /// This includes field access without preceding space (obj.field) and indexing (obj[key]).
+    /// Used when parsing function arguments to respect precedence: `f obj.field` should parse as `f(obj.field)`.
+    fn parsePostfix(self: *Parser) ParseError!*Expression {
         var expr = try self.parsePrimary();
+
+        while (true) {
+            if (self.current.preceded_by_newline) break;
+
+            switch (self.current.kind) {
+                .dot => {
+                    // Only consume field access if there's NO space before the dot
+                    if (self.current.preceded_by_whitespace) break;
+
+                    try self.advance();
+
+                    // Check for field projection: .{ field1, field2 }
+                    if (self.current.kind == .l_brace) {
+                        try self.advance();
+                        var field_list = std.ArrayList([]const u8){};
+                        defer field_list.deinit(self.arena);
+
+                        while (self.current.kind != .r_brace) {
+                            if (self.current.kind != .identifier) {
+                                self.recordError();
+                                return error.UnexpectedToken;
+                            }
+                            try field_list.append(self.arena, self.current.lexeme);
+                            try self.advance();
+
+                            if (self.current.kind == .comma) {
+                                try self.advance();
+                            }
+                        }
+
+                        try self.expect(.r_brace);
+
+                        const node = try self.allocateExpression();
+                        node.* = .{
+                            .data = .{ .field_projection = .{
+                                .object = expr,
+                                .fields = try field_list.toOwnedSlice(self.arena),
+                            } },
+                            .location = expr.location,
+                        };
+                        expr = node;
+                    } else if (self.current.kind == .identifier) {
+                        // Regular field access
+                        const field_name = self.current.lexeme;
+                        const field_token = self.current;
+                        try self.advance();
+
+                        const node = try self.allocateExpression();
+                        node.* = .{
+                            .data = .{ .field_access = .{
+                                .object = expr,
+                                .field = field_name,
+                                .field_location = .{
+                                    .line = field_token.line,
+                                    .column = field_token.column,
+                                    .offset = field_token.offset,
+                                    .length = field_token.lexeme.len,
+                                },
+                            } },
+                            .location = expr.location,
+                        };
+                        expr = node;
+                    } else {
+                        self.recordError();
+                        return error.UnexpectedToken;
+                    }
+                },
+                .l_bracket => {
+                    // Only consume indexing if there's NO space before the bracket
+                    if (self.current.preceded_by_whitespace) break;
+
+                    try self.advance();
+                    const index_expr = try self.parseLambda();
+                    try self.expect(.r_bracket);
+
+                    const node = try self.allocateExpression();
+                    node.* = .{
+                        .data = .{ .index = .{
+                            .object = expr,
+                            .index = index_expr,
+                        } },
+                        .location = expr.location,
+                    };
+                    expr = node;
+                },
+                else => break,
+            }
+        }
+
+        return expr;
+    }
+
+    fn parseApplication(self: *Parser) ParseError!*Expression {
+        var expr = try self.parsePostfix();
         var just_applied = false; // Track if we just parsed a function application
 
         while (true) {
@@ -563,7 +660,7 @@ pub const Parser = struct {
                     {
                         break;
                     }
-                    const argument = try self.parsePrimary();
+                    const argument = try self.parsePostfix();
                     const node = try self.allocateExpression();
                     node.* = .{
                         .data = .{ .application = .{ .function = expr, .argument = argument } },
@@ -678,7 +775,7 @@ pub const Parser = struct {
                     // Must NOT be preceded by whitespace to distinguish from function application
                     if (self.current.preceded_by_whitespace) {
                         // This is function application with array argument
-                        const argument = try self.parsePrimary();
+                        const argument = try self.parsePostfix();
                         const node = try self.allocateExpression();
                         node.* = .{
                             .data = .{ .application = .{ .function = expr, .argument = argument } },
@@ -705,7 +802,7 @@ pub const Parser = struct {
                     }
                 },
                 .number, .string, .symbol, .l_paren => {
-                    const argument = try self.parsePrimary();
+                    const argument = try self.parsePostfix();
                     const node = try self.allocateExpression();
                     node.* = .{
                         .data = .{ .application = .{ .function = expr, .argument = argument } },

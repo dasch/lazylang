@@ -1,11 +1,11 @@
 // error: Type mismatch
-//   --> tests/fixtures/errors/field_access_on_string.lazy:11:17
+//   --> tests/fixtures/errors/field_access_on_string.lazy:11:9
 //    |
-// 11 | docstring Array.map
-//    |                 ^--
+// 11 | "hello".length
+//    |         ^-----
 //
-// Expected `object` for accessing field `.map` on string, but found `string`.
+// Expected `object` for accessing field `.length` on string, but found `string`.
 //
 // help: Make sure you're using compatible types for this operation.
 
-docstring Array.map
+"hello".length
