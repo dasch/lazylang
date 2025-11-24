@@ -226,8 +226,15 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                         try output.appendSlice(allocator, "  ");
                     }
                 }
-                try output.appendSlice(allocator, "/// ");
-                try output.appendSlice(allocator, line);
+                // Trim trailing whitespace from doc comment line
+                const trimmed_line = std.mem.trimRight(u8, line, " \t");
+                if (trimmed_line.len > 0) {
+                    try output.appendSlice(allocator, "/// ");
+                    try output.appendSlice(allocator, trimmed_line);
+                } else {
+                    // Empty line - just output ///
+                    try output.appendSlice(allocator, "///");
+                }
                 try output.appendSlice(allocator, "\n");
                 at_line_start = true;
             }

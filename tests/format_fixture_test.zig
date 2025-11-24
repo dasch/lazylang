@@ -236,6 +236,10 @@ test "formatter: space before brackets" {
     try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/space_before_brackets.lazy");
 }
 
+test "formatter: trailing whitespace" {
+    try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/trailing_whitespace.lazy");
+}
+
 // ============================================================================
 // REGRESSION TEST
 // Ensure all formatter fixtures work correctly
@@ -263,6 +267,7 @@ test "regression: all formatter fixtures produce correct output" {
         "tests/fixtures/formatter/complex_nesting.lazy",
         "tests/fixtures/formatter/do_indentation.lazy",
         "tests/fixtures/formatter/space_before_brackets.lazy",
+        "tests/fixtures/formatter/trailing_whitespace.lazy",
         // TODO: Re-enable when doc comment blank line handling is fixed
         // "tests/fixtures/formatter/doc_comments.lazy",
     };

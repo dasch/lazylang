@@ -1,0 +1,21 @@
+// /// Function with doc comments
+// ///
+// /// **Parameters:**
+// /// - `x`: First parameter
+// ///
+// /// **Example:**
+// /// ```
+// /// foo 42  //=> 43
+// /// ```
+// foo: x -> x + 1
+
+/// Function with doc comments
+///
+/// **Parameters:**
+/// - `x`: First parameter
+///
+/// **Example:**
+/// ```
+/// foo 42  //=> 43
+/// ```
+foo: x -> x + 1
