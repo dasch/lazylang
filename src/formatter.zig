@@ -547,6 +547,13 @@ fn needsSpaceBefore(token_before_prev: ?evaluator.TokenKind, prev: evaluator.Tok
         return true;
     }
 
+    // Space before unary operators after identifiers/numbers/strings/symbols
+    if ((prev == .identifier or prev == .number or prev == .string or prev == .symbol) and
+        (current == .bang or current == .minus))
+    {
+        return true;
+    }
+
     // Space between closing and opening brackets/parens/braces
     if ((prev == .r_paren or prev == .r_bracket or prev == .r_brace) and
         (current == .l_paren or current == .l_bracket or current == .l_brace or
@@ -556,9 +563,9 @@ fn needsSpaceBefore(token_before_prev: ?evaluator.TokenKind, prev: evaluator.Tok
     }
 
     // Unary operators: no space after ! or - when used as unary
-    // Unary context: after =, (, [, ,, or other operators
+    // Unary context: after =, :, ->, (, [, ,, or other operators
     const prev_is_unary_context = if (token_before_prev) |before|
-        before == .equals or before == .l_paren or before == .l_bracket or
+        before == .equals or before == .colon or before == .arrow or before == .l_paren or before == .l_bracket or
             before == .comma or before == .l_brace or
             before == .plus or before == .minus or before == .star or before == .slash or
             before == .ampersand_ampersand or before == .pipe_pipe
@@ -586,9 +593,10 @@ fn needsSpaceBefore(token_before_prev: ?evaluator.TokenKind, prev: evaluator.Tok
         return true;
     }
 
-    // Space around logical operators
-    if (prev == .ampersand_ampersand or prev == .pipe_pipe or prev == .bang or
-        current == .ampersand_ampersand or current == .pipe_pipe or current == .bang)
+    // Space around logical operators (binary operators only)
+    // Note: .bang is unary only, not binary, so it's not included here
+    if (prev == .ampersand_ampersand or prev == .pipe_pipe or
+        current == .ampersand_ampersand or current == .pipe_pipe)
     {
         return true;
     }

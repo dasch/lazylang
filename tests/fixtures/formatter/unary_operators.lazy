@@ -1,0 +1,11 @@
+// skip: pred -> arr -> [x for x in arr when !(pred x)]
+//
+// negate: x -> -x
+//
+// both: x -> y -> when !(x > 0) || !(y > 0) then false else true
+
+skip: pred -> arr -> [x for x in arr when ! (pred x)]
+
+negate: x -> - x
+
+both: x -> y -> when ! (x > 0) || ! (y > 0) then false else true
