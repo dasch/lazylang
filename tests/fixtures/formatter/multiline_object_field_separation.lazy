@@ -1,0 +1,12 @@
+// result = {
+//   type: "fail",
+//   details: {
+//     reason: "error"
+//   }
+// }
+
+result = {
+  type: "fail", details: {
+    reason: "error"
+  }
+}

@@ -92,6 +92,7 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
     defer output.deinit(allocator);
 
     var indent_level: usize = 0;
+    var prev_indent_level: usize = 0;
     var prev_token: ?evaluator.TokenKind = null;
     var at_line_start = true;
     var brace_stack = std.ArrayList(BraceInfo){};
@@ -148,6 +149,8 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                 _ = brace_stack.pop();
                 if (!brace_info.is_single_line and indent_level > 0) {
                     indent_level -= 1;
+                    // Update prev_indent_level so dedenting logic can run on closing brace line
+                    prev_indent_level = indent_level;
                 }
                 // Don't reset do_indent_level when exiting - maintain outer context indentation
             }
@@ -236,7 +239,19 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
             } else {
                 // Check if this token is dedented in the source compared to expected indentation
                 // Only dedent if the source appears to be intentionally dedented (not just badly formatted)
-                if (do_indent_level > 0) {
+                // Don't dedent if:
+                // 1. indent_level changed since last line (we just opened a brace)
+                // 2. We're inside a multi-line object (objects have strict field indentation rules)
+                //    Arrays are OK to dedent in (for resetting at array item level)
+                var in_multiline_object = false;
+                for (brace_stack.items) |brace_info| {
+                    if (brace_info.brace_type == .brace and !brace_info.is_single_line) {
+                        in_multiline_object = true;
+                        break;
+                    }
+                }
+
+                if (do_indent_level > 0 and indent_level == prev_indent_level and !in_multiline_object) {
                 const source_indent = if (token.column > 1) (token.column - 1) / 2 else 0;
                 const base_indent = indent_level;
                 const expected_indent = indent_level + do_indent_level;
@@ -249,6 +264,9 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                     do_indent_level = source_indent - base_indent;
                 }
             }
+
+                // Remember indent level for next newline
+                prev_indent_level = indent_level;
 
             // Check if previous token was `do`, `where`, `matches`, `then`, `else`, or `->` to increase indent
             // For `=` and `:`, only apply continuation indent for continuation operators like `\`
@@ -477,26 +495,54 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
             }
         }
 
-        // Skip trailing commas in objects/arrays
-        // (Commas before closing braces/brackets are redundant)
+        // Handle commas in collections
         if (token.kind == .comma) {
-            // Check if we're in an object or array
-            var in_collection = false;
-            for (brace_stack.items) |brace_info| {
-                if (brace_info.brace_type == .brace or brace_info.brace_type == .bracket) {
-                    in_collection = true;
-                    break;
+            // Check if the IMMEDIATE parent collection (brace/bracket/paren) is multi-line
+            // We need to skip parentheses when looking for objects/arrays, but not skip them entirely
+            // because function calls with parens should not have forced newlines
+            var in_multiline_collection = false;
+            var in_single_line_collection = false;
+
+            // Start from the end (innermost) and find the first brace/bracket/paren
+            if (brace_stack.items.len > 0) {
+                const immediate_parent = brace_stack.items[brace_stack.items.len - 1];
+                // Only apply multi-line formatting to braces and brackets, not parens
+                if (immediate_parent.brace_type == .brace or immediate_parent.brace_type == .bracket) {
+                    if (immediate_parent.is_single_line) {
+                        in_single_line_collection = true;
+                    } else {
+                        in_multiline_collection = true;
+                    }
                 }
             }
 
-            // Check if next non-whitespace token is a closing brace/bracket
-            if (in_collection and i + 1 < tokens.items.len) {
+            // Check if this is a trailing comma
+            const is_trailing = if (i + 1 < tokens.items.len) blk: {
                 const next_token = tokens.items[i + 1].token;
-                if (next_token.kind == .r_brace or next_token.kind == .r_bracket) {
-                    prev_token = token.kind;
-                    continue; // Skip this trailing comma
-                }
+                break :blk next_token.kind == .r_brace or next_token.kind == .r_bracket;
+            } else false;
+
+            // Skip trailing commas in all collections
+            if (is_trailing) {
+                prev_token = token.kind;
+                continue;
             }
+
+            // For multi-line collections, write comma and force newline if next token isn't on one
+            if (in_multiline_collection) {
+                try output.appendSlice(allocator, ",");
+                if (i + 1 < tokens.items.len) {
+                    const next_token = tokens.items[i + 1].token;
+                    if (!next_token.preceded_by_newline) {
+                        try output.appendSlice(allocator, "\n");
+                        at_line_start = true;
+                    }
+                }
+                prev_token = token.kind;
+                continue;
+            }
+
+            // For single-line collections, commas are written normally (below)
         }
 
         // Write the token
