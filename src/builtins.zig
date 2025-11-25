@@ -1412,6 +1412,114 @@ pub fn mathRem(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalErro
     }
 }
 
+// Bitwise operation builtins
+
+/// Bitwise XOR: a ^ b
+pub fn bitwiseXor(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple_arg = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
+
+    const a = switch (tuple_arg.elements[0]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    const b = switch (tuple_arg.elements[1]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    return eval.Value{ .integer = a ^ b };
+}
+
+/// Bitwise left shift: a << n
+pub fn bitwiseShl(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple_arg = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
+
+    const value = switch (tuple_arg.elements[0]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    const shift = switch (tuple_arg.elements[1]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    if (shift < 0 or shift >= 64) return error.TypeMismatch;
+
+    const shift_u6: u6 = @intCast(shift);
+    return eval.Value{ .integer = value << shift_u6 };
+}
+
+/// Bitwise right shift (arithmetic): a >> n
+pub fn bitwiseShr(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple_arg = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
+
+    const value = switch (tuple_arg.elements[0]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    const shift = switch (tuple_arg.elements[1]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    if (shift < 0 or shift >= 64) return error.TypeMismatch;
+
+    const shift_u6: u6 = @intCast(shift);
+    return eval.Value{ .integer = value >> shift_u6 };
+}
+
+/// Bitwise AND: a & b
+pub fn bitwiseAnd(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple_arg = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
+
+    const a = switch (tuple_arg.elements[0]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    const b = switch (tuple_arg.elements[1]) {
+        .integer => |i| i,
+        else => return error.TypeMismatch,
+    };
+
+    return eval.Value{ .integer = a & b };
+}
+
 // Type predicate builtins
 
 /// Check if a value is an integer

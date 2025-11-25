@@ -2,7 +2,7 @@
 ///
 /// This module includes:
 /// - **Comparison**: [max], [min]
-/// - **Basic operations**: [abs], [pow], [sqrt]
+/// - **Basic operations**: [abs], [pow], [sqrt], [mod], [rem]
 /// - **Rounding**: [floor], [ceil], [round]
 /// - **Advanced**: [log], [exp]
 ///
@@ -78,6 +78,36 @@
   /// Math.sqrt 16  //=> 4
   /// ```
   sqrt: n -> __math_sqrt n
+
+  /// Returns the modulo (Euclidean division remainder).
+  /// Always returns a non-negative result with the sign of the divisor.
+  ///
+  /// **Parameters:**
+  /// - `dividend`: The number to divide
+  /// - `divisor`: The number to divide by
+  ///
+  /// **Example:**
+  /// ```
+  /// Math.mod 7 3    //=> 1
+  /// Math.mod 10 5   //=> 0
+  /// Math.mod -7 3   //=> 2
+  /// ```
+  mod: dividend -> divisor -> __math_mod (dividend, divisor)
+
+  /// Returns the remainder of integer division.
+  /// Result has the same sign as the dividend.
+  ///
+  /// **Parameters:**
+  /// - `dividend`: The number to divide
+  /// - `divisor`: The number to divide by
+  ///
+  /// **Example:**
+  /// ```
+  /// Math.rem 7 3    //=> 1
+  /// Math.rem 10 5   //=> 0
+  /// Math.rem -7 3   //=> -1
+  /// ```
+  rem: dividend -> divisor -> __math_rem (dividend, divisor)
 
   /// Returns the floor of a number (rounds down to nearest integer).
   ///

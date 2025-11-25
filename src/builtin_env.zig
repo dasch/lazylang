@@ -81,6 +81,12 @@ pub fn createBuiltinEnvironment(arena: std.mem.Allocator) !?*Environment {
     env = try addBuiltin(arena, env, "__object_values", builtins.objectValues);
     env = try addBuiltin(arena, env, "__object_get", builtins.objectGet);
 
+    // Bitwise operation builtins
+    env = try addBuiltin(arena, env, "__bitwise_xor", builtins.bitwiseXor);
+    env = try addBuiltin(arena, env, "__bitwise_shl", builtins.bitwiseShl);
+    env = try addBuiltin(arena, env, "__bitwise_shr", builtins.bitwiseShr);
+    env = try addBuiltin(arena, env, "__bitwise_and", builtins.bitwiseAnd);
+
     // Error handling builtins
     env = try addBuiltin(arena, env, "crash", builtins.crash);
 

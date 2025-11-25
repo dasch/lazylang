@@ -1,0 +1,130 @@
+/// Provides utilities for pseudo-random number generation in Lazylang.
+///
+/// This module implements a simple xorshift32 PRNG for generating random values.
+///
+/// ## Examples
+///
+/// ```
+/// // Create a seed
+/// s1 = Random.seed 42
+///
+/// // Generate a random integer
+/// (value1, s2) = Random.int s1
+///
+/// // Generate a random integer in range
+/// (value2, s3) = Random.intRange 1 100 s2
+///
+/// // Generate a random boolean
+/// (flag, s4) = Random.bool s3
+/// ```
+/// ---
+Bitwise = import "Bitwise"
+Math = import "Math"
+
+{
+
+  /// Creates a seed value for the random number generator.
+  /// Ensures the seed is never zero (which would break xorshift).
+  ///
+  /// **Parameter:**
+  /// - `value`: The initial seed value
+  ///
+  /// **Example:**
+  /// ```
+  /// Random.seed 42  //=> 42
+  /// Random.seed 0   //=> 1
+  /// ```
+  seed: value -> if value == 0 then 1 else value
+
+  /// Generates the next seed value using xorshift32 algorithm.
+  ///
+  /// **Parameter:**
+  /// - `seed`: The current seed value
+  ///
+  /// **Returns:**
+  /// The next seed value
+  ///
+  /// **Example:**
+  /// ```
+  /// Random.next 42  //=> <new seed value>
+  /// ```
+  next: seed -> (
+    x1 = Bitwise.xor seed (Bitwise.shl seed 13)
+    x2 = Bitwise.xor x1 (Bitwise.shr x1 17)
+    Bitwise.xor x2 (Bitwise.shl x2 5)
+  )
+
+  /// Generates a random integer and returns both the value and the next seed.
+  ///
+  /// **Parameter:**
+  /// - `seed`: The current seed value
+  ///
+  /// **Returns:**
+  /// A tuple `(random_integer, next_seed)`
+  ///
+  /// **Example:**
+  /// ```
+  /// Random.int 42  //=> (1234567, 9876543)
+  /// ```
+  int: seed -> (
+    nextFn = s -> (
+      x1 = Bitwise.xor s (Bitwise.shl s 13)
+      x2 = Bitwise.xor x1 (Bitwise.shr x1 17)
+      Bitwise.xor x2 (Bitwise.shl x2 5)
+    )
+    s1 = nextFn seed
+    (s1, nextFn s1)
+  )
+
+  /// Generates a random integer within the specified range [min, max).
+  /// Uses modulo arithmetic to constrain the value to the range.
+  ///
+  /// **Parameters:**
+  /// - `min`: The minimum value (inclusive)
+  /// - `max`: The maximum value (exclusive)
+  /// - `seed`: The current seed value
+  ///
+  /// **Returns:**
+  /// A tuple `(random_integer, next_seed)` where random_integer is in [min, max)
+  ///
+  /// **Example:**
+  /// ```
+  /// Random.intRange 1 100 42  //=> (57, 9876543)
+  /// ```
+  intRange: min -> max -> seed -> (
+    nextFn = s -> (
+      x1 = Bitwise.xor s (Bitwise.shl s 13)
+      x2 = Bitwise.xor x1 (Bitwise.shr x1 17)
+      Bitwise.xor x2 (Bitwise.shl x2 5)
+    )
+    s1 = nextFn seed
+    value = s1
+    nextSeed = nextFn s1
+    range = max - min
+    normalized = if value < 0 then (0 - value) else value
+    (min + Math.mod normalized range, nextSeed)
+  )
+
+  /// Generates a random boolean and returns both the value and the next seed.
+  /// Returns true if the next seed value is non-negative.
+  ///
+  /// **Parameter:**
+  /// - `seed`: The current seed value
+  ///
+  /// **Returns:**
+  /// A tuple `(random_boolean, next_seed)`
+  ///
+  /// **Example:**
+  /// ```
+  /// Random.bool 42  //=> (true, 9876543)
+  /// ```
+  bool: seed -> (
+    nextFn = s -> (
+      x1 = Bitwise.xor s (Bitwise.shl s 13)
+      x2 = Bitwise.xor x1 (Bitwise.shr x1 17)
+      Bitwise.xor x2 (Bitwise.shl x2 5)
+    )
+    s1 = nextFn seed
+    (s1 >= 0, nextFn s1)
+  )
+}

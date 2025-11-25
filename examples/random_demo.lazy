@@ -1,0 +1,44 @@
+Random = import 'Random'
+
+// Basic usage
+seed = Random.seed 12345
+
+// Generate some random integers
+(num1, s1) = Random.int seed
+(num2, s2) = Random.int s1
+(num3, s3) = Random.int s2
+
+// Generate random values in a range
+(dice, s4) = Random.intRange 1 6 s3
+(percentage, s5) = Random.intRange 0 100 s4
+
+// Generate a random list
+(numbers, s6) = Random.list 10 (Random.intRange 1 100) s5
+
+// Use combinators to build complex generators
+coinFlip = Random.bool
+evenNumber = Random.intRange 0 50
+  \ Random.map (x -> x * 2)
+
+// Generate random text
+(randomWord, s7) = Random.string 8 "abcdefghijklmnopqrstuvwxyz" s6
+
+// For fuzz testing
+testData = {
+  seed: Random.seed 42
+
+  // Generate test cases
+  generateTestCases: count -> seed ->
+    gen = Random.intRange 0 20
+      \ Random.andThen (len -> Random.list len (Random.intRange 0 1000))
+    Random.list count gen seed
+}
+
+{
+  basicNumbers: [num1, num2, num3],
+  dice: dice,
+  percentage: percentage,
+  numbers: numbers,
+  randomWord: randomWord,
+  testData: testData
+}
