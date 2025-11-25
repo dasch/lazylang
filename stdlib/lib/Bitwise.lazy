@@ -1,0 +1,98 @@
+/// Provides bitwise operations on integers.
+///
+/// All operations work on 64-bit signed integers (i64).
+///
+/// ## Examples
+///
+/// ```
+/// Bitwise.xor 5 3       //=> 6
+/// Bitwise.shl 1 3       //=> 8
+/// Bitwise.shr 16 2      //=> 4
+/// Bitwise.and 12 10     //=> 8
+/// ```
+{
+  /// Bitwise XOR (exclusive or) operation.
+  ///
+  /// **Parameters:**
+  /// - `a`: First integer
+  /// - `b`: Second integer
+  ///
+  /// **Returns:** `a ^ b`
+  ///
+  /// **Example:**
+  /// ```
+  /// Bitwise.xor 5 3  //=> 6
+  /// ```
+  xor: a -> b -> __bitwise_xor (a, b)
+
+  /// Bitwise left shift operation.
+  ///
+  /// **Parameters:**
+  /// - `value`: Integer to shift
+  /// - `n`: Number of positions to shift (0-63)
+  ///
+  /// **Returns:** `value << n`
+  ///
+  /// **Example:**
+  /// ```
+  /// Bitwise.shl 1 3  //=> 8
+  /// ```
+  shl: value -> n -> __bitwise_shl (value, n)
+
+  /// Bitwise right shift operation (arithmetic).
+  ///
+  /// **Parameters:**
+  /// - `value`: Integer to shift
+  /// - `n`: Number of positions to shift (0-63)
+  ///
+  /// **Returns:** `value >> n`
+  ///
+  /// **Example:**
+  /// ```
+  /// Bitwise.shr 16 2  //=> 4
+  /// ```
+  shr: value -> n -> __bitwise_shr (value, n)
+
+  /// Bitwise AND operation.
+  ///
+  /// **Parameters:**
+  /// - `a`: First integer
+  /// - `b`: Second integer
+  ///
+  /// **Returns:** `a & b`
+  ///
+  /// **Example:**
+  /// ```
+  /// Bitwise.and 12 10  //=> 8
+  /// ```
+  and: a -> b -> __bitwise_and (a, b)
+
+  /// Bitwise OR operation.
+  /// Implemented as: `a | b = (a ^ b) ^ (a & b)`
+  ///
+  /// **Parameters:**
+  /// - `a`: First integer
+  /// - `b`: Second integer
+  ///
+  /// **Returns:** `a | b`
+  ///
+  /// **Example:**
+  /// ```
+  /// Bitwise.or 12 10  //=> 14
+  /// ```
+  or: a -> b -> __bitwise_xor (__bitwise_xor (a, b), __bitwise_and (a, b))
+
+  /// Bitwise NOT operation.
+  /// Implemented as: `~a = a ^ -1`
+  ///
+  /// **Parameter:**
+  /// - `a`: Integer to negate
+  ///
+  /// **Returns:** `~a`
+  ///
+  /// **Example:**
+  /// ```
+  /// Bitwise.not 0  //=> -1
+  /// ```
+  not: a -> __bitwise_xor (a, 0 - 1)
+}
