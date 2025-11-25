@@ -309,6 +309,57 @@ test "formatter: object with when/matches" {
 }
 
 // ============================================================================
+// STDLIB FORMATTING TEST
+// Ensure stdlib files are properly formatted
+// ============================================================================
+
+test "stdlib: all files are properly formatted" {
+    const stdlib_paths = [_][]const u8{
+        "stdlib/lib",
+        "stdlib/spec",
+    };
+
+    for (stdlib_paths) |base_path| {
+        var dir = std.fs.cwd().openDir(base_path, .{ .iterate = true }) catch |err| {
+            std.debug.print("Failed to open directory {s}: {}\n", .{ base_path, err });
+            try testing.expect(false);
+            continue;
+        };
+        defer dir.close();
+
+        var walker = try dir.walk(testing.allocator);
+        defer walker.deinit();
+
+        while (try walker.next()) |entry| {
+            if (entry.kind != .file) continue;
+            if (!std.mem.endsWith(u8, entry.basename, ".lazy")) continue;
+
+            // Build full path
+            const full_path = try std.fs.path.join(testing.allocator, &[_][]const u8{ base_path, entry.path });
+            defer testing.allocator.free(full_path);
+
+            // Read original content
+            const file = try std.fs.cwd().openFile(full_path, .{});
+            defer file.close();
+            const original = try file.readToEndAlloc(testing.allocator, 10 * 1024 * 1024);
+            defer testing.allocator.free(original);
+
+            // Format the file
+            var formatted = try formatter.formatSource(testing.allocator, original);
+            defer formatted.deinit();
+
+            // Check if formatted output matches original
+            if (!std.mem.eql(u8, formatted.text, original)) {
+                std.debug.print("\n\x1b[1;31m✗ File is not properly formatted: {s}\x1b[0m\n", .{full_path});
+                std.debug.print("\nRun: ./bin/lazy format -i {s}\n", .{full_path});
+                std.debug.print("\nOr run: ./bin/lazy format --diff {s}\n\n", .{full_path});
+                try testing.expect(false);
+            }
+        }
+    }
+}
+
+// ============================================================================
 // REGRESSION TEST
 // Ensure all formatter fixtures work correctly
 // ============================================================================
