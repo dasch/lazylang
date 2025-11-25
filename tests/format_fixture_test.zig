@@ -288,6 +288,10 @@ test "formatter: spacing operators" {
     try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/spacing_operators.lazy");
 }
 
+test "formatter: if/then/else on same line" {
+    try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/if_then_else_same_line.lazy");
+}
+
 // ============================================================================
 // REGRESSION TEST
 // Ensure all formatter fixtures work correctly
@@ -326,6 +330,7 @@ test "regression: all formatter fixtures produce correct output" {
         "tests/fixtures/formatter/trailing_commas_removed.lazy",
         "tests/fixtures/formatter/unary_operators.lazy",
         "tests/fixtures/formatter/spacing_operators.lazy",
+        "tests/fixtures/formatter/if_then_else_same_line.lazy",
         // TODO: Re-enable when doc comment blank line handling is fixed
         // "tests/fixtures/formatter/doc_comments.lazy",
     };

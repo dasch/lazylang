@@ -217,9 +217,26 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
 
         // Handle newlines
         if (token.preceded_by_newline) {
-            // Check if this token is dedented in the source compared to expected indentation
-            // Only dedent if the source appears to be intentionally dedented (not just badly formatted)
-            if (do_indent_level > 0) {
+            // Special handling for `then` keyword - move it to same line as condition
+            // `else` stays on its own line
+            var suppress_newline = false;
+            if (token.kind == .identifier and std.mem.eql(u8, token.lexeme, "then")) {
+                suppress_newline = true;
+            }
+
+            // For `else`, dedent back to the level before `then`
+            if (token.kind == .identifier and std.mem.eql(u8, token.lexeme, "else") and do_indent_level > 0) {
+                do_indent_level -= 1;
+            }
+
+            if (suppress_newline) {
+                // Don't output newline, just mark that we're not at line start
+                // The spacing logic will handle adding a space if needed
+                at_line_start = false;
+            } else {
+                // Check if this token is dedented in the source compared to expected indentation
+                // Only dedent if the source appears to be intentionally dedented (not just badly formatted)
+                if (do_indent_level > 0) {
                 const source_indent = if (token.column > 1) (token.column - 1) / 2 else 0;
                 const base_indent = indent_level;
                 const expected_indent = indent_level + do_indent_level;
@@ -352,6 +369,7 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                 }
                 at_line_start = true;
             }
+            }  // end of else block for suppress_newline
         }
 
         // Calculate if we need space before this token
@@ -482,6 +500,24 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
             try output.appendSlice(allocator, "\"");
         } else {
             try output.appendSlice(allocator, token.lexeme);
+        }
+
+        // After `then` or `else`, force newline if next token is on same line
+        // BUT only if this then/else was originally on a new line (multi-line if/then/else)
+        // For `then`, also check that we moved it to same line (suppressed newline)
+        if (token.kind == .identifier) {
+            const is_then = std.mem.eql(u8, token.lexeme, "then");
+            const is_else = std.mem.eql(u8, token.lexeme, "else");
+
+            if ((is_then or is_else) and token.preceded_by_newline and i + 1 < tokens.items.len) {
+                const next_token = tokens.items[i + 1].token;
+                if (!next_token.preceded_by_newline) {
+                    try output.appendSlice(allocator, "\n");
+                    at_line_start = true;
+                    // Increment indent for the body after then/else
+                    do_indent_level += 1;
+                }
+            }
         }
 
         // Update indentation for opening braces/brackets
