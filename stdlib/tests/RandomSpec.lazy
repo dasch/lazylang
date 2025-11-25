@@ -94,9 +94,8 @@ describe "Random" [
   describe "andThen" [
     it "chains generators" do
       seed = Random.seed 42
-      gen = Random.andThen (n ->
-        Random.list n (Random.constant 1)
-      ) (Random.intRange 2 4)
+      gen = Random.intRange 2 4
+        \ Random.andThen (n -> Random.list n (Random.constant 1))
       (values, _) = gen seed
       len = Array.length values
       must (len >= 2 && len <= 4)

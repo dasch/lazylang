@@ -17,7 +17,8 @@ seed = Random.seed 12345
 
 // Use combinators to build complex generators
 coinFlip = Random.bool
-evenNumber = Random.map (x -> x * 2) (Random.intRange 0 50)
+evenNumber = Random.intRange 0 50
+  \ Random.map (x -> x * 2)
 
 // Generate random text
 (randomWord, s7) = Random.string 8 "abcdefghijklmnopqrstuvwxyz" s6
@@ -28,11 +29,9 @@ testData = {
 
   // Generate test cases
   generateTestCases: count -> seed ->
-    Random.list count (
-      Random.andThen (len ->
-        Random.list len (Random.intRange 0 1000)
-      ) (Random.intRange 0 20)
-    ) seed
+    gen = Random.intRange 0 20
+      \ Random.andThen (len -> Random.list len (Random.intRange 0 1000))
+    Random.list count gen seed
 }
 
 {
