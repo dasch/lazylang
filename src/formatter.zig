@@ -480,6 +480,13 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
             try brace_stack.append(allocator, BraceInfo{ .brace_type = .brace, .is_single_line = is_single });
             if (!is_single) {
                 indent_level += 1;
+                // For multi-line objects, add space if next token is on same line
+                if (i + 1 < tokens.items.len) {
+                    const next_token = tokens.items[i + 1].token;
+                    if (!next_token.preceded_by_newline) {
+                        try output.appendSlice(allocator, " ");
+                    }
+                }
             }
         } else if (token.kind == .l_bracket) {
             const is_single = brace_is_single_line.get(i) orelse false;
