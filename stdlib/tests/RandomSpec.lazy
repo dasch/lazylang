@@ -1,0 +1,141 @@
+{ describe, it, mustEq, mustNotEq, must } = import 'Spec'
+Random = import 'Random'
+
+describe "Random" [
+  describe "seed" [
+    it "creates a seed from an integer" do
+      seed = Random.seed 42
+      must (isInteger seed)
+
+    it "converts 0 to 1" do
+      mustEq 1 (Random.seed 0)
+  ]
+
+  describe "int" [
+    it "is deterministic" do
+      seed = Random.seed 42
+      (v1, _) = Random.int seed
+      (v2, _) = Random.int seed
+      mustEq v1 v2
+
+    it "produces different values from different seeds" do
+      (v1, _) = Random.int (Random.seed 42)
+      (v2, _) = Random.int (Random.seed 43)
+      mustNotEq v1 v2
+
+    it "chains to produce different values" do
+      seed = Random.seed 42
+      (v1, s1) = Random.int seed
+      (v2, s2) = Random.int s1
+      mustNotEq v1 v2
+  ]
+
+  describe "intRange" [
+    it "generates values in range" do
+      seed = Random.seed 42
+      (values, _) = Random.list 20 (Random.intRange 10 20) seed
+      must (Array.all (v -> v >= 10 && v <= 20) values)
+
+    it "handles single value range" do
+      seed = Random.seed 42
+      (value, _) = Random.intRange 5 5 seed
+      mustEq 5 value
+  ]
+
+  describe "bool" [
+    it "generates booleans" do
+      seed = Random.seed 42
+      (value, _) = Random.bool seed
+      must (isBoolean value)
+  ]
+
+  describe "list" [
+    it "generates list of specified length" do
+      seed = Random.seed 42
+      (values, _) = Random.list 5 Random.int seed
+      mustEq 5 (Array.length values)
+
+    it "generates empty list for count 0" do
+      seed = Random.seed 42
+      (values, _) = Random.list 0 Random.int seed
+      mustEq [] values
+  ]
+
+  describe "choice" [
+    it "selects from array" do
+      seed = Random.seed 42
+      (value, _) = Random.choice [1, 2, 3] seed
+      must (Array.any (x -> x == value) [1, 2, 3])
+
+    it "returns #empty for empty array" do
+      seed = Random.seed 42
+      (value, _) = Random.choice [] seed
+      mustEq #empty value
+  ]
+
+  describe "map" [
+    it "transforms generated values" do
+      seed = Random.seed 42
+      gen = Random.map (x -> x * 2) (Random.intRange 1 10)
+      (value, _) = gen seed
+      must (value >= 2 && value <= 20 && __math_mod (value, 2) == 0)
+  ]
+
+  describe "constant" [
+    it "always returns same value" do
+      seed = Random.seed 42
+      gen = Random.constant 99
+      (v1, s1) = gen seed
+      (v2, _) = gen s1
+      mustEq 99 v1
+      mustEq 99 v2
+  ]
+
+  describe "andThen" [
+    it "chains generators" do
+      seed = Random.seed 42
+      gen = Random.andThen (n ->
+        Random.list n (Random.constant 1)
+      ) (Random.intRange 2 4)
+      (values, _) = gen seed
+      len = Array.length values
+      must (len >= 2 && len <= 4)
+      must (Array.all (x -> x == 1) values)
+  ]
+
+  describe "oneOf" [
+    it "selects one of the generators" do
+      seed = Random.seed 42
+      gen = Random.oneOf [
+        Random.constant 10,
+        Random.constant 20,
+        Random.constant 30
+      ]
+      (value, _) = gen seed
+      must (value == 10 || value == 20 || value == 30)
+  ]
+
+  describe "weighted" [
+    it "selects according to weights" do
+      seed = Random.seed 42
+      gen = Random.weighted [
+        (1, Random.constant "rare"),
+        (99, Random.constant "common")
+      ]
+      // Generate 100 values and check distribution
+      (values, _) = Random.list 100 gen seed
+      commonCount = Array.fold (acc -> v ->
+        if v == "common" then acc + 1 else acc
+      ) 0 values
+      // Should be heavily weighted toward "common"
+      must (commonCount > 80)
+  ]
+
+  describe "either" [
+    it "produces one of two values" do
+      seed = Random.seed 42
+      gen = Random.either "a" "b"
+      (value, _) = gen seed
+      must (value == "a" || value == "b")
+  ]
+]
