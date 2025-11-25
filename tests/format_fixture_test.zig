@@ -137,9 +137,7 @@ fn testFormatterFixture(allocator: std.mem.Allocator, file_path: []const u8) !vo
     defer formatted.deinit();
 
     if (!std.mem.eql(u8, formatted.text, expected)) {
-        std.debug.print("\n\x1b[1;31m✗ Formatter Test Failed\x1b[0m\n", .{});
-        std.debug.print("\x1b[36mFile:\x1b[0m {s}\n", .{file_path});
-
+        std.debug.print("\n\x1b[1;31m✗ Formatter fixture test failed: {s}\x1b[0m\n", .{file_path});
         std.debug.print("\n\x1b[1m━━━ Input ━━━\x1b[0m\n", .{});
         visualizeString(actual_code);
         std.debug.print("\n", .{});
@@ -147,8 +145,10 @@ fn testFormatterFixture(allocator: std.mem.Allocator, file_path: []const u8) !vo
         printDiff(expected, formatted.text);
 
         std.debug.print("\n\x1b[90mLegend: · = space, → = tab, ¬ = newline\x1b[0m\n", .{});
+        std.debug.print("\n\x1b[33mExpected and actual output differ - see above for details\x1b[0m\n\n", .{});
 
-        return error.FormatterMismatch;
+        // Use testing.expect to fail with a clean message, avoiding verbose Zig error output
+        try testing.expect(false);
     }
 }
 
