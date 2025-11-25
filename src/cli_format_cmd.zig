@@ -38,6 +38,7 @@ pub fn runFormat(
     stderr: anytype,
 ) !CommandResult {
     var in_place = false;
+    var diff_mode = false;
     var expr_mode = false;
     var expr_value: ?[]const u8 = null;
     var paths = std.ArrayList([]const u8){};
@@ -49,6 +50,8 @@ pub fn runFormat(
         const arg = args[i];
         if (std.mem.eql(u8, arg, "-i") or std.mem.eql(u8, arg, "--in-place")) {
             in_place = true;
+        } else if (std.mem.eql(u8, arg, "--diff")) {
+            diff_mode = true;
         } else if (std.mem.eql(u8, arg, "-e") or std.mem.eql(u8, arg, "--expr")) {
             expr_mode = true;
             // Next argument should be the expression
@@ -70,6 +73,12 @@ pub fn runFormat(
         }
     }
 
+    // Validate flag combinations
+    if (in_place and diff_mode) {
+        try stderr.print("error: -i/--in-place cannot be used with --diff\n", .{});
+        return .{ .exit_code = 1 };
+    }
+
     // Handle expression mode
     if (expr_mode) {
         if (expr_value == null) {
@@ -78,6 +87,10 @@ pub fn runFormat(
         }
         if (in_place) {
             try stderr.print("error: -i/--in-place cannot be used with -e/--expr\n", .{});
+            return .{ .exit_code = 1 };
+        }
+        if (diff_mode) {
+            try stderr.print("error: --diff cannot be used with -e/--expr\n", .{});
             return .{ .exit_code = 1 };
         }
         if (paths.items.len > 0) {
@@ -138,13 +151,61 @@ pub fn runFormat(
 
     // Process each file
     for (file_paths.items, 0..) |file_path, idx| {
+        // Read original file content (for diff mode)
+        const original_content = if (diff_mode) blk: {
+            const file = std.fs.cwd().openFile(file_path, .{}) catch |err| {
+                try stderr.print("error: failed to open file '{s}': {}\n", .{ file_path, err });
+                return .{ .exit_code = 1 };
+            };
+            defer file.close();
+            break :blk try file.readToEndAlloc(allocator, 10 * 1024 * 1024);
+        } else null;
+        defer if (original_content) |content| allocator.free(content);
+
         var format_output = formatter.formatFile(allocator, file_path) catch |err| {
             try stderr.print("error: failed to format file '{s}': {}\n", .{ file_path, err });
             return .{ .exit_code = 1 };
         };
         defer format_output.deinit();
 
-        if (in_place) {
+        if (diff_mode) {
+            // Output unified diff
+            const orig = original_content.?;
+            const formatted = format_output.text;
+
+            // Only show diff if content changed
+            if (!std.mem.eql(u8, orig, formatted)) {
+                try stdout.print("--- {s}\n", .{file_path});
+                try stdout.print("+++ {s}\n", .{file_path});
+
+                // Simple line-by-line diff
+                var orig_lines = std.mem.splitScalar(u8, orig, '\n');
+                var formatted_lines = std.mem.splitScalar(u8, formatted, '\n');
+
+                var line_num: usize = 1;
+                while (true) {
+                    const orig_line = orig_lines.next();
+                    const formatted_line = formatted_lines.next();
+
+                    if (orig_line == null and formatted_line == null) break;
+
+                    const orig_str = orig_line orelse "";
+                    const formatted_str = formatted_line orelse "";
+
+                    if (!std.mem.eql(u8, orig_str, formatted_str)) {
+                        try stdout.print("@@ -{d} +{d} @@\n", .{ line_num, line_num });
+                        if (orig_line != null) {
+                            try stdout.print("-{s}\n", .{orig_str});
+                        }
+                        if (formatted_line != null) {
+                            try stdout.print("+{s}\n", .{formatted_str});
+                        }
+                    }
+
+                    line_num += 1;
+                }
+            }
+        } else if (in_place) {
             // Write formatted output back to the file
             const file = std.fs.cwd().openFile(file_path, .{ .mode = .write_only }) catch |err| {
                 try stderr.print("error: failed to open file '{s}' for writing: {}\n", .{ file_path, err });
