@@ -19,6 +19,7 @@
 /// ```
 /// ---
 Bitwise = import "Bitwise"
+Math = import "Math"
 
 {
 
@@ -101,7 +102,7 @@ Bitwise = import "Bitwise"
     nextSeed = nextFn s1
     range = max - min
     normalized = if value < 0 then (0 - value) else value
-    (min + __math_mod (normalized, range), nextSeed)
+    (min + Math.mod normalized range, nextSeed)
   )
 
   /// Generates a random boolean and returns both the value and the next seed.
