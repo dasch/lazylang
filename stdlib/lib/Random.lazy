@@ -22,7 +22,6 @@ Bitwise = import "Bitwise"
 Math = import "Math"
 
 {
-
   /// Creates a seed value for the random number generator.
   /// Ensures the seed is never zero (which would break xorshift).
   ///

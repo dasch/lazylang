@@ -1,5 +1,5 @@
-{ describe, it, mustEq, mustNotEq, must } = import 'Spec'
-Random = import 'Random'
+{ describe, it, mustEq, mustNotEq, must } = import "Spec"
+Random = import "Random"
 
 describe "Random" [
   describe "seed" [
@@ -124,7 +124,7 @@ describe "Random" [
       // Generate 100 values and check distribution
       (values, _) = Random.list 100 gen seed
       commonCount = Array.fold (acc -> v ->
-        if v == "common" then acc + 1 else acc
+          if v == "common" then acc + 1 else acc
       ) 0 values
       // Should be heavily weighted toward "common"
       must (commonCount > 80)
