@@ -167,14 +167,12 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
 
         // Skip unnecessary parens around let-bindings after = or : EARLY (before spacing)
         // Pattern: identifier = ( let-bindings ) should become: identifier =\n  let-bindings
-        // But keep parens if:
-        // 1. There's a trailing semicolon before the closing paren
-        // 2. The content inside has no indentation (poorly formatted, parens are structural)
+        // Keep parens only if the content inside has no indentation (poorly formatted, parens are structural)
+        // Trailing semicolons are stripped by the semicolon-stripping logic elsewhere
         if (token.kind == .l_paren) {
             const is_multi = !(brace_is_single_line.get(i) orelse true);
             if (is_multi and prev_token != null and (prev_token.? == .equals or prev_token.? == .colon)) {
-                // Check for trailing semicolon and verify content is properly indented
-                var has_trailing_semicolon = false;
+                // Check if content is properly indented
                 var has_proper_indentation = false;
                 var depth: i32 = 1;
                 var j = i + 1;
@@ -185,11 +183,6 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                     } else if (t.kind == .r_paren) {
                         depth -= 1;
                         if (depth == 0) {
-                            // Found matching closing paren, check token before it
-                            if (j > 0) {
-                                const prev_t = tokens.items[j - 1].token;
-                                has_trailing_semicolon = (prev_t.kind == .semicolon);
-                            }
                             break;
                         }
                     }
@@ -203,7 +196,7 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                     }
                 }
 
-                if (!has_trailing_semicolon and has_proper_indentation) {
+                if (has_proper_indentation) {
                     // Skip this opening paren and mark it for skipping the close
                     // Increment do_indent_level to maintain indentation that would have come from the paren
                     // Keep prev_token as-is (don't set to .l_paren) so spacing works correctly
