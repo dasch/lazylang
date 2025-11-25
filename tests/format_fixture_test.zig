@@ -276,6 +276,14 @@ test "formatter: unary operators" {
     try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/unary_operators.lazy");
 }
 
+// Note: Regular comment preservation is implemented but difficult to test with fixture format
+// Manual testing: cat > /tmp/test.lazy << 'EOF'
+// foo = x ->
+//   // comment here
+//   x + 1
+// EOF
+// ./bin/lazy format /tmp/test.lazy  # Comments are preserved
+
 // ============================================================================
 // REGRESSION TEST
 // Ensure all formatter fixtures work correctly

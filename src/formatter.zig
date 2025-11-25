@@ -241,6 +241,42 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                 }
             }
 
+            // Extract regular comments from the gap before this token
+            var comments = std.ArrayList([]const u8){};
+            defer comments.deinit(allocator);
+            if (i > 0) {
+                const prev_info = tokens.items[i - 1];
+                const between = source[prev_info.source_end..info.source_start];
+
+                var search_idx: usize = 0;
+                while (search_idx < between.len) {
+                    if (search_idx + 1 < between.len and between[search_idx] == '/' and between[search_idx + 1] == '/') {
+                        // Check if it's a doc comment (///)
+                        if (search_idx + 2 < between.len and between[search_idx + 2] == '/') {
+                            // Skip doc comments - they're handled separately
+                            search_idx += 3;
+                            while (search_idx < between.len and between[search_idx] != '\n') {
+                                search_idx += 1;
+                            }
+                            continue;
+                        }
+
+                        // Regular comment - extract it
+                        const comment_content_start = search_idx + 2;
+                        var comment_content_end = comment_content_start;
+                        while (comment_content_end < between.len and between[comment_content_end] != '\n') {
+                            comment_content_end += 1;
+                        }
+                        const comment_text = between[comment_content_start..comment_content_end];
+                        try comments.append(allocator, comment_text);
+
+                        search_idx = comment_content_end;
+                    } else {
+                        search_idx += 1;
+                    }
+                }
+            }
+
             // Count newlines between previous token and this one
             var newline_count: usize = 1;
             if (i > 0) {
@@ -266,9 +302,30 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                 }
 
                 // Output the appropriate number of newlines
-                for (0..newline_count) |_| {
+                // But subtract one for each comment we'll output (they come with their own newlines)
+                const newlines_before_comments = if (newline_count > comments.items.len) newline_count - comments.items.len else 0;
+                for (0..newlines_before_comments) |_| {
                     try output.appendSlice(allocator, "\n");
                 }
+
+                // Output comments with proper indentation
+                for (comments.items) |comment| {
+                    const total_indent = indent_level + do_indent_level;
+                    for (0..total_indent) |_| {
+                        try output.appendSlice(allocator, "  ");
+                    }
+
+                    try output.appendSlice(allocator, "//");
+                    const trimmed = std.mem.trimRight(u8, comment, " \t");
+                    if (trimmed.len > 0 and trimmed[0] == ' ') {
+                        try output.appendSlice(allocator, trimmed);
+                    } else if (trimmed.len > 0) {
+                        try output.appendSlice(allocator, " ");
+                        try output.appendSlice(allocator, trimmed);
+                    }
+                    try output.appendSlice(allocator, "\n");
+                }
+
                 at_line_start = true;
             } else {
                 // First token - don't output newlines before it if it has doc comments
