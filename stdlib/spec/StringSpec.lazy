@@ -1,5 +1,5 @@
-{ describe, it, mustEq } = import 'Spec'
-String = import 'String'
+{ describe, it, mustEq } = import "Spec"
+String = import "String"
 
 describe #String [
   describe #length [

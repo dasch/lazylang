@@ -18,8 +18,8 @@
 /// Array.fold (acc -> x -> acc + x) 0 [1, 2, 3]  //=> 6
 /// ```
 /// ---
-Result = import 'Result'
-Tuple = import 'Tuple'
+Result = import "Result"
+Tuple = import "Tuple"
 
 {
   /// Returns the number of elements in an array.

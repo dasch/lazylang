@@ -2,4 +2,4 @@ describe "Nested Tests" [
   it "works in a subdirectory" do
     mustEq 6 (2 * 3)
 ]
-where { describe, it, mustEq } = import 'Spec'
+where { describe, it, mustEq } = import "Spec"

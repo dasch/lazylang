@@ -378,8 +378,14 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
         if (i >= 2) {
             token_before_prev = tokens.items[i - 2].token.kind;
         }
-        const needs_space_before = !at_line_start and prev_token != null and
+        var needs_space_before = !at_line_start and prev_token != null and
             needsSpaceBefore(token_before_prev, prev_token.?, token.kind, brace_stack.items);
+
+        // Special case: preserve space before `.` for partial application syntax
+        // e.g., `Array.sortBy .age` should keep the space before `.age`
+        if (!needs_space_before and token.kind == .dot and token.preceded_by_whitespace and !at_line_start) {
+            needs_space_before = true;
+        }
 
         // Reset do_indent_level if we're starting a new statement at array level
         if (at_line_start and token.kind == .identifier and do_indent_level > 0) {
@@ -526,11 +532,12 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
             try brace_stack.append(allocator, BraceInfo{ .brace_type = .brace, .is_single_line = is_single });
             if (!is_single) {
                 indent_level += 1;
-                // For multi-line objects, add space if next token is on same line
+                // For multi-line objects, force newline if next token is on same line
                 if (i + 1 < tokens.items.len) {
                     const next_token = tokens.items[i + 1].token;
                     if (!next_token.preceded_by_newline) {
-                        try output.appendSlice(allocator, " ");
+                        try output.appendSlice(allocator, "\n");
+                        at_line_start = true;
                     }
                 }
             }

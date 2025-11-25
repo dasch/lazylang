@@ -1,4 +1,4 @@
-{ describe, it, mustEq } = import 'Spec'
+{ describe, it, mustEq } = import "Spec"
 
 describe #Basics [
   describe #isInteger [

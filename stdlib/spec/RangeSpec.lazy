@@ -1,5 +1,5 @@
-{ describe, it, mustEq } = import 'Spec'
-Array = import 'Array'
+{ describe, it, mustEq } = import "Spec"
+Array = import "Array"
 
 describe #Range [
   describe #inclusive [

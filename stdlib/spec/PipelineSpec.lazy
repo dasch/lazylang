@@ -1,4 +1,4 @@
-{ describe, it, mustEq } = import 'Spec'
+{ describe, it, mustEq } = import "Spec"
 
 double = x -> x * 2
 addOne = x -> x + 1

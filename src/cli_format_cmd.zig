@@ -38,6 +38,8 @@ pub fn runFormat(
     stderr: anytype,
 ) !CommandResult {
     var in_place = false;
+    var expr_mode = false;
+    var expr_value: ?[]const u8 = null;
     var paths = std.ArrayList([]const u8){};
     defer paths.deinit(allocator);
 
@@ -47,18 +49,57 @@ pub fn runFormat(
         const arg = args[i];
         if (std.mem.eql(u8, arg, "-i") or std.mem.eql(u8, arg, "--in-place")) {
             in_place = true;
+        } else if (std.mem.eql(u8, arg, "-e") or std.mem.eql(u8, arg, "--expr")) {
+            expr_mode = true;
+            // Next argument should be the expression
+            i += 1;
+            if (i >= args.len) {
+                try stderr.print("error: -e/--expr requires an expression argument\n", .{});
+                try stderr.print("usage: lazy format [options] <path>...\n", .{});
+                try stderr.print("       lazy format -e <expression>\n", .{});
+                return .{ .exit_code = 1 };
+            }
+            expr_value = args[i];
         } else if (std.mem.startsWith(u8, arg, "-")) {
             try stderr.print("error: unknown flag '{s}'\n", .{arg});
             try stderr.print("usage: lazy format [options] <path>...\n", .{});
+            try stderr.print("       lazy format -e <expression>\n", .{});
             return .{ .exit_code = 1 };
         } else {
             try paths.append(allocator, arg);
         }
     }
 
+    // Handle expression mode
+    if (expr_mode) {
+        if (expr_value == null) {
+            try stderr.print("error: -e/--expr requires an expression argument\n", .{});
+            return .{ .exit_code = 1 };
+        }
+        if (in_place) {
+            try stderr.print("error: -i/--in-place cannot be used with -e/--expr\n", .{});
+            return .{ .exit_code = 1 };
+        }
+        if (paths.items.len > 0) {
+            try stderr.print("error: cannot specify paths with -e/--expr\n", .{});
+            return .{ .exit_code = 1 };
+        }
+
+        // Format the expression directly
+        var format_output = formatter.formatSource(allocator, expr_value.?) catch |err| {
+            try stderr.print("error: failed to format expression: {}\n", .{err});
+            return .{ .exit_code = 1 };
+        };
+        defer format_output.deinit();
+
+        try stdout.print("{s}", .{format_output.text});
+        return .{ .exit_code = 0 };
+    }
+
     if (paths.items.len == 0) {
-        try stderr.print("error: missing file path(s)\n", .{});
+        try stderr.print("error: missing file path(s) or expression\n", .{});
         try stderr.print("usage: lazy format [options] <path>...\n", .{});
+        try stderr.print("       lazy format -e <expression>\n", .{});
         return .{ .exit_code = 1 };
     }
 

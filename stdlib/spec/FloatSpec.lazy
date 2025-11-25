@@ -1,5 +1,5 @@
-{ describe, it, mustEq } = import 'Spec'
-Float = import 'Float'
+{ describe, it, mustEq } = import "Spec"
+Float = import "Float"
 
 describe #Float [
   describe #round [

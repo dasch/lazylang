@@ -1,5 +1,5 @@
-{ describe, it, mustEq } = import 'Spec'
-Array = import 'Array'
+{ describe, it, mustEq } = import "Spec"
+Array = import "Array"
 
 describe #Array [
   describe #get [
@@ -70,8 +70,8 @@ describe #Array [
 
   describe #sortBy [
     it "sorts by computed key" do
-      arr = [{name: "Alice", age: 30}, {name: "Bob", age: 25}, {name: "Charlie", age: 35}]
-      result = Array.sortBy .age arr
+      arr = [{ name: "Alice", age: 30 }, { name: "Bob", age: 25 }, { name: "Charlie", age: 35 }]
+      result = Array.sortBy.age arr
       first = when Array.get 0 result matches
         (#ok, val) then val
         otherwise null
@@ -128,9 +128,9 @@ describe #Array [
   describe #groupBy [
     it "groups elements by computed key" do
       arr = [
-        {category: "fruit", name: "apple"},
-        {category: "fruit", name: "banana"},
-        {category: "vegetable", name: "carrot"}
+        { category: "fruit", name: "apple" },
+        { category: "fruit", name: "banana" },
+        { category: "vegetable", name: "carrot" }
       ]
       result = Array.groupBy (x -> x.category) arr
       mustEq (2, 1) ((Array.length (result.fruit)), (Array.length (result.vegetable)))

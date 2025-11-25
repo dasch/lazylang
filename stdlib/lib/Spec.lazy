@@ -144,7 +144,8 @@
   /// ```
   mustEq: expected -> actual ->
     if (expected == actual) then { type: "pass" }
-    else { type: "fail", details: {
+  else
+    { type: "fail", details: {
       kind: "eq",
       expected: expected,
       actual: actual
@@ -164,7 +165,8 @@
   /// ```
   mustNotEq: expected -> actual ->
     if (expected != actual) then { type: "pass" }
-    else { type: "fail", details: {
+  else
+    { type: "fail", details: {
       kind: "notEq",
       expected: expected,
       actual: actual
@@ -187,6 +189,6 @@
         kind: "truthy",
         condition: condition
       }}
-    else
-      { type: "pass" }
+  else
+    { type: "pass" }
 }

@@ -117,10 +117,12 @@ const commands = [_]CommandInfo{
         \\Usage:
         \\  lazy format <path>...            Format file(s)/dir(s) and print to stdout
         \\  lazy format -i <path>...         Format file(s)/dir(s) in-place
+        \\  lazy format -e <expression>      Format an expression directly
         \\
         \\When a directory is provided, all .lazy files in it are recursively formatted.
         \\
         \\Options:
+        \\  -e, --expr <expr>    Format an expression directly
         \\  -i, --in-place       Modify files in-place instead of printing to stdout
         \\  -h, --help           Show this help message
         \\
@@ -131,6 +133,7 @@ const commands = [_]CommandInfo{
         \\  lazy format --in-place *.lazy
         \\  lazy format src/
         \\  lazy format -i stdlib/lib
+        \\  lazy format -e "{ foo: 1, bar: 2 }"
         ,
     },
     .{

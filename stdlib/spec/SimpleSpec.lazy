@@ -1,4 +1,4 @@
-{ describe, it, mustEq } = import 'Spec'
+{ describe, it, mustEq } = import "Spec"
 
 describe "Simple Tests" [
   it "passes a basic assertion" do

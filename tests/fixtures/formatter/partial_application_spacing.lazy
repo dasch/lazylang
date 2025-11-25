@@ -1,0 +1,11 @@
+// sortBy: Array.sortBy .age users
+//
+// getField: Object.get .name person
+//
+// chained: arr \ Array.map .id \ Array.filter .active
+
+sortBy: Array.sortBy .age users
+
+getField: Object.get .name person
+
+chained: arr \ Array.map .id \ Array.filter .active
