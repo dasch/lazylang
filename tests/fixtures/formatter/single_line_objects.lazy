@@ -1,6 +1,6 @@
 // point = { x: 10, y: 20 }
 // config = { nested: { value: 42 } }
-// empty = {  }
+// empty = {}
 
 point = {x: 10, y: 20}
 config = {nested: {value: 42}}

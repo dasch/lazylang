@@ -105,6 +105,12 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
         if (token.kind == .r_brace and brace_stack.items.len > 0) {
             const brace_info = brace_stack.items[brace_stack.items.len - 1];
             if (brace_info.brace_type == .brace and brace_info.is_single_line) {
+                // Skip if we already wrote this brace (empty object case)
+                if (brace_info.skipped) {
+                    _ = brace_stack.pop();
+                    prev_token = token.kind;
+                    continue;
+                }
                 try output.appendSlice(allocator, " }");
                 _ = brace_stack.pop();
                 prev_token = token.kind;
@@ -396,13 +402,22 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
         // For single-line objects, add space after opening brace
         // For object projections (e.g., obj.{ x, y }), also add spaces
         // NOTE: If the brace has doc comments, it should always be treated as multi-line
+        // Exception: Empty objects `{}` should not have spaces
         if (token.kind == .l_brace) {
             const has_docs = token.doc_comments != null;
             if (!has_docs) {
                 if (brace_is_single_line.get(i)) |is_single| {
                     if (is_single) {
-                        try output.appendSlice(allocator, "{ ");
-                        try brace_stack.append(allocator, BraceInfo{ .brace_type = .brace, .is_single_line = true });
+                        // Check if next token is closing brace (empty object)
+                        const is_empty = i + 1 < tokens.items.len and tokens.items[i + 1].token.kind == .r_brace;
+                        if (is_empty) {
+                            try output.appendSlice(allocator, "{}");
+                            // Skip the closing brace since we already wrote it
+                            try brace_stack.append(allocator, BraceInfo{ .brace_type = .brace, .is_single_line = true, .skipped = true });
+                        } else {
+                            try output.appendSlice(allocator, "{ ");
+                            try brace_stack.append(allocator, BraceInfo{ .brace_type = .brace, .is_single_line = true });
+                        }
                         prev_token = token.kind;
                         continue;
                     }
@@ -539,8 +554,8 @@ pub fn formatFile(allocator: std.mem.Allocator, file_path: []const u8) Formatter
 fn needsSpaceBefore(token_before_prev: ?evaluator.TokenKind, prev: evaluator.TokenKind, current: evaluator.TokenKind, brace_stack: []const BraceInfo) bool {
     _ = brace_stack; // Not currently used, but may be needed for future rules
 
-    // Space before opening paren after number/identifier/symbol (function call)
-    if (current == .l_paren and (prev == .number or prev == .identifier or prev == .symbol)) {
+    // Space before opening paren after number/identifier/string/symbol (function call)
+    if (current == .l_paren and (prev == .number or prev == .identifier or prev == .string or prev == .symbol)) {
         return true;
     }
 
@@ -549,8 +564,8 @@ fn needsSpaceBefore(token_before_prev: ?evaluator.TokenKind, prev: evaluator.Tok
         return false;
     }
 
-    // Space before opening bracket after identifier/string/symbol/r_paren
-    if (current == .l_bracket and (prev == .identifier or prev == .string or prev == .symbol or prev == .r_paren)) {
+    // Space before opening bracket after identifier/number/string/symbol/r_paren
+    if (current == .l_bracket and (prev == .identifier or prev == .number or prev == .string or prev == .symbol or prev == .r_paren)) {
         return true;
     }
 
@@ -656,6 +671,22 @@ fn needsSpaceBefore(token_before_prev: ?evaluator.TokenKind, prev: evaluator.Tok
         current == .ampersand_ampersand or current == .pipe_pipe)
     {
         return true;
+    }
+
+    // Space around & (merge operator)
+    if (prev == .ampersand or current == .ampersand) {
+        return true;
+    }
+
+    // Space around \ (backslash/pipeline operator)
+    if (prev == .backslash or current == .backslash) {
+        return true;
+    }
+
+    // No space before opening paren after closing paren (function call result)
+    // e.g., `(f x)(y)` not `(f x) (y)`
+    if (current == .l_paren and prev == .r_paren) {
+        return false;
     }
 
     return false;
