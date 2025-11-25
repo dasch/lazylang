@@ -24,6 +24,7 @@ const BraceType = enum {
 const BraceInfo = struct {
     brace_type: BraceType,
     is_single_line: bool,
+    skipped: bool = false, // True if this paren pair should be skipped in output
 };
 
 const TokenInfo = struct {
@@ -94,6 +95,7 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
     var prev_token: ?evaluator.TokenKind = null;
     var at_line_start = true;
     var brace_stack = std.ArrayList(BraceInfo){};
+    var skip_next_paren_pair = false; // Track if we should skip parens after = or :
     defer brace_stack.deinit(allocator);
     var do_indent_level: usize = 0; // Track additional indent from `do`
 
@@ -110,10 +112,22 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
             }
         }
 
-        // Handle closing brace/bracket indentation - decrease before writing
+        // Handle closing brace/bracket/paren indentation - decrease before writing
         if (token.kind == .r_brace or token.kind == .r_bracket or token.kind == .r_paren) {
             if (brace_stack.items.len > 0) {
                 const brace_info = brace_stack.items[brace_stack.items.len - 1];
+
+                // Skip closing paren if we skipped the opening (unnecessary parens around let-bindings)
+                if (token.kind == .r_paren and brace_info.brace_type == .paren and brace_info.skipped) {
+                    _ = brace_stack.pop();
+                    prev_token = token.kind;
+                    skip_next_paren_pair = false;
+                    // Decrement do_indent_level to match the increment we did for the opening paren
+                    if (do_indent_level > 0) {
+                        do_indent_level -= 1;
+                    }
+                    continue;
+                }
 
                 // For multi-line brackets/braces in comprehensions, ensure closing bracket/brace is on new line
                 if ((brace_info.brace_type == .bracket or brace_info.brace_type == .brace) and !brace_info.is_single_line and !token.preceded_by_newline) {
@@ -148,6 +162,56 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                 // Add a newline before 'for' in multi-line comprehensions
                 try output.appendSlice(allocator, "\n");
                 at_line_start = true;
+            }
+        }
+
+        // Skip unnecessary parens around let-bindings after = or : EARLY (before spacing)
+        // Pattern: identifier = ( let-bindings ) should become: identifier =\n  let-bindings
+        // But keep parens if:
+        // 1. There's a trailing semicolon before the closing paren
+        // 2. The content inside has no indentation (poorly formatted, parens are structural)
+        if (token.kind == .l_paren) {
+            const is_multi = !(brace_is_single_line.get(i) orelse true);
+            if (is_multi and prev_token != null and (prev_token.? == .equals or prev_token.? == .colon)) {
+                // Check for trailing semicolon and verify content is properly indented
+                var has_trailing_semicolon = false;
+                var has_proper_indentation = false;
+                var depth: i32 = 1;
+                var j = i + 1;
+                while (j < tokens.items.len) : (j += 1) {
+                    const t = tokens.items[j].token;
+                    if (t.kind == .l_paren) {
+                        depth += 1;
+                    } else if (t.kind == .r_paren) {
+                        depth -= 1;
+                        if (depth == 0) {
+                            // Found matching closing paren, check token before it
+                            if (j > 0) {
+                                const prev_t = tokens.items[j - 1].token;
+                                has_trailing_semicolon = (prev_t.kind == .semicolon);
+                            }
+                            break;
+                        }
+                    }
+                    // Check if first content token inside parens is indented
+                    if (depth == 1 and !has_proper_indentation and t.preceded_by_newline) {
+                        // First token after opening paren on new line - check if it has any indentation
+                        // If column > 1, it's indented (well-formatted)
+                        if (t.column > 1) {
+                            has_proper_indentation = true;
+                        }
+                    }
+                }
+
+                if (!has_trailing_semicolon and has_proper_indentation) {
+                    // Skip this opening paren and mark it for skipping the close
+                    // Increment do_indent_level to maintain indentation that would have come from the paren
+                    // Keep prev_token as-is (don't set to .l_paren) so spacing works correctly
+                    skip_next_paren_pair = true;
+                    do_indent_level += 1;
+                    try brace_stack.append(allocator, BraceInfo{ .brace_type = .paren, .is_single_line = false, .skipped = true });
+                    continue;
+                }
             }
         }
 
