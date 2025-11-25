@@ -241,27 +241,47 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                 // Only dedent if the source appears to be intentionally dedented (not just badly formatted)
                 // Don't dedent if:
                 // 1. indent_level changed since last line (we just opened a brace)
-                // 2. We're inside a multi-line object (objects have strict field indentation rules)
-                //    Arrays are OK to dedent in (for resetting at array item level)
-                var in_multiline_object = false;
-                for (brace_stack.items) |brace_info| {
-                    if (brace_info.brace_type == .brace and !brace_info.is_single_line) {
-                        in_multiline_object = true;
-                        break;
+                // 2. This is an object field name (identifier followed by colon at object field level)
+
+                // Check if this is an object field name by looking ahead
+                var is_object_field = false;
+                if (token.kind == .identifier and i + 1 < tokens.items.len) {
+                    const next_token = tokens.items[i + 1].token;
+                    // If next token is a colon, this is a field name
+                    if (next_token.kind == .colon) {
+                        // Check if we're inside a multi-line object
+                        for (brace_stack.items) |brace_info| {
+                            if (brace_info.brace_type == .brace and !brace_info.is_single_line) {
+                                is_object_field = true;
+                                break;
+                            }
+                        }
                     }
                 }
 
-                if (do_indent_level > 0 and indent_level == prev_indent_level and !in_multiline_object) {
+                if (do_indent_level > 0 and indent_level == prev_indent_level) {
                 const source_indent = if (token.column > 1) (token.column - 1) / 2 else 0;
                 const base_indent = indent_level;
                 const expected_indent = indent_level + do_indent_level;
 
-                // Only dedent if:
-                // 1. Source is indented at least as much as base level (not malformed)
-                // 2. Source is less indented than expected (indicates dedenting)
-                // Reset do_indent_level to match the source indentation
-                if (source_indent >= base_indent and source_indent < expected_indent) {
-                    do_indent_level = source_indent - base_indent;
+                // For object fields at base level, always reset do_indent_level to 0
+                if (is_object_field and source_indent == base_indent) {
+                    do_indent_level = 0;
+                } else if (!is_object_field) {
+                    // Use source indentation for dedenting:
+                    // 1. If source is at or below base level, reset to 0 (explicit dedent)
+                    // 2. If source is between base and expected, match source (partial dedent)
+                    // 3. If source is at or above expected, keep current level (no dedent)
+                    //
+                    // Special case: only apply dedenting if source_indent > 0 OR if base_indent == 0
+                    // (to handle closing brackets at root level)
+                    if (source_indent > 0 or base_indent == 0) {
+                        if (source_indent <= base_indent) {
+                            do_indent_level = 0;
+                        } else if (source_indent < expected_indent) {
+                            do_indent_level = source_indent - base_indent;
+                        }
+                    }
                 }
             }
 

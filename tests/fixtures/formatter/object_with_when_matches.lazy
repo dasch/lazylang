@@ -1,0 +1,25 @@
+// exports = {
+//   fold: fn -> init -> arr ->
+//     foldHelper = acc -> xs -> idx ->
+//       when __array_get (xs, idx) matches
+//         (#ok, x) then foldHelper (fn acc x) xs (idx + 1)
+//         otherwise acc
+//     foldHelper init arr 0
+//
+//   reverse: arr -> __array_reverse arr
+//
+//   map: fn -> arr -> __array_map (fn, arr)
+// }
+
+exports = {
+  fold: fn -> init -> arr ->
+    foldHelper = acc -> xs -> idx ->
+      when __array_get (xs, idx) matches
+        (#ok, x) then foldHelper (fn acc x) xs (idx + 1)
+        otherwise acc
+    foldHelper init arr 0
+
+  reverse: arr -> __array_reverse arr
+
+  map: fn -> arr -> __array_map (fn, arr)
+}
