@@ -71,7 +71,7 @@ describe #Array [
   describe #sortBy [
     it "sorts by computed key" do
       arr = [{ name: "Alice", age: 30 }, { name: "Bob", age: 25 }, { name: "Charlie", age: 35 }]
-      result = Array.sortBy.age arr
+      result = Array.sortBy .age arr
       first = when Array.get 0 result matches
         (#ok, val) then val
         otherwise null
