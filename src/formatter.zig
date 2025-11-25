@@ -98,6 +98,7 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
     var skip_next_paren_pair = false; // Track if we should skip parens after = or :
     defer brace_stack.deinit(allocator);
     var do_indent_level: usize = 0; // Track additional indent from `do`
+    var just_saw_equals_or_colon = false; // Track if we just saw = or : for continuation indent
 
     for (tokens.items, 0..) |info, i| {
         const token = info.token;
@@ -233,6 +234,15 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
             }
 
             // Check if previous token was `do`, `where`, `matches`, `then`, `else`, or `->` to increase indent
+            // For `=` and `:`, only apply continuation indent for continuation operators like `\`
+            if (just_saw_equals_or_colon and (token.kind == .backslash)) {
+                do_indent_level += 1;
+                just_saw_equals_or_colon = false;
+            } else if (just_saw_equals_or_colon) {
+                // Clear the flag if we're not on a continuation operator
+                just_saw_equals_or_colon = false;
+            }
+
             if (i > 0) {
                 const prev_tok = tokens.items[i - 1].token;
                 if (prev_tok.kind == .arrow) {
@@ -501,6 +511,24 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
             if (!is_single) {
                 indent_level += 1;
             }
+        }
+
+        // Set flag if we just saw = or : and there's content on the same line
+        // (This handles continuation lines like: result = 42 \ double)
+        if (token.kind == .equals or token.kind == .colon) {
+            // Check if next token is on the same line
+            if (i + 1 < tokens.items.len) {
+                const next_token = tokens.items[i + 1].token;
+                if (!next_token.preceded_by_newline) {
+                    just_saw_equals_or_colon = true;
+                }
+            }
+        }
+
+        // Clear flag if we encounter a newline directly after = or : (handled by arrow logic)
+        if (token.preceded_by_newline and prev_token != null and
+            (prev_token.? == .equals or prev_token.? == .colon)) {
+            just_saw_equals_or_colon = false;
         }
 
         prev_token = token.kind;
