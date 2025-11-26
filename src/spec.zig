@@ -838,18 +838,18 @@ fn runSpecWithFailedAndSkippedSpecs(
     };
     defer allocator.free(file_content);
 
-    // Build a Lazylang expression that calls Spec.run with the suite and seed
-    // Format: Spec = import "Spec"; suite = import "<file_path>"; Spec.run { suite: suite, seed: <seed> }
+    // Read and prepend a Spec.run call to the spec file
     var eval_expr = std.ArrayList(u8){};
     defer eval_expr.deinit(allocator);
-    try eval_expr.appendSlice(allocator, "Spec = import \"Spec\"; suite = import \"");
-    try eval_expr.appendSlice(allocator, file_path);
-    try eval_expr.appendSlice(allocator, "\"; Spec.run { suite: suite, seed: ");
+    try eval_expr.appendSlice(allocator, "Spec = import \"Spec\"; Spec.run { suite: (");
+    try eval_expr.appendSlice(allocator, file_content);
+    try eval_expr.appendSlice(allocator, "), seed: ");
     try eval_expr.writer(allocator).print("{d}", .{seed});
     try eval_expr.appendSlice(allocator, " }");
 
-    // Evaluate to get the report
-    var result = eval_module.evalInlineWithValue(allocator, eval_expr.items) catch |err| {
+    // Evaluate with the spec file's directory as context for imports
+    const directory = std.fs.path.dirname(file_path);
+    var result = eval_module.evalInlineWithValueAndDir(allocator, eval_expr.items, directory) catch |err| {
         // For file I/O errors that don't have error context
         // Extract just the filename or relative path for display
         const display_path = if (std.mem.lastIndexOf(u8, file_path, "spec/")) |idx|
