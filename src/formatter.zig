@@ -564,34 +564,14 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
             needs_space_before = true;
         }
 
-        // Special case: array indexing vs array literal
-        // envConfig[target] (no space) vs foo bar [1, 2, 3] (space for function call)
-        // Indexing: arr[0], obj.field[0]
-        // Function call/juxtaposition: foo [1, 2], foo bar [1, 2], [1, 2] [3, 4]
-        //
-        // Heuristic: if no whitespace before `[` in source, check if it's indexing:
-        // - After dot: definitely indexing (obj.field[0])
-        // - After identifier: only indexing if NOT a function call
-        //   (function call if token_before_prev is also a value token)
-        //
-        // Note: We do NOT treat `arr[0][1]` or `(expr)[0]` as indexing by default,
-        // because the space should be added by normal spacing rules unless the source
-        // explicitly omits it. The formatter preserves source intent for these cases.
-        if (needs_space_before and token.kind == .l_bracket and !token.preceded_by_whitespace and prev_token != null) {
-            if (prev_token.? == .dot) {
-                // Definitely indexing after field access
-                needs_space_before = false;
-            } else if (prev_token.? == .identifier and token_before_prev != null) {
-                // Only indexing if previous identifier is NOT part of a function call
-                // Function call: foo bar[...] where foo is also an identifier/value
-                const is_function_call = token_before_prev.? == .identifier or
-                    token_before_prev.? == .symbol or token_before_prev.? == .string or
-                    token_before_prev.? == .number or token_before_prev.? == .r_bracket or
-                    token_before_prev.? == .r_paren or token_before_prev.? == .r_brace;
-                if (!is_function_call) {
-                    needs_space_before = false;
-                }
-            }
+        // Special case: preserve spacing before brackets after identifiers/symbols
+        // We can't reliably distinguish between array indexing (arr[0]) and function calls (foo [1,2])
+        // since in a functional language the left-hand side could be either an array or a function.
+        // So we preserve whatever spacing the user wrote in the source.
+        if (token.kind == .l_bracket and prev_token != null and
+            (prev_token.? == .identifier or prev_token.? == .symbol)) {
+            // Override the normal spacing rule - preserve source spacing
+            needs_space_before = token.preceded_by_whitespace and !at_line_start;
         }
 
         // Reset do_indent_level if we're starting a new statement at array level
