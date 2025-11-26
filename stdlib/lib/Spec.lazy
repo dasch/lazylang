@@ -57,6 +57,7 @@
 Array = import "Array"
 Object = import "Object"
 Random = import "Random"
+Result = import "Result"
 
 {
   /// Explicitly marks a test as passing.
@@ -261,11 +262,12 @@ Random = import "Random"
 
     testValues = generateValues trials baseSeed []
 
-    // Test function that checks all values
-    runTest = Array.fold (result -> value ->
+    // Stop on first failure, otherwise continue testing
+    stopOnFailure = result -> value ->
       if result.type == "fail" then result
       else testFn value
-    ) { type: "pass" } testValues
+
+    runTest = Array.fold stopOnFailure { type: "pass" } testValues
 
     {
       type: "it",
@@ -289,12 +291,11 @@ Random = import "Random"
   ///   must (property value)
   /// ```
   forallWith: options -> generator -> description -> testFn -> (
-    trials = when Object.get "trials" options matches
-      (#ok, n) then n
-      otherwise 100
-    baseSeed = when Object.get "seed" options matches
-      (#ok, s) then Random.seed s
-      otherwise Random.seed 42
+    trials = Object.get "trials" options
+      \ Result.orDefault 100
+    baseSeed = Object.get "seed" options
+      \ Result.map Random.seed
+      \ Result.orDefault (Random.seed 42)
 
     // Generate all trial test values
     generateValues = n -> seed -> acc ->
@@ -306,11 +307,12 @@ Random = import "Random"
 
     testValues = generateValues trials baseSeed []
 
-    // Test function that checks all values
-    runTest = Array.fold (result -> value ->
+    // Stop on first failure, otherwise continue testing
+    stopOnFailure = result -> value ->
       if result.type == "fail" then result
       else testFn value
-    ) { type: "pass" } testValues
+
+    runTest = Array.fold stopOnFailure { type: "pass" } testValues
 
     {
       type: "it",
