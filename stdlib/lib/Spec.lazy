@@ -377,31 +377,27 @@ Result = import "Result"
             }
             processChildren (idx + 1) newAcc
 
-        processChildren 0{ passed: 0, failed: 0, ignored: 0, results: [] }
+        processChildren 0 { passed: 0, failed: 0, ignored: 0, results: [] }
 
-      else
-        if itemType == "it" then
-          description = Object.get "description" item \ Result.orDefault "unknown"
+      else if itemType == "it" then
+        description = Object.get "description" item \ Result.orDefault "unknown"
         testResult = Object.get "test" item \ Result.orDefault { type: "pass" }
         resultType = Object.get "type" testResult \ Result.orDefault "unknown"
         details = Object.get "details" testResult \ Result.orDefault null
 
         if resultType == "pass" then
           { passed: 1, failed: 0, ignored: 0, results: [{ type: "pass", path: path, description: description }] }
+        else if resultType == "fail" then
+          { passed: 0, failed: 1, ignored: 0, results: [{ type: "fail", path: path, description: description, details: details }] }
         else
-          if resultType == "fail" then
-            { passed: 0, failed: 1, ignored: 0, results: [{ type: "fail", path: path, description: description, details: details }] }
-          else
-            { passed: 1, failed: 0, ignored: 0, results: [{ type: "pass", path: path, description: description }] }
+          { passed: 1, failed: 0, ignored: 0, results: [{ type: "pass", path: path, description: description }] }
 
-          else
-            if itemType == "xit" then
-              description = Object.get "description" item \ Result.orDefault "unknown"
-              { passed: 0, failed: 0, ignored: 1, results: [{ type: "ignored", path: path, description: description }] }
+        else if itemType == "xit" then
+          description = Object.get "description" item \ Result.orDefault "unknown"
+        { passed: 0, failed: 0, ignored: 1, results: [{ type: "ignored", path: path, description: description }] }
 
-            else
-              if itemType == "property" then
-                description = Object.get "description" item \ Result.orDefault "unknown"
+      else if itemType == "property" then
+        description = Object.get "description" item \ Result.orDefault "unknown"
         testFn = Object.get "test" item \ Result.orDefault (x -> { type: "pass" })
         result = testFn s
         resultType = Object.get "type" result \ Result.orDefault "unknown"
