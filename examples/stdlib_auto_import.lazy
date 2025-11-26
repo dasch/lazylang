@@ -2,7 +2,6 @@
 ///
 /// Array, Float, Math, Object, and String are automatically available
 /// without needing explicit imports!
-
 {
   // Use Array module without importing
   doubled: Array.map (x -> x * 2) [1, 2, 3, 4, 5]
@@ -23,8 +22,7 @@
   rounded: Float.round 3.14159
 
   // You can still shadow these if needed
-  customArray: (
+  customArray:
     Array = "shadowed!"
     Array
-  )
 }

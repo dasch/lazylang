@@ -1,4 +1,4 @@
-YAML = import 'YAML'
+YAML = import "YAML"
 
 parsed_int = YAML.parse "42"
 parsed_array = YAML.parse "[1, 2, 3]"

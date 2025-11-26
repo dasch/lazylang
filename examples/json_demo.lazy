@@ -1,4 +1,4 @@
-JSON = import 'JSON'
+JSON = import "JSON"
 
 // Parse and encode examples
 parse_int = JSON.parse "42"
