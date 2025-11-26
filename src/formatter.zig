@@ -427,6 +427,9 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                 const prev_tok = tokens.items[i - 1].token;
                 if (prev_tok.kind == .arrow) {
                     do_indent_level += 1;
+                } else if (prev_tok.kind == .equals) {
+                    // Indent after equals on new line
+                    do_indent_level += 1;
                 } else if (prev_tok.kind == .colon) {
                     // Indent after colon in object fields
                     // Check if we're in a multi-line object
