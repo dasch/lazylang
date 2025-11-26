@@ -1,5 +1,5 @@
 /// Property-based testing demo using forall
-{describe, it, must, mustEq, forall, forallWith } = import "Spec"
+{ describe, it, must, mustEq, forall, forallWith } = import "Spec"
 Random = import "Random"
 Math = import "Math"
 

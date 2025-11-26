@@ -590,26 +590,22 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
 
         // For single-line objects, add space after opening brace
         // For object projections (e.g., obj.{ x, y }), also add spaces
-        // NOTE: If the brace has doc comments, it should always be treated as multi-line
         // Exception: Empty objects `{}` should not have spaces
         if (token.kind == .l_brace) {
-            const has_docs = token.doc_comments != null;
-            if (!has_docs) {
-                if (brace_is_single_line.get(i)) |is_single| {
-                    if (is_single) {
-                        // Check if next token is closing brace (empty object)
-                        const is_empty = i + 1 < tokens.items.len and tokens.items[i + 1].token.kind == .r_brace;
-                        if (is_empty) {
-                            try output.appendSlice(allocator, "{}");
-                            // Skip the closing brace since we already wrote it
-                            try brace_stack.append(allocator, BraceInfo{ .brace_type = .brace, .is_single_line = true, .skipped = true, .context_do_indent = do_indent_level });
-                        } else {
-                            try output.appendSlice(allocator, "{ ");
-                            try brace_stack.append(allocator, BraceInfo{ .brace_type = .brace, .is_single_line = true, .context_do_indent = do_indent_level });
-                        }
-                        prev_token = token.kind;
-                        continue;
+            if (brace_is_single_line.get(i)) |is_single| {
+                if (is_single) {
+                    // Check if next token is closing brace (empty object)
+                    const is_empty = i + 1 < tokens.items.len and tokens.items[i + 1].token.kind == .r_brace;
+                    if (is_empty) {
+                        try output.appendSlice(allocator, "{}");
+                        // Skip the closing brace since we already wrote it
+                        try brace_stack.append(allocator, BraceInfo{ .brace_type = .brace, .is_single_line = true, .skipped = true, .context_do_indent = do_indent_level });
+                    } else {
+                        try output.appendSlice(allocator, "{ ");
+                        try brace_stack.append(allocator, BraceInfo{ .brace_type = .brace, .is_single_line = true, .context_do_indent = do_indent_level });
                     }
+                    prev_token = token.kind;
+                    continue;
                 }
             }
         }
