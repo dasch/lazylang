@@ -188,6 +188,55 @@ result = (
 
 Note: Semicolons in source are removed by formatter in multi-line parens
 
+### Pattern Matching
+
+**Basic syntax**: Use `when expr matches` for pattern matching
+```
+status = when result matches
+  (#ok, value) then value
+  (#error, msg) then 0
+  otherwise null
+```
+
+**Multiple patterns**: Each pattern uses `pattern then expression`
+```
+itemType = "describe"
+action = when itemType matches
+  "describe" then "run suite"
+  "it" then "run test"
+  "xit" then "skip test"
+  otherwise "unknown"
+```
+
+**Single-expression arms**: No parentheses needed
+```
+classify = when x matches
+  0 then "zero"
+  1 then "one"
+  otherwise "many"
+```
+
+**Multi-expression arms**: MUST use parentheses to group expressions
+```
+process = when itemType matches
+  "describe" then (
+    description = getDescription item;
+    children = getChildren item;
+    processChildren description children
+  )
+  "it" then (
+    test = getTest item;
+    runTest test
+  )
+  otherwise { result: "unknown" }
+```
+
+**Key points**:
+- Use `otherwise` for default case (not `_` or `else`)
+- Parentheses required for multi-line/multi-expression arms
+- Inside parentheses, use semicolons between expressions (formatter keeps them)
+- Without parentheses, parser expects single expression
+
 ## Do Blocks
 
 **Indentation**: 2 spaces
@@ -394,11 +443,11 @@ result = (#ok, value)
 // Error
 result = (#error, "Something went wrong")
 
-// Pattern matching
-formatted =
-  when result matches
-    (#ok, v) then "Success: " ++ String.show v
-    (#error, msg) then "Error: " ++ msg
+// Pattern matching (see "Pattern Matching" section for details)
+formatted = when result matches
+  (#ok, v) then "Success: " ++ String.show v
+  (#error, msg) then "Error: " ++ msg
+  otherwise "Unknown"
 ```
 
 ## Common Pitfalls
