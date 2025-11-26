@@ -252,7 +252,7 @@ Result = import "Result"
     trials = 100
 
     // Return a function that takes a seed and runs the property test
-    runPropertyTest = seed -> (
+    runPropertyTest = seed ->
       baseSeed = Random.seed seed
 
       // Generate all trial test values
@@ -273,7 +273,6 @@ Result = import "Result"
           testFn value
 
       Array.fold stopOnFailure { type: "pass" } testValues
-    )
 
     {
       type: "property"
@@ -303,7 +302,7 @@ Result = import "Result"
       \ Result.orDefault null
 
     // Return a function that takes a seed and runs the property test
-    runPropertyTest = seed -> (
+    runPropertyTest = seed ->
       // Use override if provided, otherwise use the passed seed
       baseSeed = if seedOverride == null then
         Random.seed seed
@@ -328,14 +327,13 @@ Result = import "Result"
           testFn value
 
       Array.fold stopOnFailure { type: "pass" } testValues
-    )
 
     {
       type: "property"
       description: description
       test: runPropertyTest
       trials: trials
-    },
+    }
 
   /// Runs a spec suite with a given seed and returns a structured report.
   ///
@@ -352,10 +350,70 @@ Result = import "Result"
   /// ]
   /// report = run { suite: suite, seed: 42 }
   /// ```
-  run: config -> {
-    passed: 1
-    failed: 0
-    ignored: 0
-    results: [{ type: "pass", path: [], description: "dummy" }]
-  }
+  run: config ->
+    suite = config.suite
+    seed = config.seed
+
+    runItem = item -> s -> path ->
+      itemType = Object.get "type" item \ Result.orDefault "unknown"
+
+      if itemType == "describe" then
+        description = Object.get "description" item \ Result.orDefault "unknown"
+        children = Object.get "children" item \ Result.orDefault []
+        newPath = [...path, description]
+
+        // Recursively process children
+        processChildren = idx -> acc ->
+          if idx >= Array.length children then
+            acc
+          else
+            child = Array.get idx children \ Result.orDefault null
+            childResult = runItem child s newPath
+            newAcc = {
+              passed: acc.passed + childResult.passed
+              failed: acc.failed + childResult.failed
+              ignored: acc.ignored + childResult.ignored
+              results: [...acc.results, ...childResult.results]
+            }
+            processChildren (idx + 1) newAcc
+
+        processChildren 0{ passed: 0, failed: 0, ignored: 0, results: [] }
+
+      else
+        if itemType == "it" then
+          description = Object.get "description" item \ Result.orDefault "unknown"
+        testResult = Object.get "test" item \ Result.orDefault { type: "pass" }
+        resultType = Object.get "type" testResult \ Result.orDefault "unknown"
+        details = Object.get "details" testResult \ Result.orDefault null
+
+        if resultType == "pass" then
+          { passed: 1, failed: 0, ignored: 0, results: [{ type: "pass", path: path, description: description }] }
+        else
+          if resultType == "fail" then
+            { passed: 0, failed: 1, ignored: 0, results: [{ type: "fail", path: path, description: description, details: details }] }
+          else
+            { passed: 1, failed: 0, ignored: 0, results: [{ type: "pass", path: path, description: description }] }
+
+          else
+            if itemType == "xit" then
+              description = Object.get "description" item \ Result.orDefault "unknown"
+              { passed: 0, failed: 0, ignored: 1, results: [{ type: "ignored", path: path, description: description }] }
+
+            else
+              if itemType == "property" then
+                description = Object.get "description" item \ Result.orDefault "unknown"
+        testFn = Object.get "test" item \ Result.orDefault (x -> { type: "pass" })
+        result = testFn s
+        resultType = Object.get "type" result \ Result.orDefault "unknown"
+        details = Object.get "details" result \ Result.orDefault null
+
+        if resultType == "pass" then
+          { passed: 1, failed: 0, ignored: 0, results: [{ type: "pass", path: path, description: description }] }
+        else
+          { passed: 0, failed: 1, ignored: 0, results: [{ type: "fail", path: path, description: description, details: details }] }
+
+        else
+          { passed: 0, failed: 1, ignored: 0, results: [{ type: "error", path: path, description: "Unknown type" }] }
+
+    runItem suite seed []
 }

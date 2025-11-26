@@ -736,6 +736,7 @@ pub fn runSpec(
     file_path: []const u8,
     line_number: ?usize,
     verbose: bool,
+    seed: i64,
     writer: anytype,
 ) !SpecResult {
     var failed_specs = std.ArrayList(FailedSpec){};
@@ -758,7 +759,7 @@ pub fn runSpec(
         skipped_specs.deinit(allocator);
     }
 
-    const result = try runSpecWithFailedAndSkippedSpecs(allocator, file_path, line_number, verbose, &failed_specs, &skipped_specs, writer);
+    const result = try runSpecWithFailedAndSkippedSpecs(allocator, file_path, line_number, verbose, seed, &failed_specs, &skipped_specs, writer);
 
     // Print skipped specs list if verbose and there are skipped tests
     if (verbose and result.ignored > 0 and skipped_specs.items.len > 0) {
@@ -803,6 +804,7 @@ fn runSpecWithFailedAndSkippedSpecs(
     file_path: []const u8,
     line_number: ?usize,
     verbose: bool,
+    seed: i64,
     all_failed_specs: ?*std.ArrayList(FailedSpec),
     all_skipped_specs: ?*std.ArrayList(SkippedSpec),
     writer: anytype,
@@ -836,8 +838,18 @@ fn runSpecWithFailedAndSkippedSpecs(
     };
     defer allocator.free(file_content);
 
-    // Evaluate the spec file
-    var result = eval_module.evalFileWithValue(allocator, file_path) catch |err| {
+    // Build a Lazylang expression that calls Spec.run with the suite and seed
+    // Format: Spec = import "Spec"; suite = import "<file_path>"; Spec.run { suite: suite, seed: <seed> }
+    var eval_expr = std.ArrayList(u8){};
+    defer eval_expr.deinit(allocator);
+    try eval_expr.appendSlice(allocator, "Spec = import \"Spec\"; suite = import \"");
+    try eval_expr.appendSlice(allocator, file_path);
+    try eval_expr.appendSlice(allocator, "\"; Spec.run { suite: suite, seed: ");
+    try eval_expr.writer(allocator).print("{d}", .{seed});
+    try eval_expr.appendSlice(allocator, " }");
+
+    // Evaluate to get the report
+    var result = eval_module.evalInlineWithValue(allocator, eval_expr.items) catch |err| {
         // For file I/O errors that don't have error context
         // Extract just the filename or relative path for display
         const display_path = if (std.mem.lastIndexOf(u8, file_path, "spec/")) |idx|
@@ -904,72 +916,256 @@ fn runSpecWithFailedAndSkippedSpecs(
         };
     }
 
-    const value = result.value;
+    // Parse the report object from Spec.run
+    const report = result.value;
+    return try formatSpecReport(allocator, file_path, report, filter, verbose, all_failed_specs, all_skipped_specs, writer);
+}
 
-    const Ctx = RunContext(@TypeOf(writer));
-    var ctx = Ctx{
-        .allocator = allocator,
-        .writer = writer,
-        .passed = 0,
-        .failed = 0,
-        .ignored = 0,
-        .indent = 0,
-        .needs_blank_line = false,
-        .filter = filter,
-        .current_describe_stack = std.ArrayList([]const u8){},
-        .verbose = verbose,
-        .failed_specs = std.ArrayList(FailedSpec){},
-        .skipped_specs = std.ArrayList(SkippedSpec){},
-        .current_file_path = file_path,
+fn formatSpecReport(
+    allocator: std.mem.Allocator,
+    file_path: []const u8,
+    report: eval_module.Value,
+    filter: ?SpecFilter,
+    verbose: bool,
+    all_failed_specs: ?*std.ArrayList(FailedSpec),
+    all_skipped_specs: ?*std.ArrayList(SkippedSpec),
+    writer: anytype,
+) !SpecResult {
+    _ = filter; // TODO: Implement filtering support
+
+    // Parse the report object to extract passed, failed, ignored, and results
+    const report_obj = switch (report) {
+        .object => |obj| obj,
+        else => {
+            try writer.print("{s}Error: Spec.run did not return an object{s}\n", .{ Color.red, Color.reset });
+            return SpecResult{ .passed = 0, .failed = 1, .ignored = 0 };
+        },
     };
-    defer ctx.current_describe_stack.deinit(allocator);
-    defer {
-        // If all_failed_specs is provided, transfer ownership to it
-        if (all_failed_specs == null) {
-            // Clean up if we're not transferring
-            for (ctx.failed_specs.items) |failed_spec| {
-                allocator.free(failed_spec.file_path);
-                allocator.free(failed_spec.describe_path);
-                allocator.free(failed_spec.test_description);
-            }
-        }
-        ctx.failed_specs.deinit(allocator);
 
-        // If all_skipped_specs is provided, transfer ownership to it
-        if (all_skipped_specs == null) {
-            // Clean up if we're not transferring
-            for (ctx.skipped_specs.items) |skipped_spec| {
-                allocator.free(skipped_spec.file_path);
-                allocator.free(skipped_spec.describe_path);
-                allocator.free(skipped_spec.test_description);
-            }
+    var passed: usize = 0;
+    var failed: usize = 0;
+    var ignored: usize = 0;
+    var results: ?eval_module.ArrayValue = null;
+
+    for (report_obj.fields) |field| {
+        const forced_value = eval_module.force(allocator, field.value) catch field.value;
+        if (std.mem.eql(u8, field.key, "passed")) {
+            passed = switch (forced_value) {
+                .integer => |i| @intCast(i),
+                else => 0,
+            };
+        } else if (std.mem.eql(u8, field.key, "failed")) {
+            failed = switch (forced_value) {
+                .integer => |i| @intCast(i),
+                else => 0,
+            };
+        } else if (std.mem.eql(u8, field.key, "ignored")) {
+            ignored = switch (forced_value) {
+                .integer => |i| @intCast(i),
+                else => 0,
+            };
+        } else if (std.mem.eql(u8, field.key, "results")) {
+            results = switch (forced_value) {
+                .array => |a| a,
+                else => null,
+            };
         }
-        ctx.skipped_specs.deinit(allocator);
     }
 
-    try runTestItem(&ctx, value);
+    // Process results array
+    if (results) |result_array| {
+        for (result_array.elements) |result_value| {
+            const result_obj = switch (result_value) {
+                .object => |obj| obj,
+                else => continue,
+            };
 
-    // Transfer failed specs to all_failed_specs if provided
-    if (all_failed_specs) |list| {
-        try list.appendSlice(allocator, ctx.failed_specs.items);
-    }
+            var result_type: ?[]const u8 = null;
+            var path: ?eval_module.ArrayValue = null;
+            var description: ?[]const u8 = null;
+            var details: ?eval_module.Value = null;
 
-    // Transfer skipped specs to all_skipped_specs if provided
-    if (all_skipped_specs) |list| {
-        try list.appendSlice(allocator, ctx.skipped_specs.items);
+            for (result_obj.fields) |field| {
+                const forced_value = eval_module.force(allocator, field.value) catch field.value;
+                if (std.mem.eql(u8, field.key, "type")) {
+                    result_type = switch (forced_value) {
+                        .string => |s| s,
+                        else => null,
+                    };
+                } else if (std.mem.eql(u8, field.key, "path")) {
+                    path = switch (forced_value) {
+                        .array => |a| a,
+                        else => null,
+                    };
+                } else if (std.mem.eql(u8, field.key, "description")) {
+                    description = switch (forced_value) {
+                        .string => |s| s,
+                        else => null,
+                    };
+                } else if (std.mem.eql(u8, field.key, "details")) {
+                    details = forced_value;
+                }
+            }
+
+            if (result_type == null or description == null) continue;
+
+            // Build path string from array
+            var path_string = std.ArrayList(u8){};
+            defer path_string.deinit(allocator);
+
+            if (path) |path_array| {
+                for (path_array.elements, 0..) |elem, i| {
+                    const forced_elem = eval_module.force(allocator, elem) catch elem;
+                    const elem_str = switch (forced_elem) {
+                        .string => |s| s,
+                        else => continue,
+                    };
+
+                    if (i > 0) {
+                        const prev = path_array.elements[i - 1];
+                        const forced_prev = eval_module.force(allocator, prev) catch prev;
+                        const prev_str = switch (forced_prev) {
+                            .string => |s| s,
+                            else => "",
+                        };
+                        const prev_is_symbol = prev_str.len > 0 and prev_str[0] == '#';
+                        const curr_is_symbol = elem_str.len > 0 and elem_str[0] == '#';
+                        const separator = if (prev_is_symbol and curr_is_symbol) "." else " ";
+                        try path_string.appendSlice(allocator, separator);
+                    }
+
+                    // Strip # prefix from symbols
+                    const elem_name = if (elem_str.len > 0 and elem_str[0] == '#')
+                        elem_str[1..]
+                    else
+                        elem_str;
+                    try path_string.appendSlice(allocator, elem_name);
+                }
+                if (path_array.elements.len > 0) {
+                    try path_string.appendSlice(allocator, " ");
+                }
+            }
+
+            // Format and display based on result type
+            if (std.mem.eql(u8, result_type.?, "pass")) {
+                if (verbose) {
+                    const formatted_desc = try formatDescription(allocator, description.?, Color.blue, Color.reset);
+                    defer allocator.free(formatted_desc);
+                    try writer.print("{s}✓{s} {s}\n", .{ Color.green, Color.reset, formatted_desc });
+                }
+            } else if (std.mem.eql(u8, result_type.?, "fail")) {
+                const formatted_desc = try formatDescription(allocator, description.?, Color.yellow, Color.red);
+                defer allocator.free(formatted_desc);
+                try writer.print("{s}✗ {s}{s}{s}\n", .{ Color.red, path_string.items, formatted_desc, Color.reset });
+
+                // Record the failed spec
+                if (all_failed_specs) |list| {
+                    const line_number = findLineForTest(allocator, file_path, description.?);
+                    const failed_spec = FailedSpec{
+                        .file_path = try allocator.dupe(u8, file_path),
+                        .line_number = line_number,
+                        .describe_path = try allocator.dupe(u8, path_string.items),
+                        .test_description = try allocator.dupe(u8, description.?),
+                    };
+                    try list.append(allocator, failed_spec);
+                }
+
+                // Handle fail details
+                if (details) |detail_value| {
+                    try formatFailDetails(allocator, detail_value, writer);
+                }
+            } else if (std.mem.eql(u8, result_type.?, "ignored")) {
+                if (verbose) {
+                    const formatted_desc = try formatDescription(allocator, description.?, Color.blue, Color.grey);
+                    defer allocator.free(formatted_desc);
+                    try writer.print("{s}□ {s}{s}{s}{s}\n", .{ Color.grey, Color.strikethrough, path_string.items, formatted_desc, Color.reset });
+                }
+
+                // Record the skipped spec
+                if (all_skipped_specs) |list| {
+                    const line_number = findLineForTest(allocator, file_path, description.?);
+                    const skipped_spec = SkippedSpec{
+                        .file_path = try allocator.dupe(u8, file_path),
+                        .line_number = line_number,
+                        .describe_path = try allocator.dupe(u8, path_string.items),
+                        .test_description = try allocator.dupe(u8, description.?),
+                    };
+                    try list.append(allocator, skipped_spec);
+                }
+            }
+        }
     }
 
     return SpecResult{
-        .passed = ctx.passed,
-        .failed = ctx.failed,
-        .ignored = ctx.ignored,
+        .passed = passed,
+        .failed = failed,
+        .ignored = ignored,
     };
+}
+
+fn formatFailDetails(allocator: std.mem.Allocator, details: eval_module.Value, writer: anytype) !void {
+    switch (details) {
+        .string => |msg| {
+            try writer.print("{s}    {s}{s}\n", .{ Color.dim, msg, Color.reset });
+        },
+        .object => |obj| {
+            var fail_kind: ?[]const u8 = null;
+            var fail_expected: ?eval_module.Value = null;
+            var fail_actual: ?eval_module.Value = null;
+            var fail_condition: ?eval_module.Value = null;
+
+            for (obj.fields) |field| {
+                const forced_value = eval_module.force(allocator, field.value) catch field.value;
+                if (std.mem.eql(u8, field.key, "kind")) {
+                    fail_kind = switch (forced_value) {
+                        .string => |s| s,
+                        else => null,
+                    };
+                } else if (std.mem.eql(u8, field.key, "expected")) {
+                    fail_expected = forced_value;
+                } else if (std.mem.eql(u8, field.key, "actual")) {
+                    fail_actual = forced_value;
+                } else if (std.mem.eql(u8, field.key, "condition")) {
+                    fail_condition = forced_value;
+                }
+            }
+
+            if (fail_kind) |k| {
+                if (std.mem.eql(u8, k, "eq")) {
+                    if (fail_expected != null and fail_actual != null) {
+                        const expected_str = try eval_module.formatValue(allocator, fail_expected.?);
+                        defer allocator.free(expected_str);
+                        const actual_str = try eval_module.formatValue(allocator, fail_actual.?);
+                        defer allocator.free(actual_str);
+                        try writer.print("{s}    Expected: {s}{s}\n", .{ Color.dim, expected_str, Color.reset });
+                        try writer.print("{s}    Actual:   {s}{s}\n", .{ Color.dim, actual_str, Color.reset });
+                    }
+                } else if (std.mem.eql(u8, k, "notEq")) {
+                    if (fail_actual != null) {
+                        const value_str = try eval_module.formatValue(allocator, fail_actual.?);
+                        defer allocator.free(value_str);
+                        try writer.print("{s}    Expected not to equal: {s}{s}\n", .{ Color.dim, value_str, Color.reset });
+                        try writer.print("{s}    But got:               {s}{s}\n", .{ Color.dim, value_str, Color.reset });
+                    }
+                } else if (std.mem.eql(u8, k, "truthy")) {
+                    if (fail_condition != null) {
+                        const condition_str = try eval_module.formatValue(allocator, fail_condition.?);
+                        defer allocator.free(condition_str);
+                        try writer.print("{s}    Expected condition to be truthy{s}\n", .{ Color.dim, Color.reset });
+                        try writer.print("{s}    But got: {s}{s}\n", .{ Color.dim, condition_str, Color.reset });
+                    }
+                }
+            }
+        },
+        else => {},
+    }
 }
 
 fn runAllSpecsRecursive(
     allocator: std.mem.Allocator,
     spec_dir: []const u8,
     verbose: bool,
+    seed: i64,
     writer: anytype,
     total_passed: *usize,
     total_failed: *usize,
@@ -993,13 +1189,13 @@ fn runAllSpecsRecursive(
             }
             first_file.* = false;
 
-            const result = try runSpecWithFailedAndSkippedSpecs(allocator, full_path, null, verbose, all_failed_specs, all_skipped_specs, writer);
+            const result = try runSpecWithFailedAndSkippedSpecs(allocator, full_path, null, verbose, seed, all_failed_specs, all_skipped_specs, writer);
             total_passed.* += result.passed;
             total_failed.* += result.failed;
             total_ignored.* += result.ignored;
         } else if (entry.kind == .directory) {
             // Recursively search subdirectories
-            try runAllSpecsRecursive(allocator, full_path, verbose, writer, total_passed, total_failed, total_ignored, all_failed_specs, all_skipped_specs, first_file);
+            try runAllSpecsRecursive(allocator, full_path, verbose, seed, writer, total_passed, total_failed, total_ignored, all_failed_specs, all_skipped_specs, first_file);
         }
     }
 }
@@ -1008,6 +1204,7 @@ pub fn runAllSpecs(
     allocator: std.mem.Allocator,
     spec_dir: []const u8,
     verbose: bool,
+    seed: i64,
     writer: anytype,
 ) !SpecResult {
     var total_passed: usize = 0;
@@ -1034,7 +1231,7 @@ pub fn runAllSpecs(
         all_skipped_specs.deinit(allocator);
     }
 
-    try runAllSpecsRecursive(allocator, spec_dir, verbose, writer, &total_passed, &total_failed, &total_ignored, &all_failed_specs, &all_skipped_specs, &first_file);
+    try runAllSpecsRecursive(allocator, spec_dir, verbose, seed, writer, &total_passed, &total_failed, &total_ignored, &all_failed_specs, &all_skipped_specs, &first_file);
 
     // Print skipped specs list if verbose and there are skipped tests
     if (verbose and total_ignored > 0 and all_skipped_specs.items.len > 0) {
