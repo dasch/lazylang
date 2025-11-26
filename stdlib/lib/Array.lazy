@@ -73,7 +73,7 @@ Tuple = import "Tuple"
   /// ```
   /// Array.flatMap (x -> [x, x]) [1, 2]  //=> [1, 1, 2, 2]
   /// ```
-  flatMap: fn -> arr -> [y for x in arr for y in (fn x)]
+  flatMap: fn -> arr -> [y for x in arr for y in fn x]
 
   /// Filters an array, keeping only elements that satisfy the predicate.
   ///
