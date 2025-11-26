@@ -326,6 +326,33 @@ test "error message: unknown field - nested" {
     );
 }
 
+test "error message: field access on non-object - string" {
+    try expectError(
+        \\f = x -> x.field
+        \\f "hello"
+        ,
+        error.TypeMismatch,
+    );
+}
+
+test "error message: field access on non-object - integer" {
+    try expectError(
+        \\f = x -> x.value
+        \\f 42
+        ,
+        error.TypeMismatch,
+    );
+}
+
+test "error message: field access on non-object - boolean" {
+    try expectError(
+        \\f = x -> x.status
+        \\f true
+        ,
+        error.TypeMismatch,
+    );
+}
+
 // ============================================================================
 // MODULE/IMPORT ERROR TESTS
 // ============================================================================

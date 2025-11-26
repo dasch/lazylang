@@ -174,6 +174,17 @@ test "exact error: cyclic reference shows both definition and reference on diffe
     try assertExactMatch(actual, expected);
 }
 
+test "exact error: type mismatch on field access shows location with stack trace" {
+    const fixture = "tests/fixtures/errors/type_mismatch_field_access.lazy";
+    const actual = try captureErrorOutput(testing.allocator, fixture);
+    defer testing.allocator.free(actual);
+
+    const expected = try loadExpectedError(testing.allocator, fixture);
+    defer testing.allocator.free(expected);
+
+    try assertExactMatch(actual, expected);
+}
+
 // ============================================================================
 // ERROR MESSAGE QUALITY TESTS
 // These tests verify error messages contain helpful information
@@ -282,6 +293,7 @@ test "regression: all error fixtures produce non-empty, formatted output" {
         "tests/fixtures/errors/unknown_identifier.lazy",
         "tests/fixtures/errors/type_mismatch_add.lazy",
         "tests/fixtures/errors/type_mismatch_comparison.lazy",
+        "tests/fixtures/errors/type_mismatch_field_access.lazy",
         "tests/fixtures/errors/unknown_field.lazy",
         "tests/fixtures/errors/module_not_found.lazy",
         "tests/fixtures/errors/not_a_function.lazy",

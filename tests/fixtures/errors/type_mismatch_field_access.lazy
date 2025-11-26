@@ -1,0 +1,16 @@
+// error: Type mismatch
+//   --> tests/fixtures/errors/type_mismatch_field_access.lazy:15:16
+//    |
+// 15 | f = gen -> gen.nonexistent
+//    |                ^----------
+//
+// Expected `object` for field access, but found `string`.
+//
+// help: Make sure you're using compatible types for this operation.
+//
+// Stack trace:
+//   0: f
+//      at tests/fixtures/errors/type_mismatch_field_access.lazy:16:1
+
+f = gen -> gen.nonexistent
+f "hello"
