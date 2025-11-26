@@ -97,6 +97,7 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
     var prev_token: ?evaluator.TokenKind = null;
     var at_line_start = true;
     var brace_stack = std.ArrayList(BraceInfo){};
+    var just_closed_multiline_collection = false; // Track if we just closed a multi-line brace/bracket
     var skip_next_paren_pair = false; // Track if we should skip parens after = or :
     defer brace_stack.deinit(allocator);
     var do_indent_level: usize = 0; // Track additional indent from `do`
@@ -131,10 +132,8 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                     _ = brace_stack.pop();
                     prev_token = token.kind;
                     skip_next_paren_pair = false;
-                    // Decrement do_indent_level to match the increment we did for the opening paren
-                    if (do_indent_level > 0) {
-                        do_indent_level -= 1;
-                    }
+                    // Restore do_indent_level to the context when this paren was opened
+                    do_indent_level = brace_info.context_do_indent;
                     continue;
                 }
 
@@ -153,7 +152,11 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                     // Update prev_indent_level so dedenting logic can run on closing brace line
                     prev_indent_level = indent_level;
                 }
-                // Don't reset do_indent_level when exiting - maintain outer context indentation
+                // Restore do_indent_level to the context when this brace was opened
+                do_indent_level = brace_info.context_do_indent;
+                // Track if we just closed a multi-line brace/bracket
+                just_closed_multiline_collection = !brace_info.is_single_line and
+                    (brace_info.brace_type == .brace or brace_info.brace_type == .bracket);
             }
         }
 
@@ -275,12 +278,13 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                         }
                     }
                 // Don't apply source-based dedenting for control flow keywords (else, then)
-                // These should be positioned by the formatter's structural rules
+                // or closing braces/brackets/parens - these should be positioned by structural rules
                 } else if (do_indent_level > 0 and indent_level == prev_indent_level) {
                     const is_control_flow_keyword = token.kind == .identifier and
                         (std.mem.eql(u8, token.lexeme, "else") or std.mem.eql(u8, token.lexeme, "then"));
+                    const is_closing_brace = token.kind == .r_brace or token.kind == .r_bracket or token.kind == .r_paren;
 
-                    if (!is_control_flow_keyword) {
+                    if (!is_control_flow_keyword and !is_closing_brace) {
                         const source_indent = if (token.column > 1) (token.column - 1) / 2 else 0;
                         const base_indent = indent_level;
                         const expected_indent = indent_level + do_indent_level;
@@ -653,6 +657,18 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
             try output.appendSlice(allocator, "\"");
         } else {
             try output.appendSlice(allocator, token.lexeme);
+        }
+
+        // After closing brace of a multi-line object/array, force newline if next token isn't on one
+        // This ensures each closing brace is on its own line
+        // Exception: if next token is a comma, keep it on the same line
+        if (just_closed_multiline_collection and i + 1 < tokens.items.len) {
+            const next_token = tokens.items[i + 1].token;
+            if (!next_token.preceded_by_newline and next_token.kind != .comma) {
+                try output.appendSlice(allocator, "\n");
+                at_line_start = true;
+            }
+            just_closed_multiline_collection = false;
         }
 
         // After `then`, check if this is a multi-line if/then/else
