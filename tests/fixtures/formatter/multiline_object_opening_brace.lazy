@@ -2,7 +2,6 @@
 //   foo: 1
 //   bar: 2
 // }
-
 simple: { foo: 1
   bar: 2
 }

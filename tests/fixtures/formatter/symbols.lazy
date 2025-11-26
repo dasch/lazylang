@@ -1,7 +1,8 @@
 // result = #ok
-// status = #error
-// tags = [#todo, #done, #pending]
-
 result = #ok
+
+// status = #error
 status = #error
+
+// tags = [#todo, #done, #pending]
 tags = [#todo,#done,#pending]

@@ -3,7 +3,6 @@
 //     "positive"
 //   else
 //     "non-positive"
-
 foo = x ->
   if x > 0 then
     "positive"

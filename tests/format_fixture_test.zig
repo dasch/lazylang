@@ -2,100 +2,99 @@ const std = @import("std");
 const formatter = @import("formatter");
 const testing = std.testing;
 
-/// Helper to extract expected formatted output from comments in fixture file
-fn loadExpectedOutput(allocator: std.mem.Allocator, file_path: []const u8) ![]const u8 {
+const TestCase = struct {
+    expected: []const u8,
+    input: []const u8,
+};
+
+/// Parse fixture file into alternating test cases
+/// Format: comment block (expected output) followed by code block (input)
+fn parseFixture(allocator: std.mem.Allocator, file_path: []const u8) ![]TestCase {
     const file = try std.fs.cwd().openFile(file_path, .{});
     defer file.close();
 
     const content = try file.readToEndAlloc(allocator, 1024 * 1024);
     defer allocator.free(content);
 
-    var result = std.ArrayList(u8){};
-    errdefer result.deinit(allocator);
-
-    // Parse line by line, extracting comment lines as expected output
-    var lines = std.mem.splitScalar(u8, content, '\n');
-    while (lines.next()) |line| {
-        // Stop at separator marker
-        if (std.mem.eql(u8, line, "// ===")) {
-            break;
+    var cases = std.ArrayList(TestCase){};
+    errdefer {
+        for (cases.items) |case| {
+            allocator.free(case.expected);
+            allocator.free(case.input);
         }
+        cases.deinit(allocator);
+    }
 
-        // Check if line starts with "//"
+    var expected_lines = std.ArrayList(u8){};
+    defer expected_lines.deinit(allocator);
+
+    var input_lines = std.ArrayList(u8){};
+    defer input_lines.deinit(allocator);
+
+    var lines = std.mem.splitScalar(u8, content, '\n');
+    var in_expected = false;
+    var in_input = false;
+
+    while (lines.next()) |line| {
+        // Check if this is a comment line (expected output)
         if (std.mem.startsWith(u8, line, "// ")) {
-            // Strip "// " and add to result
-            try result.appendSlice(allocator, line[3..]);
-            try result.append(allocator, '\n');
+            // If we were collecting input, save the test case
+            if (in_input) {
+                const exp = try expected_lines.toOwnedSlice(allocator);
+                const inp = try input_lines.toOwnedSlice(allocator);
+                try cases.append(allocator, .{ .expected = exp, .input = inp });
+                expected_lines = std.ArrayList(u8){};
+                input_lines = std.ArrayList(u8){};
+                in_input = false;
+            }
+
+            // Strip "// " and add to expected
+            if (in_expected) {
+                try expected_lines.append(allocator, '\n');
+            }
+            try expected_lines.appendSlice(allocator, line[3..]);
+            in_expected = true;
         } else if (std.mem.eql(u8, line, "//")) {
-            // Empty comment line - just add newline
-            try result.append(allocator, '\n');
+            // Empty comment line
+            if (in_input) {
+                const exp = try expected_lines.toOwnedSlice(allocator);
+                const inp = try input_lines.toOwnedSlice(allocator);
+                try cases.append(allocator, .{ .expected = exp, .input = inp });
+                expected_lines = std.ArrayList(u8){};
+                input_lines = std.ArrayList(u8){};
+                in_input = false;
+            }
+            if (in_expected) {
+                try expected_lines.append(allocator, '\n');
+            }
+            in_expected = true;
+        } else if (line.len == 0) {
+            // Blank line - could be separator or part of input
+            if (in_input) {
+                // Part of input block
+                try input_lines.append(allocator, '\n');
+                try input_lines.appendSlice(allocator, line);
+            }
+            // Otherwise skip it (separator between cases)
+        } else {
+            // Non-comment, non-empty line - this is input
+            if (in_input) {
+                try input_lines.append(allocator, '\n');
+            }
+            try input_lines.appendSlice(allocator, line);
+            in_input = true;
+            in_expected = false;
         }
-        // Skip non-comment lines
     }
 
-    return result.toOwnedSlice(allocator);
-}
-
-/// Helper to extract actual code (non-comment lines) from fixture file
-fn loadActualCode(allocator: std.mem.Allocator, file_path: []const u8) ![]const u8 {
-    const file = try std.fs.cwd().openFile(file_path, .{});
-    defer file.close();
-
-    const content = try file.readToEndAlloc(allocator, 1024 * 1024);
-    defer allocator.free(content);
-
-    var result = std.ArrayList(u8){};
-    errdefer result.deinit(allocator);
-
-    // Parse line by line, extracting non-comment lines as actual code
-    var lines = std.mem.splitScalar(u8, content, '\n');
-    var found_separator = false;
-    var found_code = false;
-    while (lines.next()) |line| {
-        // Check for separator marker
-        if (std.mem.eql(u8, line, "// ===")) {
-            found_separator = true;
-            continue;
-        }
-
-        // If we found a separator, include everything after it (including comments)
-        if (found_separator) {
-            // Skip empty lines until we find code
-            if (!found_code and line.len == 0) {
-                continue;
-            }
-
-            // Add all lines after separator
-            if (found_code) {
-                try result.append(allocator, '\n');
-            }
-            try result.appendSlice(allocator, line);
-            found_code = true;
-            continue;
-        }
-
-        // No separator found yet - use old logic
-        // Skip comment lines (both // and # style), but NOT doc comments (///)
-        if (std.mem.startsWith(u8, line, "///")) {
-            // This is a doc comment, keep it
-        } else if (std.mem.startsWith(u8, line, "//") or std.mem.startsWith(u8, line, "#")) {
-            continue;
-        }
-
-        // Skip empty lines before we find actual code
-        if (!found_code and line.len == 0) {
-            continue;
-        }
-
-        // Add non-comment lines
-        if (found_code) {
-            try result.append(allocator, '\n');
-        }
-        try result.appendSlice(allocator, line);
-        found_code = true;
+    // Save final test case if any
+    if (in_input) {
+        const exp = try expected_lines.toOwnedSlice(allocator);
+        const inp = try input_lines.toOwnedSlice(allocator);
+        try cases.append(allocator, .{ .expected = exp, .input = inp });
     }
 
-    return result.toOwnedSlice(allocator);
+    return cases.toOwnedSlice(allocator);
 }
 
 /// Visualize a string with special characters visible
@@ -156,22 +155,45 @@ fn printDiff(expected: []const u8, actual: []const u8) void {
 
 /// Helper to run formatter and compare with expected output
 fn testFormatterFixture(allocator: std.mem.Allocator, file_path: []const u8) !void {
-    const expected = try loadExpectedOutput(allocator, file_path);
-    defer allocator.free(expected);
+    const cases = try parseFixture(allocator, file_path);
+    defer {
+        for (cases) |case| {
+            allocator.free(case.expected);
+            allocator.free(case.input);
+        }
+        allocator.free(cases);
+    }
 
-    const actual_code = try loadActualCode(allocator, file_path);
-    defer allocator.free(actual_code);
+    // Format each case and collect all expected/actual outputs
+    var all_expected = std.ArrayList(u8){};
+    defer all_expected.deinit(allocator);
 
-    var formatted = try formatter.formatSource(allocator, actual_code);
-    defer formatted.deinit();
+    var all_actual = std.ArrayList(u8){};
+    defer all_actual.deinit(allocator);
 
-    if (!std.mem.eql(u8, formatted.text, expected)) {
+    for (cases) |case| {
+        // Format the input
+        var formatted = try formatter.formatSource(allocator, case.input);
+        defer formatted.deinit();
+
+        // Append to combined outputs with newline after each
+        try all_expected.appendSlice(allocator, case.expected);
+        try all_expected.append(allocator, '\n');
+        try all_actual.appendSlice(allocator, formatted.text);
+    }
+
+    // Compare combined outputs
+    if (!std.mem.eql(u8, all_actual.items, all_expected.items)) {
         std.debug.print("\n\x1b[1;31m✗ Formatter fixture test failed: {s}\x1b[0m\n", .{file_path});
-        std.debug.print("\n\x1b[1m━━━ Input ━━━\x1b[0m\n", .{});
-        visualizeString(actual_code);
-        std.debug.print("\n", .{});
+        std.debug.print("\n\x1b[1m━━━ Test Cases ━━━\x1b[0m\n", .{});
+        for (cases, 0..) |case, i| {
+            std.debug.print("\n\x1b[1mCase {d}:\x1b[0m\n", .{i + 1});
+            std.debug.print("Input:\n", .{});
+            visualizeString(case.input);
+            std.debug.print("\n", .{});
+        }
 
-        printDiff(expected, formatted.text);
+        printDiff(all_expected.items, all_actual.items);
 
         std.debug.print("\n\x1b[90mLegend: · = space, → = tab, ¬ = newline\x1b[0m\n", .{});
         std.debug.print("\n\x1b[33mExpected and actual output differ - see above for details\x1b[0m\n\n", .{});

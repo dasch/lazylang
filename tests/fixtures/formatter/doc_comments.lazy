@@ -8,7 +8,6 @@
 //   /// Another function
 //   bar: y -> y * 2
 // }
-
 /// Module-level documentation
 /// This module provides utilities
 {

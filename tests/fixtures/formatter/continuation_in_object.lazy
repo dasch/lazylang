@@ -3,7 +3,6 @@
 //     labels
 //     \ Object.slice ["app", "component"]
 // }
-
 config = {
 selector:
 labels

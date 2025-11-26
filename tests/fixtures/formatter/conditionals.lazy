@@ -1,5 +1,5 @@
 // simple = if true then "yes" else "no"
-// withVar = if x > 5 then "big" else "small"
-
 simple = if true then "yes" else "no"
+
+// withVar = if x > 5 then "big" else "small"
 withVar = if x>5 then "big" else "small"

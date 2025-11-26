@@ -1,11 +1,14 @@
 // merge: obj1 -> obj2 -> obj1 & obj2
-// arr: x -> [1, 2] [3, 4]
-// empty: {}
-// pipe: x -> 5 \ double \ addOne
-// call: x -> fn (arg)
-
 merge: obj1 -> obj2 -> obj1&obj2
+
+// arr: x -> [1, 2] [3, 4]
 arr: x -> [1, 2][3, 4]
+
+// empty: {}
 empty: {  }
+
+// pipe: x -> 5 \ double \ addOne
 pipe: x -> 5\double\addOne
+
+// call: x -> fn (arg)
 call: x -> fn(arg)

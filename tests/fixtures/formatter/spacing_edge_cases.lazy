@@ -1,9 +1,11 @@
 // x = { a: 1, b: 2 }
-// y = [1, 2, 3]
-// z = f (g x)
-// result = (a + b) * (c - d)
-
 x = {a:1,b:2}
+
+// y = [1, 2, 3]
 y = [1,2,3]
+
+// z = f (g x)
 z = f(g x)
+
+// result = (a + b) * (c - d)
 result = (a+b)*(c-d)

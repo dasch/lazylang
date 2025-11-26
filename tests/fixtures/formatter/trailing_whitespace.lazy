@@ -8,7 +8,6 @@
 // /// foo 42  //=> 43
 // /// ```
 // foo: x -> x + 1
-
 /// Function with doc comments
 ///
 /// **Parameters:**

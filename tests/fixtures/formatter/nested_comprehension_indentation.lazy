@@ -4,7 +4,6 @@
 //     process y i
 //     for i in range
 //   ]
-
 foo = x ->
   y = bar x;
   [

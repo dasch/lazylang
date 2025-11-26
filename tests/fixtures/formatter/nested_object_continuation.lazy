@@ -8,7 +8,6 @@
 //     ports: [1, 2]
 //   }
 // }
-
 service = {
 apiVersion: "v1"
 spec {

@@ -7,7 +7,6 @@
 //     y = 2
 //     y * 2
 // ]
-
 tests = [
 it "first test" do
 x = 1

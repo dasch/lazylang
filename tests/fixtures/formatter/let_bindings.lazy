@@ -3,25 +3,8 @@
 //   y = 20
 //   x + y
 // )
-
 result = (
 x=10;
 y=20;
 x+y
 )
-
-# TODO: The following case requires AST-aware formatting to add missing parens
-# and is beyond the scope of the current token-based formatter:
-#
-# Input:
-#   result =
-#   x=10;
-#   y=20;
-#   x+y
-#
-# Desired output:
-#   result = (
-#     x = 10
-#     y = 20
-#     x + y
-#   )
