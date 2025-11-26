@@ -179,17 +179,38 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
             }
         }
 
-        // Skip unnecessary parens around let-bindings after = or : EARLY (before spacing)
+        // Skip unnecessary parens around let-bindings after = or : or -> or keywords EARLY (before spacing)
         // Pattern: identifier = ( let-bindings ) should become: identifier =\n  let-bindings
         // Keep parens only if the content inside has no indentation (poorly formatted, parens are structural)
         // Trailing semicolons are stripped by the semicolon-stripping logic elsewhere
         if (token.kind == .l_paren) {
             const is_multi = !(brace_is_single_line.get(i) orelse true);
-            if (is_multi and prev_token != null and (prev_token.? == .equals or prev_token.? == .colon)) {
+            var should_check_paren_skip = false;
+            var is_after_keyword = false;
+
+            if (is_multi and prev_token != null) {
+                if (prev_token.? == .equals or prev_token.? == .colon or prev_token.? == .arrow) {
+                    should_check_paren_skip = true;
+                } else if (prev_token.? == .identifier and i > 0) {
+                    const prev_tok = tokens.items[i - 1].token;
+                    // Check if previous token is a keyword that should skip parens
+                    if (std.mem.eql(u8, prev_tok.lexeme, "else") or
+                        std.mem.eql(u8, prev_tok.lexeme, "then") or
+                        std.mem.eql(u8, prev_tok.lexeme, "do")) {
+                        should_check_paren_skip = true;
+                        is_after_keyword = true;
+                    }
+                }
+            }
+
+            if (should_check_paren_skip) {
                 // Check if content is properly indented
                 var has_proper_indentation = false;
+                var has_top_level_let_binding = false;
                 var depth: i32 = 1;
                 var j = i + 1;
+                var first_content_tok: ?evaluator.Token = null;
+
                 while (j < tokens.items.len) : (j += 1) {
                     const t = tokens.items[j].token;
                     if (t.kind == .l_paren) {
@@ -207,13 +228,44 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                         if (t.column > 1) {
                             has_proper_indentation = true;
                         }
+                        // Save first content token to check for let-bindings
+                        if (first_content_tok == null) {
+                            first_content_tok = t;
+                        }
                     }
                 }
 
-                if (has_proper_indentation) {
+                // Check if content starts with a pattern followed by = (let-binding)
+                // If after a keyword (else/then/do), don't skip parens with let-bindings
+                // as they're structurally necessary
+                if (is_after_keyword and first_content_tok != null) {
+                    // Look for an equals sign at depth 1 before any semicolons
+                    var k = i + 1;
+                    var check_depth: i32 = 1;
+                    while (k < tokens.items.len) : (k += 1) {
+                        const tk = tokens.items[k].token;
+                        if (tk.kind == .l_paren or tk.kind == .l_bracket or tk.kind == .l_brace) {
+                            check_depth += 1;
+                        } else if (tk.kind == .r_paren) {
+                            check_depth -= 1;
+                            if (check_depth == 0) break;
+                        } else if (tk.kind == .r_bracket or tk.kind == .r_brace) {
+                            check_depth -= 1;
+                        }
+
+                        if (check_depth == 1) {
+                            if (tk.kind == .equals) {
+                                has_top_level_let_binding = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (has_proper_indentation and !has_top_level_let_binding) {
                     // Skip this opening paren and mark it for skipping the close
-                    // Increment do_indent_level to maintain indentation that would have come from the paren
-                    // Keep prev_token as-is (don't set to .l_paren) so spacing works correctly
+                    // Always increment do_indent_level to maintain indentation
+                    // The content needs to be indented relative to the context
                     skip_next_paren_pair = true;
                     const context = do_indent_level;
                     do_indent_level += 1;

@@ -248,7 +248,7 @@ Result = import "Result"
   /// forall (Random.intRange 0 100) "value is in range" do n ->
   ///   must (n >= 0 && n <= 100)
   /// ```
-  forall: generator -> description -> testFn -> (
+  forall: generator -> description -> testFn ->
     trials = 100
     baseSeed = Random.seed 42
 
@@ -278,7 +278,6 @@ Result = import "Result"
       description: description
       test: runTest
     }
-  )
 
   /// Runs property-based tests with custom configuration.
   /// Like [forall] but allows specifying number of trials and seed.
@@ -294,7 +293,7 @@ Result = import "Result"
   /// forallWith { trials: 50, seed: 12345 } Random.int "property holds" do value ->
   ///   must (property value)
   /// ```
-  forallWith: options -> generator -> description -> testFn -> (
+  forallWith: options -> generator -> description -> testFn ->
     trials = Object.get "trials" options
       \ Result.orDefault 100
     baseSeed = Object.get "seed" options
@@ -327,5 +326,4 @@ Result = import "Result"
       description: description
       test: runTest
     }
-  )
 }
