@@ -43,7 +43,7 @@
   /// Tuple.length (1, 2)  //=> 2
   /// Tuple.length (1, 2, 3, 4)  //=> 4
   /// ```
-  length: tuple -> __tuple_length tuple,
+  length: tuple -> __tuple_length tuple
 
   /// Converts a tuple to an array.
   ///
@@ -58,7 +58,7 @@
   /// Tuple.toArray (1, 2, 3)  //=> [1, 2, 3]
   /// Tuple.toArray ("a", "b")  //=> ["a", "b"]
   /// ```
-  toArray: tuple -> __tuple_to_array tuple,
+  toArray: tuple -> __tuple_to_array tuple
 
   /// Converts an array to a tuple.
   ///
@@ -73,7 +73,7 @@
   /// Tuple.fromArray [1, 2, 3]  //=> (1, 2, 3)
   /// Tuple.fromArray ["a", "b"]  //=> ("a", "b")
   /// ```
-  fromArray: array -> __tuple_from_array array,
+  fromArray: array -> __tuple_from_array array
 
   /// Returns the first element of a tuple.
   ///
@@ -88,7 +88,7 @@
   /// Tuple.first (1, 2)  //=> 1
   /// Tuple.first (10, 20, 30)  //=> 10
   /// ```
-  first: (a, b) -> a,
+  first: (a, b) -> a
 
   /// Returns the second element of a tuple.
   ///
@@ -103,7 +103,7 @@
   /// Tuple.second (1, 2)  //=> 2
   /// Tuple.second (10, 20, 30)  //=> 20
   /// ```
-  second: (a, b) -> b,
+  second: (a, b) -> b
 
   /// Applies a function to both elements of a 2-tuple, returning a new tuple.
   ///

@@ -637,18 +637,25 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
             // Check if the IMMEDIATE parent collection (brace/bracket/paren) is multi-line
             // We need to skip parentheses when looking for objects/arrays, but not skip them entirely
             // because function calls with parens should not have forced newlines
-            var in_multiline_collection = false;
+            var in_multiline_brace = false;
+            var in_multiline_bracket = false;
             var in_single_line_collection = false;
 
             // Start from the end (innermost) and find the first brace/bracket/paren
             if (brace_stack.items.len > 0) {
                 const immediate_parent = brace_stack.items[brace_stack.items.len - 1];
                 // Only apply multi-line formatting to braces and brackets, not parens
-                if (immediate_parent.brace_type == .brace or immediate_parent.brace_type == .bracket) {
+                if (immediate_parent.brace_type == .brace) {
                     if (immediate_parent.is_single_line) {
                         in_single_line_collection = true;
                     } else {
-                        in_multiline_collection = true;
+                        in_multiline_brace = true;
+                    }
+                } else if (immediate_parent.brace_type == .bracket) {
+                    if (immediate_parent.is_single_line) {
+                        in_single_line_collection = true;
+                    } else {
+                        in_multiline_bracket = true;
                     }
                 }
             }
@@ -665,8 +672,22 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                 continue;
             }
 
-            // For multi-line collections, write comma and force newline if next token isn't on one
-            if (in_multiline_collection) {
+            // For multi-line objects (braces), skip all commas but force newline
+            if (in_multiline_brace) {
+                // Force newline if next token isn't already on one
+                if (i + 1 < tokens.items.len) {
+                    const next_token = tokens.items[i + 1].token;
+                    if (!next_token.preceded_by_newline) {
+                        try output.appendSlice(allocator, "\n");
+                        at_line_start = true;
+                    }
+                }
+                prev_token = token.kind;
+                continue;
+            }
+
+            // For multi-line arrays (brackets), write comma and force newline if next token isn't on one
+            if (in_multiline_bracket) {
                 try output.appendSlice(allocator, ",");
                 if (i + 1 < tokens.items.len) {
                     const next_token = tokens.items[i + 1].token;

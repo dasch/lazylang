@@ -37,7 +37,7 @@
   ///   (#ok, config) then config.port
   ///   (#error, _) then 3000
   /// ```
-  parse: yamlStr -> __yaml_parse yamlStr,
+  parse: yamlStr -> __yaml_parse yamlStr
 
   /// Encodes a Lazylang value into a YAML string.
   ///

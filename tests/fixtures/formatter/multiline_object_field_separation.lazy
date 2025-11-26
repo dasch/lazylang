@@ -1,5 +1,5 @@
 // result = {
-//   type: "fail",
+//   type: "fail"
 //   details: {
 //     reason: "error"
 //   }

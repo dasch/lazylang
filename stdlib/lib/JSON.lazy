@@ -44,7 +44,7 @@
   ///
   /// **Note:** For static JSON files, prefer using `import "file.json"` which
   /// provides compile-time validation and better error messages.
-  parse: jsonStr -> __json_parse jsonStr,
+  parse: jsonStr -> __json_parse jsonStr
 
   /// Encodes a Lazylang value into a JSON string.
   ///

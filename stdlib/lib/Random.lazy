@@ -127,7 +127,7 @@ Tuple = import "Tuple"
     )
     s1 = nextFn seed
     (s1 >= 0, nextFn s1)
-  ),
+  )
 
   /// Creates a generator that produces tuples by running multiple generators in sequence.
   /// The generated tuple will have the same length as the input tuple of generators.

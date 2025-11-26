@@ -71,7 +71,7 @@ Result = import "Result"
   /// ```
   pass: {
     type: "pass"
-  },
+  }
 
   /// Explicitly marks a test as failing with a custom message or details.
   /// Useful for tests that should fail under certain conditions or for documenting known issues.
@@ -92,9 +92,9 @@ Result = import "Result"
   ///   fail { kind: "eq", expected: 5, actual: 10 }
   /// ```
   fail: details -> {
-    type: "fail",
+    type: "fail"
     details: details
-  },
+  }
 
   /// Creates a test suite with a description and child tests.
   /// Used to organize related tests into groups.
@@ -112,10 +112,10 @@ Result = import "Result"
   /// ]
   /// ```
   describe: description -> children -> {
-    type: "describe",
-    description: description,
+    type: "describe"
+    description: description
     children: children
-  },
+  }
 
   /// Creates an individual test case with a description and test expression.
   ///
@@ -130,10 +130,10 @@ Result = import "Result"
   ///   mustEq 5 result
   /// ```
   it: description -> testExpr -> {
-    type: "it",
-    description: description,
+    type: "it"
+    description: description
     test: testExpr
-  },
+  }
 
   /// Creates an ignored test case that will be skipped during test execution.
   /// Useful for temporarily disabling tests without removing them.
@@ -149,10 +149,10 @@ Result = import "Result"
   ///   mustEq 5 result
   /// ```
   xit: description -> testExpr -> {
-    type: "xit",
-    description: description,
+    type: "xit"
+    description: description
     test: testExpr
-  },
+  }
 
   /// Creates an equality assertion that checks if the actual value matches the expected value.
   /// The test passes if both values are equal, otherwise it fails.
@@ -172,13 +172,13 @@ Result = import "Result"
       { type: "pass" }
     else
       {
-        type: "fail",
+        type: "fail"
         details: {
-          kind: "eq",
-          expected: expected,
+          kind: "eq"
+          expected: expected
           actual: actual
         }
-      },
+      }
 
   /// Creates an inequality assertion that checks if the actual value does NOT match the expected value.
   /// The test passes if both values are different, otherwise it fails.
@@ -197,13 +197,13 @@ Result = import "Result"
       { type: "pass" }
     else
       {
-        type: "fail",
+        type: "fail"
         details: {
-          kind: "notEq",
-          expected: expected,
+          kind: "notEq"
+          expected: expected
           actual: actual
         }
-      },
+      }
 
   /// Creates a truthiness assertion that checks if the condition is truthy.
   /// The test passes if the condition evaluates to true, otherwise it fails.
@@ -219,14 +219,14 @@ Result = import "Result"
   must: condition ->
     if ((condition == null) || (condition == false)) then
       {
-        type: "fail",
+        type: "fail"
         details: {
-          kind: "truthy",
+          kind: "truthy"
           condition: condition
         }
       }
     else
-      { type: "pass" },
+      { type: "pass" }
 
   /// Runs property-based tests with randomly generated values.
   /// Tests the same property across multiple randomly generated inputs to find edge cases.
@@ -274,11 +274,11 @@ Result = import "Result"
     runTest = Array.fold stopOnFailure { type: "pass" } testValues
 
     {
-      type: "it",
-      description: description,
+      type: "it"
+      description: description
       test: runTest
     }
-  ),
+  )
 
   /// Runs property-based tests with custom configuration.
   /// Like [forall] but allows specifying number of trials and seed.
@@ -323,8 +323,8 @@ Result = import "Result"
     runTest = Array.fold stopOnFailure { type: "pass" } testValues
 
     {
-      type: "it",
-      description: description,
+      type: "it"
+      description: description
       test: runTest
     }
   )
