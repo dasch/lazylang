@@ -5,15 +5,106 @@
 ///
 /// ## Working with Tuples
 ///
-/// - `Tuple.mapBoth f (a, b)`: Applies a function to both elements of a 2-tuple
+/// - [length]: Returns the number of elements in a tuple
+/// - [toArray]: Converts a tuple to an array
+/// - [fromArray]: Converts an array to a tuple
+/// - [first]: Returns the first element of a tuple
+/// - [second]: Returns the second element of a tuple
+/// - [mapBoth]: Applies a function to both elements of a 2-tuple
 ///
 /// ## Examples
 ///
 /// ```
+/// // Get tuple length
+/// Tuple.length (1, 2, 3)  //=> 3
+///
+/// // Convert between tuple and array
+/// Tuple.toArray (1, 2, 3)  //=> [1, 2, 3]
+/// Tuple.fromArray [1, 2, 3]  //=> (1, 2, 3)
+///
+/// // Access elements
+/// Tuple.first (1, 2)  //=> 1
+/// Tuple.second (1, 2)  //=> 2
+///
 /// // Map both elements
 /// Tuple.mapBoth (x -> x * 2) (3, 4)  //=> (6, 8)
 /// ```
 {
+  /// Returns the number of elements in a tuple.
+  ///
+  /// **Parameter:**
+  /// - `tuple`: A tuple of any length
+  ///
+  /// **Returns:**
+  /// An integer representing the number of elements
+  ///
+  /// **Example:**
+  /// ```
+  /// Tuple.length (1, 2)  //=> 2
+  /// Tuple.length (1, 2, 3, 4)  //=> 4
+  /// ```
+  length: tuple -> __tuple_length tuple,
+
+  /// Converts a tuple to an array.
+  ///
+  /// **Parameter:**
+  /// - `tuple`: A tuple to convert
+  ///
+  /// **Returns:**
+  /// An array containing the tuple's elements in the same order
+  ///
+  /// **Example:**
+  /// ```
+  /// Tuple.toArray (1, 2, 3)  //=> [1, 2, 3]
+  /// Tuple.toArray ("a", "b")  //=> ["a", "b"]
+  /// ```
+  toArray: tuple -> __tuple_to_array tuple,
+
+  /// Converts an array to a tuple.
+  ///
+  /// **Parameter:**
+  /// - `array`: An array to convert
+  ///
+  /// **Returns:**
+  /// A tuple containing the array's elements in the same order
+  ///
+  /// **Example:**
+  /// ```
+  /// Tuple.fromArray [1, 2, 3]  //=> (1, 2, 3)
+  /// Tuple.fromArray ["a", "b"]  //=> ("a", "b")
+  /// ```
+  fromArray: array -> __tuple_from_array array,
+
+  /// Returns the first element of a tuple.
+  ///
+  /// **Parameter:**
+  /// - `tuple`: A tuple with at least one element
+  ///
+  /// **Returns:**
+  /// The first element
+  ///
+  /// **Example:**
+  /// ```
+  /// Tuple.first (1, 2)  //=> 1
+  /// Tuple.first (10, 20, 30)  //=> 10
+  /// ```
+  first: (a, b) -> a,
+
+  /// Returns the second element of a tuple.
+  ///
+  /// **Parameter:**
+  /// - `tuple`: A tuple with at least two elements
+  ///
+  /// **Returns:**
+  /// The second element
+  ///
+  /// **Example:**
+  /// ```
+  /// Tuple.second (1, 2)  //=> 2
+  /// Tuple.second (10, 20, 30)  //=> 20
+  /// ```
+  second: (a, b) -> b,
+
   /// Applies a function to both elements of a 2-tuple, returning a new tuple.
   ///
   /// **Parameters:**

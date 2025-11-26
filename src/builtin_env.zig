@@ -120,6 +120,11 @@ pub fn createBuiltinEnvironment(arena: std.mem.Allocator) !?*Environment {
     env = try addBuiltin(arena, env, "__is_object", builtins.isObject);
     env = try addBuiltin(arena, env, "__is_function", builtins.isFunction);
 
+    // Tuple builtins
+    env = try addBuiltin(arena, env, "__tuple_length", builtins.tupleLength);
+    env = try addBuiltin(arena, env, "__tuple_to_array", builtins.tupleToArray);
+    env = try addBuiltin(arena, env, "__tuple_from_array", builtins.tupleFromArray);
+
     return env;
 }
 

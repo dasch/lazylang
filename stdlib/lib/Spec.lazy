@@ -4,6 +4,7 @@
 /// - **Test organization**: [describe], [it], [xit]
 /// - **Assertions**: [mustEq], [mustNotEq], [must]
 /// - **Test control**: [pass], [fail]
+/// - **Property-based testing**: [forall], [forallWith]
 ///
 /// ## Examples
 ///
@@ -34,6 +35,30 @@
 ///
 /// Tests pass automatically if they don't throw errors. Use [pass] and [fail]
 /// for explicit control.
+///
+/// ## Property-Based Testing
+///
+/// Use [forall] to run property tests with randomly generated values:
+///
+/// ```
+/// describe "String" [
+///   describe "reverse" [
+///     forall Random.string "reversing twice yields original" do str ->
+///       mustEq str (String.reverse (String.reverse str))
+///   ]
+/// ]
+///
+/// describe "Math" [
+///   forall Random.int "absolute value is non-negative" do n ->
+///     must (Math.abs n >= 0)
+/// ]
+/// ```
+/// ---
+Array = import "Array"
+Object = import "Object"
+Random = import "Random"
+Result = import "Result"
+
 {
   /// Explicitly marks a test as passing.
   /// Useful for tests that verify side effects or when you want to document expected behavior.
@@ -201,5 +226,106 @@
         }
       }
     else
-      { type: "pass" }
+      { type: "pass" },
+
+  /// Runs property-based tests with randomly generated values.
+  /// Tests the same property across multiple randomly generated inputs to find edge cases.
+  ///
+  /// **Parameters:**
+  /// - `generator`: A Random generator function (e.g., Random.int, Random.intRange 0 100)
+  /// - `description`: Description of the property being tested
+  /// - `testFn`: A function that takes a generated value and returns an assertion
+  ///
+  /// **Defaults:**
+  /// - Runs 100 trials
+  /// - Uses seed 42 for reproducibility
+  ///
+  /// **Example:**
+  /// ```
+  /// forall Random.int "absolute value is non-negative" do n ->
+  ///   must (Math.abs n >= 0)
+  ///
+  /// forall (Random.intRange 0 100) "value is in range" do n ->
+  ///   must (n >= 0 && n <= 100)
+  /// ```
+  forall: generator -> description -> testFn -> (
+    trials = 100
+    baseSeed = Random.seed 42
+
+    // Generate all trial test values
+    generateValues = n -> seed -> acc ->
+      if n <= 0 then
+        Array.reverse acc
+      else
+        (
+          (value, nextSeed) = generator seed
+        generateValues (n - 1) nextSeed [...acc, value]
+        )
+
+    testValues = generateValues trials baseSeed []
+
+    // Stop on first failure, otherwise continue testing
+    stopOnFailure = result -> value ->
+      if result.type == "fail" then
+        result
+      else
+        testFn value
+
+    runTest = Array.fold stopOnFailure { type: "pass" } testValues
+
+    {
+      type: "it",
+      description: description,
+      test: runTest
+    }
+  ),
+
+  /// Runs property-based tests with custom configuration.
+  /// Like [forall] but allows specifying number of trials and seed.
+  ///
+  /// **Parameters:**
+  /// - `options`: Object with optional fields: { trials: Int, seed: Int }
+  /// - `generator`: A Random generator function
+  /// - `description`: Description of the property being tested
+  /// - `testFn`: A function that takes a generated value and returns an assertion
+  ///
+  /// **Example:**
+  /// ```
+  /// forallWith { trials: 50, seed: 12345 } Random.int "property holds" do value ->
+  ///   must (property value)
+  /// ```
+  forallWith: options -> generator -> description -> testFn -> (
+    trials = Object.get "trials" options
+      \ Result.orDefault 100
+    baseSeed = Object.get "seed" options
+      \ Result.map Random.seed
+      \ Result.orDefault (Random.seed 42)
+
+    // Generate all trial test values
+    generateValues = n -> seed -> acc ->
+      if n <= 0 then
+        Array.reverse acc
+      else
+        (
+          (value, nextSeed) = generator seed
+        generateValues (n - 1) nextSeed [...acc, value]
+        )
+
+    testValues = generateValues trials baseSeed []
+
+    // Stop on first failure, otherwise continue testing
+    stopOnFailure = result -> value ->
+      if result.type == "fail" then
+        result
+      else
+        testFn value
+
+    runTest = Array.fold stopOnFailure { type: "pass" } testValues
+
+    {
+      type: "it",
+      description: description,
+      test: runTest
+    }
+  )
 }
