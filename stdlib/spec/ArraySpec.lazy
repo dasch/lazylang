@@ -128,8 +128,8 @@ describe #Array [
   describe #groupBy [
     it "groups elements by computed key" do
       arr = [
-        { category: "fruit", name: "apple" },
-        { category: "fruit", name: "banana" },
+        { category: "fruit", name: "apple" }
+        { category: "fruit", name: "banana" }
         { category: "vegetable", name: "carrot" }
       ]
       result = Array.groupBy (x -> x.category) arr
