@@ -1994,7 +1994,19 @@ pub fn evaluateExpression(
 fn accessField(arena: std.mem.Allocator, object_value: Value, field_name: []const u8, location: SourceLocation, ctx: *const EvalContext) EvalError!Value {
     const object = switch (object_value) {
         .object => |obj| obj,
-        else => return error.TypeMismatch,
+        else => {
+            // Set error location and data before returning TypeMismatch
+            if (ctx.error_ctx) |err_ctx| {
+                err_ctx.setErrorLocation(location.line, location.column, location.offset, location.length);
+                err_ctx.setErrorData(.{ .type_mismatch = .{
+                    .expected = "object",
+                    .found = getValueTypeName(object_value),
+                    .operation = "field access",
+                } });
+                err_ctx.captureStackTrace() catch {};
+            }
+            return error.TypeMismatch;
+        },
     };
 
     // Look for the field
