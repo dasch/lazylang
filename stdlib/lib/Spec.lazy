@@ -254,18 +254,22 @@ Result = import "Result"
 
     // Generate all trial test values
     generateValues = n -> seed -> acc ->
-      if n <= 0 then Array.reverse acc
-      else (
-        (value, nextSeed) = generator seed
+      if n <= 0 then
+        Array.reverse acc
+      else
+        (
+          (value, nextSeed) = generator seed
         generateValues (n - 1) nextSeed [...acc, value]
-      )
+        )
 
     testValues = generateValues trials baseSeed []
 
     // Stop on first failure, otherwise continue testing
     stopOnFailure = result -> value ->
-      if result.type == "fail" then result
-      else testFn value
+      if result.type == "fail" then
+        result
+      else
+        testFn value
 
     runTest = Array.fold stopOnFailure { type: "pass" } testValues
 
@@ -299,18 +303,22 @@ Result = import "Result"
 
     // Generate all trial test values
     generateValues = n -> seed -> acc ->
-      if n <= 0 then Array.reverse acc
-      else (
-        (value, nextSeed) = generator seed
+      if n <= 0 then
+        Array.reverse acc
+      else
+        (
+          (value, nextSeed) = generator seed
         generateValues (n - 1) nextSeed [...acc, value]
-      )
+        )
 
     testValues = generateValues trials baseSeed []
 
     // Stop on first failure, otherwise continue testing
     stopOnFailure = result -> value ->
-      if result.type == "fail" then result
-      else testFn value
+      if result.type == "fail" then
+        result
+      else
+        testFn value
 
     runTest = Array.fold stopOnFailure { type: "pass" } testValues
 

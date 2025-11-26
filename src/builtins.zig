@@ -1578,6 +1578,55 @@ pub fn isTuple(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalErro
     return eval.Value{ .boolean = args[0] == .tuple };
 }
 
+/// Get the length of a tuple
+pub fn tupleLength(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    _ = arena;
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    return eval.Value{ .integer = @intCast(tuple.elements.len) };
+}
+
+/// Convert a tuple to an array
+pub fn tupleToArray(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const tuple = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+
+    // Create a new array with the same elements
+    const elements = try arena.alloc(eval.Value, tuple.elements.len);
+    for (tuple.elements, 0..) |elem, i| {
+        elements[i] = elem;
+    }
+
+    return eval.Value{ .array = .{ .elements = elements } };
+}
+
+/// Convert an array to a tuple
+pub fn tupleFromArray(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const array = switch (args[0]) {
+        .array => |a| a,
+        else => return error.TypeMismatch,
+    };
+
+    // Create a new tuple with the same elements
+    const elements = try arena.alloc(eval.Value, array.elements.len);
+    for (array.elements, 0..) |elem, i| {
+        elements[i] = elem;
+    }
+
+    return eval.Value{ .tuple = .{ .elements = elements } };
+}
+
 /// Check if a value is an object
 pub fn isObject(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
     _ = arena;

@@ -18,8 +18,10 @@
 /// (flag, s4) = Random.bool s3
 /// ```
 /// ---
+Array = import "Array"
 Bitwise = import "Bitwise"
 Math = import "Math"
+Tuple = import "Tuple"
 
 {
   /// Creates a seed value for the random number generator.
@@ -125,5 +127,39 @@ Math = import "Math"
     )
     s1 = nextFn seed
     (s1 >= 0, nextFn s1)
+  ),
+
+  /// Creates a generator that produces tuples by running multiple generators in sequence.
+  /// The generated tuple will have the same length as the input tuple of generators.
+  ///
+  /// **Parameters:**
+  /// - `generators`: A tuple of generators (e.g., `(Random.int, Random.bool)`)
+  /// - `seed`: The current seed value
+  ///
+  /// **Returns:**
+  /// A tuple `(generated_tuple, next_seed)` where `generated_tuple` contains
+  /// the values produced by each generator
+  ///
+  /// **Example:**
+  /// ```
+  /// // Generate a tuple of (int, bool)
+  /// Random.tuple (Random.int, Random.bool) 42
+  ///   //=> ((1234, true), 567)
+  ///
+  /// // Generate a tuple of (int, int, string)
+  /// Random.tuple (Random.int, Random.intRange 0 100, Random.bool) 42
+  ///   //=> ((1234, 45, true), 890)
+  /// ```
+  tuple: generators -> seed -> (
+    genArray = Tuple.toArray generators
+
+    // Fold over generators, threading the seed through each one
+    (valuesArray, finalSeed) = Array.fold (state -> gen ->
+        (accValues, accSeed) = state
+      (value, newSeed) = gen accSeed
+      ([...accValues, value], newSeed)
+    ) ([], seed) genArray
+
+    (Tuple.fromArray valuesArray, finalSeed)
   )
 }

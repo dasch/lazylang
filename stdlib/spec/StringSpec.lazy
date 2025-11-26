@@ -1,4 +1,5 @@
-{ describe, it, mustEq } = import "Spec"
+{ describe, it, must, mustEq, forall } = import "Spec"
+Random = import "Random"
 String = import "String"
 
 describe #String [
@@ -227,6 +228,10 @@ describe #String [
 
     it "returns *empty* string when start _equals_ end" do
       mustEq "" (String.slice 5 5 "hello world")
+
+    forall (Random.tuple (Random.int, Random.int)) "slice always returns a string" do (start, end) ->
+      result = String.slice start end "hello world"
+      must (String.isEmpty result || String.length result >= 0)
   ]
 
   describe #left [
