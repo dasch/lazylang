@@ -131,7 +131,7 @@ pub fn arrayFold(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalEr
     return accumulator;
 }
 
-pub fn arrayConcatAll(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+pub fn stringConcatAll(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
     if (args.len != 1) return error.WrongNumberOfArguments;
 
     const array = switch (args[0]) {

@@ -54,7 +54,7 @@
   /// String.concat ["a", "b", "c"]  //=> "abc"
   /// String.concat []  //=> ""
   /// ```
-  concat: strs -> __array_concat_all strs
+  concat: strs -> __string_concat_all strs
 
   /// Splits a string into an array of substrings using a delimiter.
   ///
@@ -206,7 +206,7 @@
     str
     \ __string_chars
     \ __array_reverse
-    \ __array_concat_all
+    \ __string_concat_all
 
   /// Joins an array of strings with a separator.
   ///

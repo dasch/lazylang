@@ -37,7 +37,6 @@ pub fn createBuiltinEnvironment(arena: std.mem.Allocator) !?*Environment {
     env = try addBuiltin(arena, env, "__array_get", builtins.arrayGet);
     env = try addBuiltin(arena, env, "__array_reverse", builtins.arrayReverse);
     env = try addBuiltin(arena, env, "__array_fold", builtins.arrayFold);
-    env = try addBuiltin(arena, env, "__array_concat_all", builtins.arrayConcatAll);
     env = try addBuiltin(arena, env, "__array_slice", builtins.arraySlice);
     env = try addBuiltin(arena, env, "__array_sort", builtins.arraySort);
     env = try addBuiltin(arena, env, "__array_uniq", builtins.arrayUniq);
@@ -51,6 +50,7 @@ pub fn createBuiltinEnvironment(arena: std.mem.Allocator) !?*Environment {
     // String builtins
     env = try addBuiltin(arena, env, "__string_length", builtins.stringLength);
     env = try addBuiltin(arena, env, "__string_concat", builtins.stringConcat);
+    env = try addBuiltin(arena, env, "__string_concat_all", builtins.stringConcatAll);
     env = try addBuiltin(arena, env, "__string_split", builtins.stringSplit);
     env = try addBuiltin(arena, env, "__string_to_upper", builtins.stringToUpper);
     env = try addBuiltin(arena, env, "__string_to_lower", builtins.stringToLower);
