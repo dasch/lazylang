@@ -285,6 +285,49 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
             }
         }
 
+        // Special handling for `if` after `=` or `:` on same line
+        // If this is a multi-line if/then/else (has `else` on its own line),
+        // force newline before the `if` for better formatting
+        if (token.kind == .identifier and std.mem.eql(u8, token.lexeme, "if") and
+            !token.preceded_by_newline and prev_token != null and
+            (prev_token.? == .equals or prev_token.? == .colon))
+        {
+            // Look ahead to see if there's an `else` on its own line (indicates multi-line if/then/else)
+            var found_multiline_else = false;
+            var depth: i32 = 0;
+            for (tokens.items[i + 1 ..]) |future_info| {
+                const future_tok = future_info.token;
+
+                // Track brace/bracket/paren depth
+                if (future_tok.kind == .l_brace or future_tok.kind == .l_bracket or future_tok.kind == .l_paren) {
+                    depth += 1;
+                } else if (future_tok.kind == .r_brace or future_tok.kind == .r_bracket or future_tok.kind == .r_paren) {
+                    depth -= 1;
+                    if (depth < 0) break;
+                }
+
+                // Only look for else at depth 0 (not inside nested structures)
+                if (depth == 0) {
+                    if (future_tok.kind == .identifier and std.mem.eql(u8, future_tok.lexeme, "else")) {
+                        if (future_tok.preceded_by_newline) {
+                            found_multiline_else = true;
+                        }
+                        break;
+                    }
+                    // Stop at semicolon at depth 0
+                    if (future_tok.kind == .semicolon) break;
+                }
+            }
+
+            // If this is a multi-line if/then/else, force newline before the `if`
+            // and increment indent level for the if block
+            if (found_multiline_else) {
+                try output.appendSlice(allocator, "\n");
+                at_line_start = true;
+                do_indent_level += 1;
+            }
+        }
+
         // Handle newlines
         if (token.preceded_by_newline) {
             // Special handling for `then` keyword - move it to same line as condition
