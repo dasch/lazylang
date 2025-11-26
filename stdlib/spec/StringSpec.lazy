@@ -1,6 +1,5 @@
-{ describe, it, mustEq, forall } = import "Spec"
+{ describe, it, mustEq } = import "Spec"
 String = import "String"
-Random = import "Random"
 
 describe #String [
   describe #length [
