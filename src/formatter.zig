@@ -25,6 +25,7 @@ const BraceInfo = struct {
     brace_type: BraceType,
     is_single_line: bool,
     skipped: bool = false, // True if this paren pair should be skipped in output
+    context_do_indent: usize = 0, // The do_indent_level when this brace was opened
 };
 
 const TokenInfo = struct {
@@ -211,8 +212,9 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                     // Increment do_indent_level to maintain indentation that would have come from the paren
                     // Keep prev_token as-is (don't set to .l_paren) so spacing works correctly
                     skip_next_paren_pair = true;
+                    const context = do_indent_level;
                     do_indent_level += 1;
-                    try brace_stack.append(allocator, BraceInfo{ .brace_type = .paren, .is_single_line = false, .skipped = true });
+                    try brace_stack.append(allocator, BraceInfo{ .brace_type = .paren, .is_single_line = false, .skipped = true, .context_do_indent = context });
                     continue;
                 }
             }
@@ -259,31 +261,45 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                     }
                 }
 
-                if (do_indent_level > 0 and indent_level == prev_indent_level) {
-                const source_indent = if (token.column > 1) (token.column - 1) / 2 else 0;
-                const base_indent = indent_level;
-                const expected_indent = indent_level + do_indent_level;
+                // For object fields, reset do_indent_level to the context from when the object was opened
+                // This preserves outer indentation (like from 'else') while removing field-value indentation
+                if (is_object_field) {
+                    // Find the innermost enclosing multi-line object's context (search backwards)
+                    var stack_idx = brace_stack.items.len;
+                    while (stack_idx > 0) {
+                        stack_idx -= 1;
+                        const brace_info = brace_stack.items[stack_idx];
+                        if (brace_info.brace_type == .brace and !brace_info.is_single_line) {
+                            do_indent_level = brace_info.context_do_indent;
+                            break;
+                        }
+                    }
+                // Don't apply source-based dedenting for control flow keywords (else, then)
+                // These should be positioned by the formatter's structural rules
+                } else if (do_indent_level > 0 and indent_level == prev_indent_level) {
+                    const is_control_flow_keyword = token.kind == .identifier and
+                        (std.mem.eql(u8, token.lexeme, "else") or std.mem.eql(u8, token.lexeme, "then"));
 
-                // For object fields at base level, always reset do_indent_level to 0
-                if (is_object_field and source_indent == base_indent) {
-                    do_indent_level = 0;
-                } else if (!is_object_field) {
-                    // Use source indentation for dedenting:
-                    // 1. If source is at or below base level, reset to 0 (explicit dedent)
-                    // 2. If source is between base and expected, match source (partial dedent)
-                    // 3. If source is at or above expected, keep current level (no dedent)
-                    //
-                    // Special case: only apply dedenting if source_indent > 0 OR if base_indent == 0
-                    // (to handle closing brackets at root level)
-                    if (source_indent > 0 or base_indent == 0) {
-                        if (source_indent <= base_indent) {
-                            do_indent_level = 0;
-                        } else if (source_indent < expected_indent) {
-                            do_indent_level = source_indent - base_indent;
+                    if (!is_control_flow_keyword) {
+                        const source_indent = if (token.column > 1) (token.column - 1) / 2 else 0;
+                        const base_indent = indent_level;
+                        const expected_indent = indent_level + do_indent_level;
+                        // Use source indentation for dedenting:
+                        // 1. If source is at or below base level, reset to 0 (explicit dedent)
+                        // 2. If source is between base and expected, match source (partial dedent)
+                        // 3. If source is at or above expected, keep current level (no dedent)
+                        //
+                        // Special case: only apply dedenting if source_indent > 0 OR if base_indent == 0
+                        // (to handle closing brackets at root level)
+                        if (source_indent > 0 or base_indent == 0) {
+                            if (source_indent <= base_indent) {
+                                do_indent_level = 0;
+                            } else if (source_indent < expected_indent) {
+                                do_indent_level = source_indent - base_indent;
+                            }
                         }
                     }
                 }
-            }
 
                 // Remember indent level for next newline
                 prev_indent_level = indent_level;
@@ -302,6 +318,15 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                 const prev_tok = tokens.items[i - 1].token;
                 if (prev_tok.kind == .arrow) {
                     do_indent_level += 1;
+                } else if (prev_tok.kind == .colon) {
+                    // Indent after colon in object fields
+                    // Check if we're in a multi-line object
+                    for (brace_stack.items) |brace_info| {
+                        if (brace_info.brace_type == .brace and !brace_info.is_single_line) {
+                            do_indent_level += 1;
+                            break;
+                        }
+                    }
                 } else if (prev_tok.kind == .identifier and
                     (std.mem.eql(u8, prev_tok.lexeme, "do") or
                      std.mem.eql(u8, prev_tok.lexeme, "where") or
@@ -435,6 +460,7 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
             }  // end of else block for suppress_newline
         }
 
+
         // Calculate if we need space before this token
         // Get the token before prev_token for unary operator detection
         var token_before_prev: ?evaluator.TokenKind = null;
@@ -448,6 +474,36 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
         // e.g., `Array.sortBy .age` should keep the space before `.age`
         if (!needs_space_before and token.kind == .dot and token.preceded_by_whitespace and !at_line_start) {
             needs_space_before = true;
+        }
+
+        // Special case: array indexing vs array literal
+        // envConfig[target] (no space) vs foo bar [1, 2, 3] (space for function call)
+        // Indexing: arr[0], obj.field[0]
+        // Function call/juxtaposition: foo [1, 2], foo bar [1, 2], [1, 2] [3, 4]
+        //
+        // Heuristic: if no whitespace before `[` in source, check if it's indexing:
+        // - After dot: definitely indexing (obj.field[0])
+        // - After identifier: only indexing if NOT a function call
+        //   (function call if token_before_prev is also a value token)
+        //
+        // Note: We do NOT treat `arr[0][1]` or `(expr)[0]` as indexing by default,
+        // because the space should be added by normal spacing rules unless the source
+        // explicitly omits it. The formatter preserves source intent for these cases.
+        if (needs_space_before and token.kind == .l_bracket and !token.preceded_by_whitespace and prev_token != null) {
+            if (prev_token.? == .dot) {
+                // Definitely indexing after field access
+                needs_space_before = false;
+            } else if (prev_token.? == .identifier and token_before_prev != null) {
+                // Only indexing if previous identifier is NOT part of a function call
+                // Function call: foo bar[...] where foo is also an identifier/value
+                const is_function_call = token_before_prev.? == .identifier or
+                    token_before_prev.? == .symbol or token_before_prev.? == .string or
+                    token_before_prev.? == .number or token_before_prev.? == .r_bracket or
+                    token_before_prev.? == .r_paren or token_before_prev.? == .r_brace;
+                if (!is_function_call) {
+                    needs_space_before = false;
+                }
+            }
         }
 
         // Reset do_indent_level if we're starting a new statement at array level
@@ -510,10 +566,10 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                         if (is_empty) {
                             try output.appendSlice(allocator, "{}");
                             // Skip the closing brace since we already wrote it
-                            try brace_stack.append(allocator, BraceInfo{ .brace_type = .brace, .is_single_line = true, .skipped = true });
+                            try brace_stack.append(allocator, BraceInfo{ .brace_type = .brace, .is_single_line = true, .skipped = true, .context_do_indent = do_indent_level });
                         } else {
                             try output.appendSlice(allocator, "{ ");
-                            try brace_stack.append(allocator, BraceInfo{ .brace_type = .brace, .is_single_line = true });
+                            try brace_stack.append(allocator, BraceInfo{ .brace_type = .brace, .is_single_line = true, .context_do_indent = do_indent_level });
                         }
                         prev_token = token.kind;
                         continue;
@@ -599,28 +655,68 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
             try output.appendSlice(allocator, token.lexeme);
         }
 
-        // After `then` or `else`, force newline if next token is on same line
-        // BUT only if this then/else was originally on a new line (multi-line if/then/else)
-        // For `then`, also check that we moved it to same line (suppressed newline)
-        if (token.kind == .identifier) {
-            const is_then = std.mem.eql(u8, token.lexeme, "then");
-            const is_else = std.mem.eql(u8, token.lexeme, "else");
+        // After `then`, check if this is a multi-line if/then/else
+        // If we find an `else` ahead that's on its own line, force newline after `then`
+        if (token.kind == .identifier and std.mem.eql(u8, token.lexeme, "then")) {
+            // Look ahead for else, tracking brace depth to skip over nested structures
+            var found_multiline_else = false;
+            var depth: i32 = 0;
+            for (tokens.items[i + 1 ..]) |future_info| {
+                const future_tok = future_info.token;
 
-            if ((is_then or is_else) and token.preceded_by_newline and i + 1 < tokens.items.len) {
+                // Track brace/bracket/paren depth
+                if (future_tok.kind == .l_brace or future_tok.kind == .l_bracket or future_tok.kind == .l_paren) {
+                    depth += 1;
+                } else if (future_tok.kind == .r_brace or future_tok.kind == .r_bracket or future_tok.kind == .r_paren) {
+                    depth -= 1;
+                    // If we've closed all braces and see a closing brace at depth < 0, stop
+                    if (depth < 0) break;
+                }
+
+                // Only look for else at depth 0 (not inside nested structures)
+                if (depth == 0) {
+                    if (future_tok.kind == .identifier and std.mem.eql(u8, future_tok.lexeme, "else")) {
+                        if (future_tok.preceded_by_newline) {
+                            found_multiline_else = true;
+                        }
+                        break;
+                    }
+                    // Stop at semicolon at depth 0
+                    if (future_tok.kind == .semicolon) break;
+                }
+            }
+
+            // If we found a multi-line else, force newline after then
+            if (found_multiline_else and i + 1 < tokens.items.len) {
                 const next_token = tokens.items[i + 1].token;
                 if (!next_token.preceded_by_newline) {
                     try output.appendSlice(allocator, "\n");
                     at_line_start = true;
-                    // Increment indent for the body after then/else
+                    // Increment indent for the then branch body
                     do_indent_level += 1;
                 }
             }
         }
 
+        // After `else`, if it was on its own line, force newline for the else branch
+        if (token.kind == .identifier and std.mem.eql(u8, token.lexeme, "else")) {
+            // Check if this else was preceded by a newline (multi-line mode)
+            if (token.preceded_by_newline and i + 1 < tokens.items.len) {
+                const next_token = tokens.items[i + 1].token;
+                if (!next_token.preceded_by_newline) {
+                    try output.appendSlice(allocator, "\n");
+                    at_line_start = true;
+                    // Increment indent for the else branch body
+                    do_indent_level += 1;
+                }
+            }
+        }
+
+
         // Update indentation for opening braces/brackets
         if (token.kind == .l_brace) {
             const is_single = brace_is_single_line.get(i) orelse false;
-            try brace_stack.append(allocator, BraceInfo{ .brace_type = .brace, .is_single_line = is_single });
+            try brace_stack.append(allocator, BraceInfo{ .brace_type = .brace, .is_single_line = is_single, .context_do_indent = do_indent_level });
             if (!is_single) {
                 indent_level += 1;
                 // For multi-line objects, force newline if next token is on same line
@@ -634,14 +730,14 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
             }
         } else if (token.kind == .l_bracket) {
             const is_single = brace_is_single_line.get(i) orelse false;
-            try brace_stack.append(allocator, BraceInfo{ .brace_type = .bracket, .is_single_line = is_single });
+            try brace_stack.append(allocator, BraceInfo{ .brace_type = .bracket, .is_single_line = is_single, .context_do_indent = do_indent_level });
             if (!is_single) {
                 indent_level += 1;
                 // Don't reset do_indent_level - maintain accumulated indentation
             }
         } else if (token.kind == .l_paren) {
             const is_single = brace_is_single_line.get(i) orelse true;
-            try brace_stack.append(allocator, BraceInfo{ .brace_type = .paren, .is_single_line = is_single });
+            try brace_stack.append(allocator, BraceInfo{ .brace_type = .paren, .is_single_line = is_single, .context_do_indent = do_indent_level });
             if (!is_single) {
                 indent_level += 1;
             }

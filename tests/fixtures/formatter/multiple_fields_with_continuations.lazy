@@ -1,0 +1,25 @@
+// config = {
+//   field1:
+//     value1
+//     \ pipe1
+//     \ pipe2
+//
+//   field2:
+//     value2
+//     \ transform
+//
+//   field3: simple
+// }
+
+config = {
+field1:
+value1
+\ pipe1
+\ pipe2
+
+field2:
+value2
+\ transform
+
+field3: simple
+}

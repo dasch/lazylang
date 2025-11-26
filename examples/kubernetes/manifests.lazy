@@ -80,7 +80,7 @@ targets = ["development", "staging", "production"]
       spec {
         selector:
           labels
-            \ Object.slice ["app", "component"]
+          \ Object.slice ["app", "component"]
 
         ports: [
           {

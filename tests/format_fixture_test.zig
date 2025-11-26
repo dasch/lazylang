@@ -341,15 +341,21 @@ test "formatter: leading comments" {
     try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/leading_comments.lazy");
 }
 
-// TODO: Fix continuation indentation in objects
-// test "formatter: continuation in object" {
-//     try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/continuation_in_object.lazy");
-// }
+test "formatter: continuation in object" {
+    try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/continuation_in_object.lazy");
+}
 
-// TODO: Fix array indexing spacing
-// test "formatter: array indexing" {
-//     try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/array_indexing.lazy");
-// }
+test "formatter: array indexing" {
+    try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/array_indexing.lazy");
+}
+
+test "formatter: nested object continuation" {
+    try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/nested_object_continuation.lazy");
+}
+
+test "formatter: multiple fields with continuations" {
+    try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/multiple_fields_with_continuations.lazy");
+}
 
 // ============================================================================
 // STDLIB FORMATTING TEST
@@ -446,10 +452,10 @@ test "regression: all formatter fixtures produce correct output" {
         "tests/fixtures/formatter/multiline_object_field_separation.lazy",
         "tests/fixtures/formatter/object_with_when_matches.lazy",
         "tests/fixtures/formatter/leading_comments.lazy",
-        // TODO: Fix continuation indentation in objects
-        // "tests/fixtures/formatter/continuation_in_object.lazy",
-        // TODO: Fix array indexing spacing (envConfig[target] should not have space)
-        // "tests/fixtures/formatter/array_indexing.lazy",
+        "tests/fixtures/formatter/continuation_in_object.lazy",
+        "tests/fixtures/formatter/array_indexing.lazy",
+        "tests/fixtures/formatter/nested_object_continuation.lazy",
+        "tests/fixtures/formatter/multiple_fields_with_continuations.lazy",
         // TODO: Re-enable when doc comment blank line handling is fixed
         // "tests/fixtures/formatter/doc_comments.lazy",
     };
