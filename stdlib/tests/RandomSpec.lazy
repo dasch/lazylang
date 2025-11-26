@@ -106,8 +106,8 @@ describe "Random" [
     it "selects one of the generators" do
       seed = Random.seed 42
       gen = Random.oneOf [
-        Random.constant 10,
-        Random.constant 20,
+        Random.constant 10
+        Random.constant 20
         Random.constant 30
       ]
       (value, _) = gen seed
@@ -118,7 +118,7 @@ describe "Random" [
     it "selects according to weights" do
       seed = Random.seed 42
       gen = Random.weighted [
-        (1, Random.constant "rare"),
+        (1, Random.constant "rare")
         (99, Random.constant "common")
       ]
       // Generate 100 values and check distribution
