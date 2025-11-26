@@ -257,10 +257,8 @@ Result = import "Result"
       if n <= 0 then
         Array.reverse acc
       else
-        (
-          (value, nextSeed) = generator seed
+        (value, nextSeed) = generator seed
         generateValues (n - 1) nextSeed [...acc, value]
-        )
 
     testValues = generateValues trials baseSeed []
 
@@ -305,10 +303,8 @@ Result = import "Result"
       if n <= 0 then
         Array.reverse acc
       else
-        (
-          (value, nextSeed) = generator seed
+        (value, nextSeed) = generator seed
         generateValues (n - 1) nextSeed [...acc, value]
-        )
 
     testValues = generateValues trials baseSeed []
 

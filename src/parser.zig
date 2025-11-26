@@ -758,12 +758,12 @@ pub const Parser = struct {
                     }
                     try self.advance();
 
-                    const then_expr = try self.parseBinary(0);
+                    const then_expr = try self.parseLambda();
 
                     var else_expr: ?*Expression = null;
                     if (self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "else")) {
                         try self.advance();
-                        else_expr = try self.parseBinary(0);
+                        else_expr = try self.parseLambda();
                     }
 
                     return try self.makeExpression(.{ .if_expr = .{
