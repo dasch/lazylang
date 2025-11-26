@@ -1,4 +1,4 @@
-{ describe, it, xit, mustEq, mustNotEq, must, pass, fail } = import "Spec"
+{ describe, fail, it, must, mustEq, mustNotEq, pass, xit } = import "Spec"
 
 describe "Assertion Functions" [
   describe #mustEq [
