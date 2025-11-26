@@ -315,9 +315,14 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
             // Extract regular comments from the gap before this token
             var comments = std.ArrayList([]const u8){};
             defer comments.deinit(allocator);
-            if (i > 0) {
-                const prev_info = tokens.items[i - 1];
-                const between = source[prev_info.source_end..info.source_start];
+
+            // Get the text between previous token (or start of file) and current token
+            const between = if (i > 0)
+                source[tokens.items[i - 1].source_end..info.source_start]
+            else
+                source[0..info.source_start];
+
+            if (between.len > 0) {
 
                 var search_idx: usize = 0;
                 while (search_idx < between.len) {
@@ -353,7 +358,6 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
             if (i > 0) {
                 const prev_info = tokens.items[i - 1];
                 const prev_tok = prev_info.token;
-                const between = source[prev_info.source_end..info.source_start];
                 const raw_newline_count = countNewlines(between);
 
                 // If this token has doc comments, the space between includes those doc comment lines.
@@ -371,42 +375,63 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                     // Still limit excessive blank lines to 2 (meaning 3 newlines)
                     if (newline_count > 3) newline_count = 3;
                 }
-
-                // Output the appropriate number of newlines
-                // But subtract one for each comment we'll output (they come with their own newlines)
-                const newlines_before_comments = if (newline_count > comments.items.len) newline_count - comments.items.len else 0;
-                for (0..newlines_before_comments) |_| {
-                    try output.appendSlice(allocator, "\n");
-                }
-
-                // Output comments with proper indentation
-                for (comments.items) |comment| {
-                    const total_indent = indent_level + do_indent_level;
-                    for (0..total_indent) |_| {
-                        try output.appendSlice(allocator, "  ");
-                    }
-
-                    try output.appendSlice(allocator, "//");
-                    const trimmed = std.mem.trimRight(u8, comment, " \t");
-                    if (trimmed.len > 0 and trimmed[0] == ' ') {
-                        try output.appendSlice(allocator, trimmed);
-                    } else if (trimmed.len > 0) {
-                        try output.appendSlice(allocator, " ");
-                        try output.appendSlice(allocator, trimmed);
-                    }
-                    try output.appendSlice(allocator, "\n");
-                }
-
-                at_line_start = true;
             } else {
-                // First token - don't output newlines before it if it has doc comments
-                if (token.doc_comments == null) {
-                    for (0..newline_count) |_| {
-                        try output.appendSlice(allocator, "\n");
-                    }
+                // First token - check if we have leading comments
+                if (comments.items.len > 0) {
+                    // Count newlines for blank lines after comments
+                    newline_count = countNewlines(between);
+                } else if (token.doc_comments == null) {
+                    // No comments and no doc comments - preserve any newlines
+                    newline_count = countNewlines(between);
+                } else {
+                    // Has doc comments - no newlines before
+                    newline_count = 0;
                 }
-                at_line_start = true;
             }
+
+            // Determine newlines before and after comments
+            var newlines_before_comments: usize = 0;
+            var newlines_after_comments: usize = 0;
+
+            if (i == 0 and comments.items.len > 0) {
+                // For leading comments, don't add newlines before, but preserve after
+                newlines_before_comments = 0;
+                newlines_after_comments = if (newline_count > comments.items.len) newline_count - comments.items.len else 0;
+            } else {
+                // For comments after a token, distribute newlines before comments
+                newlines_before_comments = if (newline_count > comments.items.len) newline_count - comments.items.len else 0;
+                newlines_after_comments = 0;
+            }
+
+            // Output newlines before comments
+            for (0..newlines_before_comments) |_| {
+                try output.appendSlice(allocator, "\n");
+            }
+
+            // Output comments with proper indentation
+            for (comments.items) |comment| {
+                const total_indent = indent_level + do_indent_level;
+                for (0..total_indent) |_| {
+                    try output.appendSlice(allocator, "  ");
+                }
+
+                try output.appendSlice(allocator, "//");
+                const trimmed = std.mem.trimRight(u8, comment, " \t");
+                if (trimmed.len > 0 and trimmed[0] == ' ') {
+                    try output.appendSlice(allocator, trimmed);
+                } else if (trimmed.len > 0) {
+                    try output.appendSlice(allocator, " ");
+                    try output.appendSlice(allocator, trimmed);
+                }
+                try output.appendSlice(allocator, "\n");
+            }
+
+            // Output newlines after comments
+            for (0..newlines_after_comments) |_| {
+                try output.appendSlice(allocator, "\n");
+            }
+
+            at_line_start = true;
             }  // end of else block for suppress_newline
         }
 

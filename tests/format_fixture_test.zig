@@ -16,6 +16,11 @@ fn loadExpectedOutput(allocator: std.mem.Allocator, file_path: []const u8) ![]co
     // Parse line by line, extracting comment lines as expected output
     var lines = std.mem.splitScalar(u8, content, '\n');
     while (lines.next()) |line| {
+        // Stop at separator marker
+        if (std.mem.eql(u8, line, "// ===")) {
+            break;
+        }
+
         // Check if line starts with "//"
         if (std.mem.startsWith(u8, line, "// ")) {
             // Strip "// " and add to result
@@ -44,8 +49,32 @@ fn loadActualCode(allocator: std.mem.Allocator, file_path: []const u8) ![]const 
 
     // Parse line by line, extracting non-comment lines as actual code
     var lines = std.mem.splitScalar(u8, content, '\n');
+    var found_separator = false;
     var found_code = false;
     while (lines.next()) |line| {
+        // Check for separator marker
+        if (std.mem.eql(u8, line, "// ===")) {
+            found_separator = true;
+            continue;
+        }
+
+        // If we found a separator, include everything after it (including comments)
+        if (found_separator) {
+            // Skip empty lines until we find code
+            if (!found_code and line.len == 0) {
+                continue;
+            }
+
+            // Add all lines after separator
+            if (found_code) {
+                try result.append(allocator, '\n');
+            }
+            try result.appendSlice(allocator, line);
+            found_code = true;
+            continue;
+        }
+
+        // No separator found yet - use old logic
         // Skip comment lines (both // and # style), but NOT doc comments (///)
         if (std.mem.startsWith(u8, line, "///")) {
             // This is a doc comment, keep it
@@ -308,6 +337,20 @@ test "formatter: object with when/matches" {
     try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/object_with_when_matches.lazy");
 }
 
+test "formatter: leading comments" {
+    try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/leading_comments.lazy");
+}
+
+// TODO: Fix continuation indentation in objects
+// test "formatter: continuation in object" {
+//     try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/continuation_in_object.lazy");
+// }
+
+// TODO: Fix array indexing spacing
+// test "formatter: array indexing" {
+//     try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/array_indexing.lazy");
+// }
+
 // ============================================================================
 // STDLIB FORMATTING TEST
 // Ensure stdlib files are properly formatted
@@ -402,6 +445,11 @@ test "regression: all formatter fixtures produce correct output" {
         "tests/fixtures/formatter/partial_application_spacing.lazy",
         "tests/fixtures/formatter/multiline_object_field_separation.lazy",
         "tests/fixtures/formatter/object_with_when_matches.lazy",
+        "tests/fixtures/formatter/leading_comments.lazy",
+        // TODO: Fix continuation indentation in objects
+        // "tests/fixtures/formatter/continuation_in_object.lazy",
+        // TODO: Fix array indexing spacing (envConfig[target] should not have space)
+        // "tests/fixtures/formatter/array_indexing.lazy",
         // TODO: Re-enable when doc comment blank line handling is fixed
         // "tests/fixtures/formatter/doc_comments.lazy",
     };

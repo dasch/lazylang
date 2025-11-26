@@ -1,0 +1,11 @@
+// config = envConfig.default & envConfig[target]
+//
+// items = myArray[0]
+//
+// nested = obj.field[index]
+
+config = envConfig.default & envConfig[target]
+
+items = myArray[0]
+
+nested = obj.field[index]

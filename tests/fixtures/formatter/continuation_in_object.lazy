@@ -1,0 +1,11 @@
+// config = {
+//   selector:
+//     labels
+//     \ Object.slice ["app", "component"]
+// }
+
+config = {
+selector:
+labels
+\ Object.slice ["app", "component"]
+}
