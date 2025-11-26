@@ -2,7 +2,7 @@
 ///
 /// This module includes functions for common string operations such as:
 /// - **Querying**: [length], [isEmpty], [startsWith], [endsWith], [contains]
-/// - **Transforming**: [toUpperCase], [toLowerCase], [trim], [chars], [slice], [repeat], [replace]
+/// - **Transforming**: [toUpperCase], [toLowerCase], [trim], [chars], [slice], [repeat], [replace], [reverse]
 /// - **Combining**: [concat], [append], [join], [split]
 /// - **Slicing**: [left], [right], [dropLeft], [dropRight]
 ///
@@ -190,6 +190,23 @@
   /// String.replace "a" "o" "banana"  //=> "bonono"
   /// ```
   replace: from -> to -> str -> __string_replace (from, to, str)
+
+  /// Reverses a string.
+  ///
+  /// **Parameter:**
+  /// - `str`: The string to reverse
+  ///
+  /// **Example:**
+  /// ```
+  /// String.reverse "hello"  //=> "olleh"
+  /// String.reverse "racecar"  //=> "racecar"
+  /// String.reverse ""  //=> ""
+  /// ```
+  reverse: str ->
+    str
+    \ __string_chars
+    \ __array_reverse
+    \ __array_concat_all
 
   /// Joins an array of strings with a separator.
   ///

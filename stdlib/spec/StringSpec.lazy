@@ -202,6 +202,23 @@ describe #String [
       mustEq "heo" (String.replace "ll" "" "hello")
   ]
 
+  describe #reverse [
+    it "reverses a non-empty string" do
+      mustEq "olleh" (String.reverse "hello")
+
+    it "reverses a string with multiple words" do
+      mustEq "dlrow olleh" (String.reverse "hello world")
+
+    it "returns *same* string for palindrome" do
+      mustEq "racecar" (String.reverse "racecar")
+
+    it "returns *empty* string for empty input" do
+      mustEq "" (String.reverse "")
+
+    it "handles single character string" do
+      mustEq "a" (String.reverse "a")
+  ]
+
   describe #join [
     it "joins array with separator" do
       mustEq "a, b, c" (String.join ", " ["a", "b", "c"])
