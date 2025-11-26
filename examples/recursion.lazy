@@ -18,7 +18,7 @@ countdown = n ->
     [n, ...countdown (n - 1)]
 
 {
-  fib_10: fib 10,
-  factorial_5: factorial 5,
+  fib_10: fib 10
+  factorial_5: factorial 5
   countdown_5: countdown 5
 }

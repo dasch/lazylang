@@ -9,11 +9,11 @@ encode_array = JSON.encode [4, 5, 6]
 
 {
   parsed: {
-    int: parse_int,
+    int: parse_int
     array: parse_array
-  },
+  }
   encoded: {
-    int: encode_int,
+    int: encode_int
     array: encode_array
   }
 }

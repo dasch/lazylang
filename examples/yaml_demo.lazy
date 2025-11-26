@@ -11,7 +11,7 @@ port = when YAML.parse "port: 8080" matches
   otherwise 3000
 
 {
-  parsed: { int: parsed_int, array: parsed_array },
-  encoded: { int: yaml_int, config: yaml_config },
+  parsed: { int: parsed_int, array: parsed_array }
+  encoded: { int: yaml_int, config: yaml_config }
   port: port
 }

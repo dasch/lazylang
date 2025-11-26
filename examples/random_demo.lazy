@@ -35,10 +35,10 @@ testData = {
 }
 
 {
-  basicNumbers: [num1, num2, num3],
-  dice: dice,
-  percentage: percentage,
-  numbers: numbers,
-  randomWord: randomWord,
+  basicNumbers: [num1, num2, num3]
+  dice: dice
+  percentage: percentage
+  numbers: numbers
+  randomWord: randomWord
   testData: testData
 }

@@ -1,7 +1,7 @@
 /// Property-based testing demo using forall
-{ describe, it, must, mustEq, forall, forallWith } = import 'Spec'
-Random = import 'Random'
-Math = import 'Math'
+{describe, it, must, mustEq, forall, forallWith } = import "Spec"
+Random = import "Random"
+Math = import "Math"
 
 describe "property-based tests" [
   // Test with bounded values - runs 100 trials by default
