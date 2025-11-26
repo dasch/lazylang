@@ -356,6 +356,7 @@ Result = import "Result"
 
     runItem = item -> s -> path ->
       itemType = Object.get "type" item \ Result.orDefault "unknown"
+      base = { passed: 0, failed: 0, ignored: 0, results: [] }
 
       when itemType matches
         "describe" then (
@@ -378,7 +379,7 @@ Result = import "Result"
               }
               processChildren (idx + 1) newAcc
 
-          processChildren 0 { passed: 0, failed: 0, ignored: 0, results: [] }
+          processChildren 0 base
         )
 
         "it" then (
@@ -388,16 +389,16 @@ Result = import "Result"
           details = Object.get "details" testResult \ Result.orDefault null
 
           if resultType == "pass" then
-            { passed: 1, failed: 0, ignored: 0, results: [{ type: "pass", path: path, description: description }] }
+            base { passed: 1, results: [{ type: "pass", path: path, description: description }] }
           else if resultType == "fail" then
-            { passed: 0, failed: 1, ignored: 0, results: [{ type: "fail", path: path, description: description, details: details }] }
+            base { failed: 1, results: [{ type: "fail", path: path, description: description, details: details }] }
           else
-            { passed: 1, failed: 0, ignored: 0, results: [{ type: "pass", path: path, description: description }] }
+            base { passed: 1, results: [{ type: "pass", path: path, description: description }] }
         )
 
         "xit" then (
           description = Object.get "description" item \ Result.orDefault "unknown"
-          { passed: 0, failed: 0, ignored: 1, results: [{ type: "ignored", path: path, description: description }] }
+          base { ignored: 1, results: [{ type: "ignored", path: path, description: description }] }
         )
 
         "property" then (
@@ -408,13 +409,13 @@ Result = import "Result"
           details = Object.get "details" result \ Result.orDefault null
 
           if resultType == "pass" then
-            { passed: 1, failed: 0, ignored: 0, results: [{ type: "pass", path: path, description: description }] }
+            base { passed: 1, results: [{ type: "pass", path: path, description: description }] }
           else
-            { passed: 0, failed: 1, ignored: 0, results: [{ type: "fail", path: path, description: description, details: details }] }
+            base { failed: 1, results: [{ type: "fail", path: path, description: description, details: details }] }
         )
 
         otherwise
-        { passed: 0, failed: 1, ignored: 0, results: [{ type: "error", path: path, description: "Unknown type" }] }
+        base { failed: 1, results: [{ type: "error", path: path, description: "Unknown type" }] }
 
     runItem suite seed []
 }
