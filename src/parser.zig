@@ -790,7 +790,7 @@ pub const Parser = struct {
                         // Check for "otherwise"
                         if (self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "otherwise")) {
                             try self.advance();
-                            otherwise_expr = try self.parseBinary(0);
+                            otherwise_expr = try self.parseLambda();
                             break;
                         }
 
@@ -809,8 +809,8 @@ pub const Parser = struct {
                         }
                         try self.advance();
 
-                        // Parse expression
-                        const branch_expr = try self.parseBinary(0);
+                        // Parse expression (use parseLambda to support multi-line bodies like if/then/else)
+                        const branch_expr = try self.parseLambda();
 
                         try branches.append(self.arena, .{
                             .pattern = pattern,
