@@ -48,6 +48,30 @@ pub const Parser = parser_mod.Parser;
 const formatValueShort = value_format.formatValueShort;
 const valueToString = value_format.valueToString;
 
+/// Attach documentation and name to a value at its primary binding site.
+/// Only attaches if the value is a function or object and doesn't already have a docstring/name.
+fn attachDocAndName(value: *Value, doc: []const u8, name: []const u8) void {
+    switch (value.*) {
+        .function => |f| {
+            if (f.*.docstring == null) {
+                f.*.docstring = doc;
+            }
+            if (f.*.name == null) {
+                f.*.name = name;
+            }
+        },
+        .object => |*obj| {
+            if (obj.module_doc == null) {
+                obj.module_doc = doc;
+            }
+            if (obj.name == null) {
+                obj.name = name;
+            }
+        },
+        else => {}, // Ignore for other types
+    }
+}
+
 // Value comparison helper (depends on force, so kept here)
 fn valuesEqual(arena: std.mem.Allocator, a: Value, b: Value) bool {
     // Force thunks before comparison
@@ -666,7 +690,7 @@ fn mergeObjects(arena: std.mem.Allocator, base: ObjectValue, extension: ObjectVa
 
     // Prefer extension's module_doc if it exists, otherwise use base's
     const module_doc = extension.module_doc orelse base.module_doc;
-    return Value{ .object = .{ .fields = try result_fields.toOwnedSlice(arena), .module_doc = module_doc } };
+    return Value{ .object = .{ .fields = try result_fields.toOwnedSlice(arena), .module_doc = module_doc, .name = null } };
 }
 
 /// Find field access locations in an expression for a given field name
@@ -896,7 +920,7 @@ pub fn evaluateExpression(
         },
         .lambda => |lambda| blk: {
             const function = try arena.create(FunctionValue);
-            function.* = .{ .param = lambda.param, .body = lambda.body, .env = env };
+            function.* = .{ .param = lambda.param, .body = lambda.body, .env = env, .docstring = null, .name = null };
             break :blk Value{ .function = function };
         },
         .let => |let_expr| blk: {
@@ -918,7 +942,12 @@ pub fn evaluateExpression(
                 };
 
                 // Evaluate value with recursive environment
-                const value = try evaluateExpression(arena, let_expr.value, recursive_env, current_dir, ctx);
+                var value = try evaluateExpression(arena, let_expr.value, recursive_env, current_dir, ctx);
+
+                // Attach doc and name if this is the primary binding site
+                if (let_expr.doc) |doc| {
+                    attachDocAndName(&value, doc, identifier);
+                }
 
                 // Update the environment entry with the actual value
                 recursive_env.value = value;
@@ -927,7 +956,15 @@ pub fn evaluateExpression(
                 break :blk try evaluateExpression(arena, let_expr.body, recursive_env, current_dir, ctx);
             } else {
                 // Non-recursive case: evaluate value first, then pattern match
-                const value = try evaluateExpression(arena, let_expr.value, env, current_dir, ctx);
+                var value = try evaluateExpression(arena, let_expr.value, env, current_dir, ctx);
+
+                // Attach doc and name if pattern is simple identifier
+                if (let_expr.doc) |doc| {
+                    if (let_expr.pattern.data == .identifier) {
+                        attachDocAndName(&value, doc, let_expr.pattern.data.identifier);
+                    }
+                }
+
                 const new_env = try matchPattern(arena, let_expr.pattern, value, env, ctx);
                 break :blk try evaluateExpression(arena, let_expr.body, new_env, current_dir, ctx);
             }
@@ -1656,17 +1693,26 @@ pub fn evaluateExpression(
                 switch (field.key) {
                     .static => |static_key| {
                         const key_copy = try arena.dupe(u8, static_key);
-                        // Wrap field value in a thunk for lazy evaluation
-                        const thunk = try arena.create(Thunk);
-                        thunk.* = .{
-                            .expr = field.value,
-                            .env = env,
-                            .current_dir = current_dir,
-                            .ctx = ctx,
-                            .state = .unevaluated,
-                            .field_key_location = field.key_location,
+                        // If field has doc, evaluate immediately and attach doc+name
+                        // Otherwise, wrap in thunk for lazy evaluation
+                        const field_value = if (field.doc) |doc| blk2: {
+                            var value = try evaluateExpression(arena, field.value, env, current_dir, ctx);
+                            attachDocAndName(&value, doc, static_key);
+                            break :blk2 value;
+                        } else blk2: {
+                            // Wrap field value in a thunk for lazy evaluation
+                            const thunk = try arena.create(Thunk);
+                            thunk.* = .{
+                                .expr = field.value,
+                                .env = env,
+                                .current_dir = current_dir,
+                                .ctx = ctx,
+                                .state = .unevaluated,
+                                .field_key_location = field.key_location,
+                            };
+                            break :blk2 Value{ .thunk = thunk };
                         };
-                        try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch });
+                        try fields_list.append(arena, .{ .key = key_copy, .value = field_value, .is_patch = field.is_patch });
                     },
                     .dynamic => |key_expr| {
                         // Evaluate the key expression
@@ -1680,16 +1726,24 @@ pub fn evaluateExpression(
                             .string => |key_string| {
                                 // Single string key
                                 const key_copy = try arena.dupe(u8, key_string);
-                                const thunk = try arena.create(Thunk);
-                                thunk.* = .{
-                                    .expr = field.value,
-                                    .env = env,
-                                    .current_dir = current_dir,
-                                    .ctx = ctx,
-                                    .state = .unevaluated,
-                                    .field_key_location = field.key_location,
+                                // If field has doc, evaluate immediately and attach doc+name
+                                const field_value = if (field.doc) |doc| blk2: {
+                                    var value = try evaluateExpression(arena, field.value, env, current_dir, ctx);
+                                    attachDocAndName(&value, doc, key_string);
+                                    break :blk2 value;
+                                } else blk2: {
+                                    const thunk = try arena.create(Thunk);
+                                    thunk.* = .{
+                                        .expr = field.value,
+                                        .env = env,
+                                        .current_dir = current_dir,
+                                        .ctx = ctx,
+                                        .state = .unevaluated,
+                                        .field_key_location = field.key_location,
+                                    };
+                                    break :blk2 Value{ .thunk = thunk };
                                 };
-                                try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch });
+                                try fields_list.append(arena, .{ .key = key_copy, .value = field_value, .is_patch = field.is_patch });
                             },
                             .array => |arr| {
                                 // Array of keys: create multiple fields with same value
@@ -1701,16 +1755,24 @@ pub fn evaluateExpression(
                                         },
                                         .string => |key_string| {
                                             const key_copy = try arena.dupe(u8, key_string);
-                                            const thunk = try arena.create(Thunk);
-                                            thunk.* = .{
-                                                .expr = field.value,
-                                                .env = env,
-                                                .current_dir = current_dir,
-                                                .ctx = ctx,
-                                                .state = .unevaluated,
-                                                .field_key_location = field.key_location,
+                                            // If field has doc, evaluate immediately and attach doc+name
+                                            const field_value = if (field.doc) |doc| blk2: {
+                                                var value = try evaluateExpression(arena, field.value, env, current_dir, ctx);
+                                                attachDocAndName(&value, doc, key_string);
+                                                break :blk2 value;
+                                            } else blk2: {
+                                                const thunk = try arena.create(Thunk);
+                                                thunk.* = .{
+                                                    .expr = field.value,
+                                                    .env = env,
+                                                    .current_dir = current_dir,
+                                                    .ctx = ctx,
+                                                    .state = .unevaluated,
+                                                    .field_key_location = field.key_location,
+                                                };
+                                                break :blk2 Value{ .thunk = thunk };
                                             };
-                                            try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch });
+                                            try fields_list.append(arena, .{ .key = key_copy, .value = field_value, .is_patch = field.is_patch });
                                         },
                                         else => return error.TypeMismatch,
                                     }
@@ -1723,7 +1785,7 @@ pub fn evaluateExpression(
             }
 
             const fields = try fields_list.toOwnedSlice(arena);
-            break :blk Value{ .object = .{ .fields = fields, .module_doc = object.module_doc } };
+            break :blk Value{ .object = .{ .fields = fields, .module_doc = object.module_doc, .name = null } };
         },
         .object_extend => |extend| blk: {
             // Evaluate the base expression
@@ -1744,7 +1806,7 @@ pub fn evaluateExpression(
                         const key_copy = try arena.dupe(u8, static_key);
                         try fields_list.append(arena, .{ .key = key_copy, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx), .is_patch = field.is_patch });
                     }
-                    const obj_arg = Value{ .object = .{ .fields = try fields_list.toOwnedSlice(arena), .module_doc = null } };
+                    const obj_arg = Value{ .object = .{ .fields = try fields_list.toOwnedSlice(arena), .module_doc = null, .name = null } };
                     const bound_env = try matchPattern(arena, function_ptr.param, obj_arg, function_ptr.env, ctx);
                     break :blk try evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx);
                 },
@@ -1761,7 +1823,7 @@ pub fn evaluateExpression(
                         const key_copy = try arena.dupe(u8, static_key);
                         try fields_list.append(arena, .{ .key = key_copy, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx), .is_patch = field.is_patch });
                     }
-                    const obj_arg = Value{ .object = .{ .fields = try fields_list.toOwnedSlice(arena), .module_doc = null } };
+                    const obj_arg = Value{ .object = .{ .fields = try fields_list.toOwnedSlice(arena), .module_doc = null, .name = null } };
                     const args = [_]Value{obj_arg};
                     break :blk try native_fn(arena, &args);
                 },
@@ -1804,7 +1866,7 @@ pub fn evaluateExpression(
                     }
 
                     // Merge base with extension
-                    const extension_obj = ObjectValue{ .fields = try extension_fields.toOwnedSlice(arena), .module_doc = null };
+                    const extension_obj = ObjectValue{ .fields = try extension_fields.toOwnedSlice(arena), .module_doc = null, .name = null };
                     break :blk try mergeObjects(arena, base_obj, extension_obj);
                 },
                 else => return error.TypeMismatch,
@@ -1818,7 +1880,7 @@ pub fn evaluateExpression(
         .object_comprehension => |comp| blk: {
             var result_fields = std.ArrayListUnmanaged(ObjectFieldValue){};
             try evaluateObjectComprehension(arena, &result_fields, comp, 0, env, current_dir, ctx);
-            break :blk Value{ .object = .{ .fields = try result_fields.toOwnedSlice(arena), .module_doc = null } };
+            break :blk Value{ .object = .{ .fields = try result_fields.toOwnedSlice(arena), .module_doc = null, .name = null } };
         },
         .import_expr => |import_expr| blk: {
             // Import the module - error location will be set inside importModule if it fails
@@ -1904,6 +1966,8 @@ pub fn evaluateExpression(
                 .param = param,
                 .body = body_expr,
                 .env = env,
+                .docstring = null,
+                .name = null,
             };
 
             break :blk Value{ .function = func_value };
@@ -1962,6 +2026,8 @@ pub fn evaluateExpression(
                 .param = param_x,
                 .body = inner_lambda_expr,
                 .env = env,
+                .docstring = null,
+                .name = null,
             };
 
             break :blk Value{ .function = outer_func };
@@ -1986,7 +2052,7 @@ pub fn evaluateExpression(
                 };
             }
 
-            break :blk Value{ .object = .{ .fields = new_fields, .module_doc = null } };
+            break :blk Value{ .object = .{ .fields = new_fields, .module_doc = null, .name = null } };
         },
     };
 }
@@ -1994,7 +2060,19 @@ pub fn evaluateExpression(
 fn accessField(arena: std.mem.Allocator, object_value: Value, field_name: []const u8, location: SourceLocation, ctx: *const EvalContext) EvalError!Value {
     const object = switch (object_value) {
         .object => |obj| obj,
-        else => return error.TypeMismatch,
+        else => {
+            if (ctx.error_ctx) |err_ctx| {
+                err_ctx.setErrorLocation(location.line, location.column, location.offset, location.length);
+                const value_type = getValueTypeName(object_value);
+                const msg = try std.fmt.allocPrint(err_ctx.allocator, "accessing field `.{s}` on {s}", .{field_name, value_type});
+                err_ctx.setErrorData(.{ .type_mismatch = .{
+                    .expected = "object",
+                    .found = value_type,
+                    .operation = msg,
+                } });
+            }
+            return error.TypeMismatch;
+        },
     };
 
     // Look for the field

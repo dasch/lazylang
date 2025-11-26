@@ -174,6 +174,17 @@ test "exact error: cyclic reference shows both definition and reference on diffe
     try assertExactMatch(actual, expected);
 }
 
+test "exact error: field access on non-object shows specific operation" {
+    const fixture = "tests/fixtures/errors/field_access_on_string.lazy";
+    const actual = try captureErrorOutput(testing.allocator, fixture);
+    defer testing.allocator.free(actual);
+
+    const expected = try loadExpectedError(testing.allocator, fixture);
+    defer testing.allocator.free(expected);
+
+    try assertExactMatch(actual, expected);
+}
+
 // ============================================================================
 // ERROR MESSAGE QUALITY TESTS
 // These tests verify error messages contain helpful information

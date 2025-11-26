@@ -59,6 +59,8 @@ pub const FunctionValue = struct {
     param: *Pattern,
     body: *Expression,
     env: ?*Environment,
+    docstring: ?[]const u8,
+    name: ?[]const u8,
 };
 
 /// NativeFn is a Zig function that implements a builtin.
@@ -133,6 +135,7 @@ pub const ObjectFieldValue = struct {
 pub const ObjectValue = struct {
     fields: []ObjectFieldValue,
     module_doc: ?[]const u8, // Module-level documentation
+    name: ?[]const u8, // Name from primary binding site
 };
 
 /// EvalError encompasses all possible errors during evaluation.

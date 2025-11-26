@@ -120,6 +120,9 @@ pub fn createBuiltinEnvironment(arena: std.mem.Allocator) !?*Environment {
     env = try addBuiltin(arena, env, "__is_object", builtins.isObject);
     env = try addBuiltin(arena, env, "__is_function", builtins.isFunction);
 
+    // Reflection builtins
+    env = try addBuiltin(arena, env, "__docstring", builtins.docstring);
+
     return env;
 }
 

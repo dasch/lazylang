@@ -53,6 +53,7 @@ pub const Parser = struct {
     lookahead: Token,
     source: []const u8,
     error_ctx: ?*error_context.ErrorContext,
+    module_doc: ?[]const u8,
 
     pub fn init(arena: std.mem.Allocator, source: []const u8) ParseError!Parser {
         return initWithContext(arena, source, null);
@@ -61,6 +62,14 @@ pub const Parser = struct {
     pub fn initWithContext(arena: std.mem.Allocator, source: []const u8, err_ctx: ?*error_context.ErrorContext) ParseError!Parser {
         var tokenizer = Tokenizer.init(source, arena);
         tokenizer.error_ctx = err_ctx;
+
+        // Skip initial whitespace and comments to accumulate doc comments
+        // This must happen before consumeModuleLevelDocComments() is called
+        _ = tokenizer.skipWhitespace();
+
+        // Now consume module-level doc comments BEFORE creating any tokens
+        // This must happen before next() is called, as next() will consume doc comments
+        const module_doc = tokenizer.consumeModuleLevelDocComments();
 
         const first = tokenizer.next() catch |err| {
             // Error context already set by tokenizer if available
@@ -79,6 +88,7 @@ pub const Parser = struct {
             .lookahead = second,
             .source = source,
             .error_ctx = err_ctx,
+            .module_doc = module_doc,
         };
     }
 
@@ -169,7 +179,37 @@ pub const Parser = struct {
             return error.UnexpectedToken;
         }
 
+        // Attach module docs to the final object (through let/where chains)
+        // Module doc was consumed during parser initialization
+        if (self.module_doc) |doc| {
+            attachModuleDocToFinalObject(expr, doc);
+        }
+
         return expr;
+    }
+
+    /// Recursively finds the final object in a chain of let/where expressions
+    /// and attaches module documentation to it at parse time.
+    fn attachModuleDocToFinalObject(expr: *Expression, doc: []const u8) void {
+        switch (expr.data) {
+            .object => |*obj| {
+                // Only attach if object doesn't already have module_doc
+                if (obj.module_doc == null) {
+                    obj.module_doc = doc;
+                }
+            },
+            .let => |let_expr| {
+                // Recursively check the body of the let expression
+                attachModuleDocToFinalObject(let_expr.body, doc);
+            },
+            .where_expr => |where_expr| {
+                // Recursively check the body of the where expression
+                attachModuleDocToFinalObject(where_expr.expr, doc);
+            },
+            else => {
+                // Not an object or let/where, ignore
+            },
+        }
     }
 
     fn parseLambda(self: *Parser) ParseError!*Expression {
@@ -186,7 +226,7 @@ pub const Parser = struct {
 
         if (is_let_binding) {
             const start_token = self.current; // Capture start for location
-            const doc = self.current.doc_comments;
+            const doc = start_token.doc_comments; // Doc comments are already on the token
             const pattern = try self.parsePattern();
             try self.expectToken(.equals, "in let binding");
             const value = try self.parseLambda();
@@ -252,7 +292,8 @@ pub const Parser = struct {
 
                 if (!is_binding) break;
 
-                const doc = self.current.doc_comments;
+                // Get doc comments from the first token (only for identifier patterns)
+                const doc = if (self.current.kind == .identifier) self.current.doc_comments else null;
                 const pattern = try self.parsePattern();
                 try self.expectToken(.equals, "in where binding");
                 const value = try self.parseBinary(0);
@@ -484,8 +525,105 @@ pub const Parser = struct {
         return self.parseApplication();
     }
 
-    fn parseApplication(self: *Parser) ParseError!*Expression {
+    /// Parse a primary expression followed by any tight-binding postfix operations.
+    /// This includes field access without preceding space (obj.field) and indexing (obj[key]).
+    /// Used when parsing function arguments to respect precedence: `f obj.field` should parse as `f(obj.field)`.
+    fn parsePostfix(self: *Parser) ParseError!*Expression {
         var expr = try self.parsePrimary();
+
+        while (true) {
+            if (self.current.preceded_by_newline) break;
+
+            switch (self.current.kind) {
+                .dot => {
+                    // Only consume field access if there's NO space before the dot
+                    if (self.current.preceded_by_whitespace) break;
+
+                    try self.advance();
+
+                    // Check for field projection: .{ field1, field2 }
+                    if (self.current.kind == .l_brace) {
+                        try self.advance();
+                        var field_list = std.ArrayList([]const u8){};
+                        defer field_list.deinit(self.arena);
+
+                        while (self.current.kind != .r_brace) {
+                            if (self.current.kind != .identifier) {
+                                self.recordError();
+                                return error.UnexpectedToken;
+                            }
+                            try field_list.append(self.arena, self.current.lexeme);
+                            try self.advance();
+
+                            if (self.current.kind == .comma) {
+                                try self.advance();
+                            }
+                        }
+
+                        try self.expect(.r_brace);
+
+                        const node = try self.allocateExpression();
+                        node.* = .{
+                            .data = .{ .field_projection = .{
+                                .object = expr,
+                                .fields = try field_list.toOwnedSlice(self.arena),
+                            } },
+                            .location = expr.location,
+                        };
+                        expr = node;
+                    } else if (self.current.kind == .identifier) {
+                        // Regular field access
+                        const field_name = self.current.lexeme;
+                        const field_token = self.current;
+                        try self.advance();
+
+                        const node = try self.allocateExpression();
+                        node.* = .{
+                            .data = .{ .field_access = .{
+                                .object = expr,
+                                .field = field_name,
+                                .field_location = .{
+                                    .line = field_token.line,
+                                    .column = field_token.column,
+                                    .offset = field_token.offset,
+                                    .length = field_token.lexeme.len,
+                                },
+                            } },
+                            .location = expr.location,
+                        };
+                        expr = node;
+                    } else {
+                        self.recordError();
+                        return error.UnexpectedToken;
+                    }
+                },
+                .l_bracket => {
+                    // Only consume indexing if there's NO space before the bracket
+                    if (self.current.preceded_by_whitespace) break;
+
+                    try self.advance();
+                    const index_expr = try self.parseLambda();
+                    try self.expect(.r_bracket);
+
+                    const node = try self.allocateExpression();
+                    node.* = .{
+                        .data = .{ .index = .{
+                            .object = expr,
+                            .index = index_expr,
+                        } },
+                        .location = expr.location,
+                    };
+                    expr = node;
+                },
+                else => break,
+            }
+        }
+
+        return expr;
+    }
+
+    fn parseApplication(self: *Parser) ParseError!*Expression {
+        var expr = try self.parsePostfix();
         var just_applied = false; // Track if we just parsed a function application
 
         while (true) {
@@ -522,7 +660,7 @@ pub const Parser = struct {
                     {
                         break;
                     }
-                    const argument = try self.parsePrimary();
+                    const argument = try self.parsePostfix();
                     const node = try self.allocateExpression();
                     node.* = .{
                         .data = .{ .application = .{ .function = expr, .argument = argument } },
@@ -637,7 +775,7 @@ pub const Parser = struct {
                     // Must NOT be preceded by whitespace to distinguish from function application
                     if (self.current.preceded_by_whitespace) {
                         // This is function application with array argument
-                        const argument = try self.parsePrimary();
+                        const argument = try self.parsePostfix();
                         const node = try self.allocateExpression();
                         node.* = .{
                             .data = .{ .application = .{ .function = expr, .argument = argument } },
@@ -664,7 +802,7 @@ pub const Parser = struct {
                     }
                 },
                 .number, .string, .symbol, .l_paren => {
-                    const argument = try self.parsePrimary();
+                    const argument = try self.parsePostfix();
                     const node = try self.allocateExpression();
                     node.* = .{
                         .data = .{ .application = .{ .function = expr, .argument = argument } },
@@ -1108,7 +1246,7 @@ pub const Parser = struct {
                 } else if (self.current.kind == .identifier) {
                     // Static field
                     const field_token = self.current; // Capture for location
-                    const doc = self.current.doc_comments;
+                    const doc = field_token.doc_comments; // Doc comments are already on the token
                     const static_key = self.current.lexeme;
                     try self.advance();
 
@@ -1155,9 +1293,8 @@ pub const Parser = struct {
                 return error.UnexpectedToken;
             }
 
-            // Get doc comments from the token
             const key_token = self.current; // Capture for location
-            const doc = self.current.doc_comments;
+            const doc = key_token.doc_comments; // Doc comments are already on the token
             const key = self.current.lexeme;
             try self.advance();
 

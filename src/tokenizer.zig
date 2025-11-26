@@ -363,7 +363,7 @@ pub const Tokenizer = struct {
         saw_newline: bool,
     };
 
-    fn skipWhitespace(self: *Tokenizer) WhitespaceInfo {
+    pub fn skipWhitespace(self: *Tokenizer) WhitespaceInfo {
         var saw_newline = false;
         var had_whitespace = false;
 
