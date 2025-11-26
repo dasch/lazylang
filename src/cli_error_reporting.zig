@@ -216,11 +216,22 @@ pub fn reportError(
                 }
             }
 
+            // Provide more helpful message when location is missing
+            const message = if (location == null)
+                "This operation cannot be performed on values of incompatible types.\n\nCommon causes:\n  - Trying to call a non-function value\n  - Accessing a field that doesn't exist on an object\n  - Using the wrong type in an operation (e.g., adding a string to a number)\n  - Passing arguments in the wrong order to a function"
+            else
+                "This operation cannot be performed on values of incompatible types.";
+
+            const suggestion = if (location == null)
+                "Check your code for type errors. If you believe this is a bug, please report it with a minimal example."
+            else
+                "Make sure you're using compatible types (e.g., numbers with numbers, strings with strings).";
+
             break :blk error_reporter.ErrorInfo{
                 .title = "Type mismatch",
                 .location = location,
-                .message = "This operation cannot be performed on values of incompatible types.",
-                .suggestion = "Make sure you're using compatible types (e.g., numbers with numbers, strings with strings).",
+                .message = message,
+                .suggestion = suggestion,
                 .stack_trace = stack_trace,
             };
         },
