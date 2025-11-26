@@ -198,8 +198,8 @@ fn testFormatterFixture(allocator: std.mem.Allocator, file_path: []const u8) !vo
         std.debug.print("\n\x1b[90mLegend: · = space, → = tab, ¬ = newline\x1b[0m\n", .{});
         std.debug.print("\n\x1b[33mExpected and actual output differ - see above for details\x1b[0m\n\n", .{});
 
-        // Use testing.expect to fail with a clean message, avoiding verbose Zig error output
-        try testing.expect(false);
+        // Exit immediately to avoid verbose Zig error output
+        std.process.exit(1);
     }
 }
 
