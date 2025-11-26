@@ -420,6 +420,11 @@ updated = person { age: 31, email: "alice@example.com" }
 // Object merging
 defaults = { port: 8080, host: "localhost" }
 config = defaults { port: 3000 }
+
+// Base object pattern - reduce repetition across branches
+base = { passed: 0, failed: 0, ignored: 0, results: [] }
+success = base { passed: 1, results: [{ type: "pass", data: value }] }
+failure = base { failed: 1, results: [{ type: "fail", error: msg }] }
 ```
 
 ### String Operations
@@ -467,6 +472,21 @@ formatted = when result matches
 5. **Avoid deep nesting**: Use `let` bindings to flatten code
 6. **Use Result type**: For operations that can fail
 7. **Document with comments**: Use `//` for inline, `///` for doc comments
+8. **Extract base objects**: When branches return similar objects, extract a base object and merge specific fields
+   ```
+   // Instead of repeating full objects:
+   if condition then
+     { passed: 1, failed: 0, ignored: 0, results: [item1] }
+   else
+     { passed: 0, failed: 1, ignored: 0, results: [item2] }
+
+   // Extract base and merge:
+   base = { passed: 0, failed: 0, ignored: 0, results: [] }
+   if condition then
+     base { passed: 1, results: [item1] }
+   else
+     base { failed: 1, results: [item2] }
+   ```
 
 ## Example: Complete Module
 
