@@ -37,6 +37,23 @@ describe #Array [
       mustEq false (Array.isEmpty [1, 2, 3])
   ]
 
+  describe #concat [
+    it "concatenates multiple arrays" do
+      mustEq [1, 2, 3, 4] (Array.concat [[1, 2], [3, 4]])
+
+    it "handles arrays with different lengths" do
+      mustEq [1, 2, 3] (Array.concat [[], [1], [2, 3]])
+
+    it "returns *empty* array for empty input" do
+      mustEq [] (Array.concat [])
+
+    it "handles single array" do
+      mustEq [1, 2, 3] (Array.concat [[1, 2, 3]])
+
+    it "handles nested empty arrays" do
+      mustEq [] (Array.concat [[], [], []])
+  ]
+
   describe #slice [
     it "extracts a middle slice" do
       mustEq [1, 2] (Array.slice 1 3 [0, 1, 2, 3, 4])

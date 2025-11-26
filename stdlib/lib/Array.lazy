@@ -2,7 +2,7 @@
 ///
 /// This module includes functions for common array operations such as:
 /// - **Querying**: [length], [get], [isEmpty]
-/// - **Transforming**: [map], [flatMap], [filter], [skip], [reverse], [slice], [sort], [sortBy], [uniq], [groupBy]
+/// - **Transforming**: [map], [flatMap], [filter], [skip], [reverse], [concat], [slice], [sort], [sortBy], [uniq], [groupBy]
 /// - **Reducing**: [fold], [all], [any], [none]
 ///
 /// ## Examples
@@ -132,6 +132,20 @@ Tuple = import "Tuple"
   /// Array.reverse []  //=> []
   /// ```
   reverse: arr -> __array_reverse arr
+
+  /// Concatenates an array of arrays into a single array.
+  /// Also known as "flatten" in some languages.
+  ///
+  /// **Parameter:**
+  /// - `arrays`: Array of arrays to concatenate
+  ///
+  /// **Example:**
+  /// ```
+  /// Array.concat [[1, 2], [3, 4]]  //=> [1, 2, 3, 4]
+  /// Array.concat [[], [1], [2, 3]]  //=> [1, 2, 3]
+  /// Array.concat []  //=> []
+  /// ```
+  concat: arrays -> [x for arr in arrays for x in arr]
 
   /// Returns an empty array.
   ///
