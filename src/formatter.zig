@@ -102,9 +102,19 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
     defer brace_stack.deinit(allocator);
     var do_indent_level: usize = 0; // Track additional indent from `do`
     var just_saw_equals_or_colon = false; // Track if we just saw = or : for continuation indent
+    var skip_until_index: ?usize = null; // Track tokens to skip (for import sorting)
 
     for (tokens.items, 0..) |info, i| {
         const token = info.token;
+
+        // Skip tokens if we're in the middle of a pattern we've already processed
+        if (skip_until_index) |skip_idx| {
+            if (i <= skip_idx) {
+                continue;
+            } else {
+                skip_until_index = null;
+            }
+        }
         // For single-line objects/brackets, handle special spacing before popping stack
         if (token.kind == .r_brace and brace_stack.items.len > 0) {
             const brace_info = brace_stack.items[brace_stack.items.len - 1];
@@ -618,6 +628,79 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
             at_line_start = false;
         } else if (needs_space_before) {
             try output.appendSlice(allocator, " ");
+        }
+
+        // Special case: sort identifiers in import destructuring
+        // Pattern: { b, a } = import "Foo" should become { a, b } = import "Foo"
+        if (token.kind == .l_brace) {
+            // Check if this is an import destructuring pattern
+            var is_import_pattern = false;
+            var closing_brace_idx: ?usize = null;
+
+            // Find the matching closing brace
+            var depth: i32 = 1;
+            var j = i + 1;
+            while (j < tokens.items.len and depth > 0) : (j += 1) {
+                const t = tokens.items[j].token;
+                if (t.kind == .l_brace) {
+                    depth += 1;
+                } else if (t.kind == .r_brace) {
+                    depth -= 1;
+                    if (depth == 0) {
+                        closing_brace_idx = j;
+                        break;
+                    }
+                }
+            }
+
+            // Check if followed by `= import`
+            if (closing_brace_idx) |close_idx| {
+                if (close_idx + 2 < tokens.items.len) {
+                    const tok_after_brace = tokens.items[close_idx + 1].token;
+                    const tok_after_equals = tokens.items[close_idx + 2].token;
+                    if (tok_after_brace.kind == .equals and
+                        tok_after_equals.kind == .identifier and
+                        std.mem.eql(u8, tok_after_equals.lexeme, "import")) {
+                        is_import_pattern = true;
+                    }
+                }
+            }
+
+            if (is_import_pattern and closing_brace_idx != null) {
+                // Collect all identifiers inside the braces
+                var identifiers = std.ArrayList([]const u8){};
+                defer identifiers.deinit(allocator);
+
+                j = i + 1;
+                while (j < closing_brace_idx.?) : (j += 1) {
+                    const t = tokens.items[j].token;
+                    if (t.kind == .identifier) {
+                        try identifiers.append(allocator, t.lexeme);
+                    }
+                }
+
+                // Sort identifiers alphabetically
+                std.mem.sort([]const u8, identifiers.items, {}, struct {
+                    fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+                        return std.mem.lessThan(u8, a, b);
+                    }
+                }.lessThan);
+
+                // Output the sorted import destructuring
+                try output.appendSlice(allocator, "{ ");
+                for (identifiers.items, 0..) |name, idx| {
+                    if (idx > 0) {
+                        try output.appendSlice(allocator, ", ");
+                    }
+                    try output.appendSlice(allocator, name);
+                }
+                try output.appendSlice(allocator, " }");
+
+                // Skip all tokens until after the closing brace
+                skip_until_index = closing_brace_idx.?;
+                prev_token = .r_brace;
+                continue;
+            }
         }
 
         // For single-line objects, add space after opening brace

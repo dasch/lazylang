@@ -1,0 +1,11 @@
+// { a, b, c } = import "Foo"
+{ c, b, a } = import "Foo"
+
+// { describe, it, must } = import "Spec"
+{ must, describe, it } = import "Spec"
+
+// { z } = import "Single"
+{ z } = import "Single"
+
+// { x, y } = import "Multi"
+{y,x}=import "Multi"

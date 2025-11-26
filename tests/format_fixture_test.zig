@@ -379,6 +379,10 @@ test "formatter: multiple fields with continuations" {
     try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/multiple_fields_with_continuations.lazy");
 }
 
+test "formatter: import sorting" {
+    try testFormatterFixture(testing.allocator, "tests/fixtures/formatter/import_sorting.lazy");
+}
+
 // ============================================================================
 // STDLIB FORMATTING TEST
 // Ensure stdlib files are properly formatted
@@ -478,6 +482,7 @@ test "regression: all formatter fixtures produce correct output" {
         "tests/fixtures/formatter/array_indexing.lazy",
         "tests/fixtures/formatter/nested_object_continuation.lazy",
         "tests/fixtures/formatter/multiple_fields_with_continuations.lazy",
+        "tests/fixtures/formatter/import_sorting.lazy",
         // TODO: Re-enable when doc comment blank line handling is fixed
         // "tests/fixtures/formatter/doc_comments.lazy",
     };
