@@ -342,7 +342,11 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
             }
 
             // Extract regular comments from the gap before this token
-            var comments = std.ArrayList([]const u8){};
+            const CommentLine = struct {
+                text: []const u8,
+                blank_line_after: bool,
+            };
+            var comments = std.ArrayList(CommentLine){};
             defer comments.deinit(allocator);
 
             // Get the text between previous token (or start of file) and current token
@@ -373,7 +377,18 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                             comment_content_end += 1;
                         }
                         const comment_text = between[comment_content_start..comment_content_end];
-                        try comments.append(allocator, comment_text);
+
+                        // Check if there's a blank line after this comment
+                        var check_idx = comment_content_end;
+                        if (check_idx < between.len and between[check_idx] == '\n') {
+                            check_idx += 1;
+                        }
+                        const blank_line_after = check_idx < between.len and between[check_idx] == '\n';
+
+                        try comments.append(allocator, CommentLine{
+                            .text = comment_text,
+                            .blank_line_after = blank_line_after,
+                        });
 
                         search_idx = comment_content_end;
                     } else {
@@ -418,18 +433,25 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                 }
             }
 
-            // Determine newlines before and after comments
+            // Determine newlines before comments block
+            // Don't add extra newlines - comments preserve their blank lines internally
             var newlines_before_comments: usize = 0;
-            var newlines_after_comments: usize = 0;
 
-            if (i == 0 and comments.items.len > 0) {
-                // For leading comments, don't add newlines before, but preserve after
-                newlines_before_comments = 0;
-                newlines_after_comments = if (newline_count > comments.items.len) newline_count - comments.items.len else 0;
-            } else {
-                // For comments after a token, distribute newlines before comments
-                newlines_before_comments = if (newline_count > comments.items.len) newline_count - comments.items.len else 0;
-                newlines_after_comments = 0;
+            if (i > 0 and comments.items.len > 0) {
+                // For comments after a token, check if there should be a blank line before the block
+                // Count blank lines that appear before the first comment
+                var blank_lines_before: usize = 0;
+                const total_newlines = countNewlines(between);
+                // Count blank lines consumed by comments (each comment has 1 newline, plus any blank_line_after)
+                var comment_newlines: usize = 0;
+                for (comments.items) |comment_line| {
+                    comment_newlines += 1;
+                    if (comment_line.blank_line_after) comment_newlines += 1;
+                }
+                if (total_newlines > comment_newlines) {
+                    blank_lines_before = total_newlines - comment_newlines;
+                }
+                newlines_before_comments = blank_lines_before;
             }
 
             // Output newlines before comments
@@ -437,15 +459,15 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                 try output.appendSlice(allocator, "\n");
             }
 
-            // Output comments with proper indentation
-            for (comments.items) |comment| {
+            // Output comments with proper indentation and blank lines between them
+            for (comments.items) |comment_line| {
                 const total_indent = indent_level + do_indent_level;
                 for (0..total_indent) |_| {
                     try output.appendSlice(allocator, "  ");
                 }
 
                 try output.appendSlice(allocator, "//");
-                const trimmed = std.mem.trimRight(u8, comment, " \t");
+                const trimmed = std.mem.trimRight(u8, comment_line.text, " \t");
                 if (trimmed.len > 0 and trimmed[0] == ' ') {
                     try output.appendSlice(allocator, trimmed);
                 } else if (trimmed.len > 0) {
@@ -453,11 +475,21 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                     try output.appendSlice(allocator, trimmed);
                 }
                 try output.appendSlice(allocator, "\n");
+
+                // Add blank line after comment if it had one in the source
+                if (comment_line.blank_line_after) {
+                    try output.appendSlice(allocator, "\n");
+                }
             }
 
-            // Output newlines after comments
-            for (0..newlines_after_comments) |_| {
-                try output.appendSlice(allocator, "\n");
+            // If no comments were output, we still need to output newlines
+            if (comments.items.len == 0) {
+                // Output newlines, limiting excessive blank lines to 2
+                var lines_to_output = newline_count;
+                if (lines_to_output > 3) lines_to_output = 3;
+                for (0..lines_to_output) |_| {
+                    try output.appendSlice(allocator, "\n");
+                }
             }
 
             at_line_start = true;
