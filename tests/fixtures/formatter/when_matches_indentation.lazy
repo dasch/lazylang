@@ -7,7 +7,7 @@ foo = x ->
     #ok then 1
     #err then 2;
 
-// x = 42;
+// x = 42
 // result = when x matches
 //   42 then
 //     y = 3
@@ -15,10 +15,10 @@ foo = x ->
 //
 //   13 then
 //     z = 4
-//     x + z;
+//     x + z
 //
 // { foo: foo #ok, result }
-x = 42;
+x = 42
 result = when x matches
   42 then
     y = 3
@@ -26,6 +26,6 @@ result = when x matches
 
   13 then
     z = 4
-    x + z;
+    x + z
 
 { foo: foo #ok, result }
