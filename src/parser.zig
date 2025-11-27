@@ -785,6 +785,7 @@ pub const Parser = struct {
 
                     var branches = std.ArrayListUnmanaged(MatchBranch){};
                     var otherwise_expr: ?*Expression = null;
+                    var branch_indent: ?usize = null; // Track indentation of first branch
 
                     while (true) {
                         // Check for "otherwise"
@@ -797,6 +798,19 @@ pub const Parser = struct {
                         // Check if we're done (EOF or semicolon)
                         if (self.current.kind == .eof or self.current.kind == .semicolon) {
                             break;
+                        }
+
+                        // Check for dedentation: if we've seen branches and current token is on a new line
+                        // with less indentation than the first branch, we're done
+                        if (branch_indent) |indent| {
+                            if (self.current.preceded_by_newline and self.current.column < indent) {
+                                break;
+                            }
+                        }
+
+                        // Capture indentation of first branch
+                        if (branch_indent == null and self.current.preceded_by_newline) {
+                            branch_indent = self.current.column;
                         }
 
                         // Parse pattern
