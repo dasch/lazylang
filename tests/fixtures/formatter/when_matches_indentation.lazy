@@ -15,6 +15,7 @@ foo = x ->
 //
 //   13 then
 //     z = 4
+//
 //     x + z
 //
 // { foo: foo #ok, result }
@@ -26,6 +27,7 @@ result = when x matches
 
   13 then
     z = 4
+
     x + z
 
 { foo: foo #ok, result }
