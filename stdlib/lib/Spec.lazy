@@ -304,7 +304,8 @@ Result = import "Result"
     // Return a function that takes a seed and runs the property test
     runPropertyTest = seed ->
       // Use override if provided, otherwise use the passed seed
-      baseSeed = if seedOverride == null then
+      baseSeed =
+      if seedOverride == null then
         Random.seed seed
       else
         Random.seed seedOverride
