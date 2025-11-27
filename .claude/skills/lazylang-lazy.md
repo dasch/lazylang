@@ -100,6 +100,18 @@ person = {
 coords = obj.{ x, y, z }
 ```
 
+**Field shorthand**: When field name matches variable name, omit the value
+```
+// Instead of verbose:
+person = { name: name, age: age, email: email }
+
+// Use shorthand:
+person = { name, age, email }
+
+// Mix with explicit values:
+result = { type: "success", data, timestamp }
+```
+
 ### Arrays
 
 **Single-line**: No space inside brackets
@@ -187,6 +199,55 @@ result = (
 ```
 
 Note: Semicolons in source are removed by formatter in multi-line parens
+
+### Pattern Matching
+
+**Basic syntax**: Use `when expr matches` for pattern matching
+```
+status = when result matches
+  (#ok, value) then value
+  (#error, msg) then 0
+  otherwise null
+```
+
+**Multiple patterns**: Each pattern uses `pattern then expression`
+```
+itemType = "describe"
+action = when itemType matches
+  "describe" then "run suite"
+  "it" then "run test"
+  "xit" then "skip test"
+  otherwise "unknown"
+```
+
+**Single-expression arms**: No parentheses needed
+```
+classify = when x matches
+  0 then "zero"
+  1 then "one"
+  otherwise "many"
+```
+
+**Multi-expression arms**: MUST use parentheses to group expressions
+```
+process = when itemType matches
+  "describe" then (
+    description = getDescription item;
+    children = getChildren item;
+    processChildren description children
+  )
+  "it" then (
+    test = getTest item;
+    runTest test
+  )
+  otherwise { result: "unknown" }
+```
+
+**Key points**:
+- Use `otherwise` for default case (not `_` or `else`)
+- Parentheses required for multi-line/multi-expression arms
+- Inside parentheses, use semicolons between expressions (formatter keeps them)
+- Without parentheses, parser expects single expression
 
 ## Do Blocks
 
@@ -371,6 +432,11 @@ updated = person { age: 31, email: "alice@example.com" }
 // Object merging
 defaults = { port: 8080, host: "localhost" }
 config = defaults { port: 3000 }
+
+// Base object pattern - reduce repetition across branches
+base = { passed: 0, failed: 0, ignored: 0, results: [] }
+success = base { passed: 1, results: [{ type: "pass", data: value }] }
+failure = base { failed: 1, results: [{ type: "fail", error: msg }] }
 ```
 
 ### String Operations
@@ -394,11 +460,11 @@ result = (#ok, value)
 // Error
 result = (#error, "Something went wrong")
 
-// Pattern matching
-formatted =
-  when result matches
-    (#ok, v) then "Success: " ++ String.show v
-    (#error, msg) then "Error: " ++ msg
+// Pattern matching (see "Pattern Matching" section for details)
+formatted = when result matches
+  (#ok, v) then "Success: " ++ String.show v
+  (#error, msg) then "Error: " ++ msg
+  otherwise "Unknown"
 ```
 
 ## Common Pitfalls
@@ -418,6 +484,28 @@ formatted =
 5. **Avoid deep nesting**: Use `let` bindings to flatten code
 6. **Use Result type**: For operations that can fail
 7. **Document with comments**: Use `//` for inline, `///` for doc comments
+8. **Extract base objects**: When branches return similar objects, extract a base object and merge specific fields
+   ```
+   // Instead of repeating full objects:
+   if condition then
+     { passed: 1, failed: 0, ignored: 0, results: [item1] }
+   else
+     { passed: 0, failed: 1, ignored: 0, results: [item2] }
+
+   // Extract base and merge:
+   base = { passed: 0, failed: 0, ignored: 0, results: [] }
+   if condition then
+     base { passed: 1, results: [item1] }
+   else
+     base { failed: 1, results: [item2] }
+   ```
+9. **Use field shorthand**: When field name matches variable name, use shorthand syntax
+   ```
+   // Instead of: { name: name, age: age }
+   // Write: { name, age }
+   person = { name, age, email }
+   result = { type: "success", data, timestamp }
+   ```
 
 ## Example: Complete Module
 

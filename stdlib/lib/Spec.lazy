@@ -250,31 +250,35 @@ Result = import "Result"
   /// ```
   forall: generator -> description -> testFn ->
     trials = 100
-    baseSeed = Random.seed 42
 
-    // Generate all trial test values
-    generateValues = n -> seed -> acc ->
-      if n <= 0 then
-        Array.reverse acc
-      else
-        (value, nextSeed) = generator seed
-        generateValues (n - 1) nextSeed [...acc, value]
+    // Return a function that takes a seed and runs the property test
+    runPropertyTest = seed ->
+      baseSeed = Random.seed seed
 
-    testValues = generateValues trials baseSeed []
+      // Generate all trial test values
+      generateValues = n -> s -> acc ->
+        if n <= 0 then
+          Array.reverse acc
+        else
+          (value, nextSeed) = generator s
+          generateValues (n - 1) nextSeed [...acc, value]
 
-    // Stop on first failure, otherwise continue testing
-    stopOnFailure = result -> value ->
-      if result.type == "fail" then
-        result
-      else
-        testFn value
+      testValues = generateValues trials baseSeed []
 
-    runTest = Array.fold stopOnFailure { type: "pass" } testValues
+      // Stop on first failure, otherwise continue testing
+      stopOnFailure = result -> value ->
+        if result.type == "fail" then
+          result
+        else
+          testFn value
+
+      Array.fold stopOnFailure { type: "pass" } testValues
 
     {
-      type: "it"
+      type: "property"
       description: description
-      test: runTest
+      test: runPropertyTest
+      trials: trials
     }
 
   /// Runs property-based tests with custom configuration.
@@ -294,32 +298,125 @@ Result = import "Result"
   forallWith: options -> generator -> description -> testFn ->
     trials = Object.get "trials" options
       \ Result.orDefault 100
-    baseSeed = Object.get "seed" options
-      \ Result.map Random.seed
-      \ Result.orDefault (Random.seed 42)
+    seedOverride = Object.get "seed" options
+      \ Result.orDefault null
 
-    // Generate all trial test values
-    generateValues = n -> seed -> acc ->
-      if n <= 0 then
-        Array.reverse acc
+    // Return a function that takes a seed and runs the property test
+    runPropertyTest = seed ->
+      // Use override if provided, otherwise use the passed seed
+      baseSeed =
+      if seedOverride == null then
+        Random.seed seed
       else
-        (value, nextSeed) = generator seed
-        generateValues (n - 1) nextSeed [...acc, value]
+        Random.seed seedOverride
 
-    testValues = generateValues trials baseSeed []
+      // Generate all trial test values
+      generateValues = n -> s -> acc ->
+        if n <= 0 then
+          Array.reverse acc
+        else
+          (value, nextSeed) = generator s
+          generateValues (n - 1) nextSeed [...acc, value]
 
-    // Stop on first failure, otherwise continue testing
-    stopOnFailure = result -> value ->
-      if result.type == "fail" then
-        result
-      else
-        testFn value
+      testValues = generateValues trials baseSeed []
 
-    runTest = Array.fold stopOnFailure { type: "pass" } testValues
+      // Stop on first failure, otherwise continue testing
+      stopOnFailure = result -> value ->
+        if result.type == "fail" then
+          result
+        else
+          testFn value
+
+      Array.fold stopOnFailure { type: "pass" } testValues
 
     {
-      type: "it"
+      type: "property"
       description: description
-      test: runTest
+      test: runPropertyTest
+      trials: trials
     }
+
+  /// Runs a spec suite with a given seed and returns a structured report.
+  ///
+  /// **Parameters:**
+  /// - `config`: Object with { suite, seed } where suite is the test structure and seed is an integer
+  ///
+  /// **Returns:**
+  /// An object with { passed, failed, ignored, results } where results is an array of test outcomes
+  ///
+  /// **Example:**
+  /// ```
+  /// suite = describe "Math" [
+  ///   it "adds" do mustEq 5 (2 + 3)
+  /// ]
+  /// report = run { suite: suite, seed: 42 }
+  /// ```
+  run: config ->
+    suite = config.suite
+    seed = config.seed
+
+    runItem = item -> s -> path ->
+      itemType = Object.get "type" item \ Result.orDefault "unknown"
+      base = { passed: 0, failed: 0, ignored: 0, results: [] }
+
+      when itemType matches
+        "describe" then (
+          description = Object.get "description" item \ Result.orDefault "unknown"
+          children = Object.get "children" item \ Result.orDefault []
+          newPath = [...path, description]
+
+          // Recursively process children
+          processChildren = idx -> acc ->
+            if idx >= Array.length children then
+              acc
+            else
+              child = Array.get idx children \ Result.orDefault null
+              childResult = runItem child s newPath
+              newAcc = {
+                passed: acc.passed + childResult.passed
+                failed: acc.failed + childResult.failed
+                ignored: acc.ignored + childResult.ignored
+                results: [...acc.results, ...childResult.results]
+              }
+              processChildren (idx + 1) newAcc
+
+          processChildren 0 base
+        )
+
+        "it" then (
+          description = Object.get "description" item \ Result.orDefault "unknown"
+          testResult = Object.get "test" item \ Result.orDefault { type: "pass" }
+          resultType = Object.get "type" testResult \ Result.orDefault "unknown"
+          details = Object.get "details" testResult \ Result.orDefault null
+
+          if resultType == "pass" then
+            base { passed: 1, results: [{ type: "pass", path, description }] }
+          else if resultType == "fail" then
+            base { failed: 1, results: [{ type: "fail", path, description, details }] }
+          else
+            base { passed: 1, results: [{ type: "pass", path, description }] }
+        )
+
+        "xit" then (
+          description = Object.get "description" item \ Result.orDefault "unknown"
+          base { ignored: 1, results: [{ type: "ignored", path, description }] }
+        )
+
+        "property" then (
+          description = Object.get "description" item \ Result.orDefault "unknown"
+          testFn = Object.get "test" item \ Result.orDefault (x -> { type: "pass" })
+          result = testFn s
+          resultType = Object.get "type" result \ Result.orDefault "unknown"
+          details = Object.get "details" result \ Result.orDefault null
+
+          if resultType == "pass" then
+            base { passed: 1, results: [{ type: "pass", path, description }] }
+          else
+            base { failed: 1, results: [{ type: "fail", path, description, details }] }
+        )
+
+        otherwise
+        base { failed: 1, results: [{ type: "error", path, description: "Unknown type" }] }
+
+    runItem suite seed []
 }

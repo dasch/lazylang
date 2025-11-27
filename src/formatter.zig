@@ -331,10 +331,19 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
         // Handle newlines
         if (token.preceded_by_newline) {
             // Special handling for `then` keyword - move it to same line as condition
-            // `else` stays on its own line
+            // `else if` stays on same line, but standalone `else` gets its own line
             var suppress_newline = false;
             if (token.kind == .identifier and std.mem.eql(u8, token.lexeme, "then")) {
                 suppress_newline = true;
+            }
+
+            // Check if current token is `if` and previous was `else` - keep on same line
+            if (token.kind == .identifier and std.mem.eql(u8, token.lexeme, "if") and
+                prev_token != null and prev_token.? == .identifier and i > 0) {
+                const prev_tok = tokens.items[i - 1].token;
+                if (std.mem.eql(u8, prev_tok.lexeme, "else")) {
+                    suppress_newline = true;
+                }
             }
 
             // For `else`, dedent back to the level before `then`
@@ -440,9 +449,14 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                     (std.mem.eql(u8, prev_tok.lexeme, "do") or
                      std.mem.eql(u8, prev_tok.lexeme, "where") or
                      std.mem.eql(u8, prev_tok.lexeme, "matches") or
-                     std.mem.eql(u8, prev_tok.lexeme, "then") or
-                     std.mem.eql(u8, prev_tok.lexeme, "else"))) {
+                     std.mem.eql(u8, prev_tok.lexeme, "then"))) {
                     do_indent_level += 1;
+                } else if (prev_tok.kind == .identifier and std.mem.eql(u8, prev_tok.lexeme, "else")) {
+                    // Only indent after `else` if it's not followed by `if` (else if pattern)
+                    const is_else_if = token.kind == .identifier and std.mem.eql(u8, token.lexeme, "if");
+                    if (!is_else_if) {
+                        do_indent_level += 1;
+                    }
                 }
             }
 
@@ -901,11 +915,14 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
         }
 
         // After `else`, if it was on its own line, force newline for the else branch
+        // UNLESS it's followed by `if` (else if pattern)
         if (token.kind == .identifier and std.mem.eql(u8, token.lexeme, "else")) {
             // Check if this else was preceded by a newline (multi-line mode)
             if (token.preceded_by_newline and i + 1 < tokens.items.len) {
                 const next_token = tokens.items[i + 1].token;
-                if (!next_token.preceded_by_newline) {
+                // Check if next token is `if` (else if pattern)
+                const is_else_if = next_token.kind == .identifier and std.mem.eql(u8, next_token.lexeme, "if");
+                if (!next_token.preceded_by_newline and !is_else_if) {
                     try output.appendSlice(allocator, "\n");
                     at_line_start = true;
                     // Increment indent for the else branch body
@@ -1036,8 +1053,8 @@ fn needsSpaceBefore(token_before_prev: ?evaluator.TokenKind, prev: evaluator.Tok
         return true;
     }
 
-    // Space before opening brace after identifier/string/symbol/r_paren/r_bracket
-    if (current == .l_brace and (prev == .identifier or prev == .string or prev == .symbol or prev == .r_paren or prev == .r_bracket)) {
+    // Space before opening brace after identifier/number/string/symbol/r_paren/r_bracket
+    if (current == .l_brace and (prev == .identifier or prev == .number or prev == .string or prev == .symbol or prev == .r_paren or prev == .r_bracket)) {
         return true;
     }
 

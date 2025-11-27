@@ -25,10 +25,23 @@ pub fn runSpec(
     // Parse flags and positional arguments
     var verbose = false;
     var path_arg: ?[]const u8 = null;
+    var seed: ?i64 = null;
 
-    for (args) |arg| {
+    var i: usize = 0;
+    while (i < args.len) : (i += 1) {
+        const arg = args[i];
         if (std.mem.eql(u8, arg, "-v") or std.mem.eql(u8, arg, "--verbose")) {
             verbose = true;
+        } else if (std.mem.eql(u8, arg, "--seed")) {
+            if (i + 1 >= args.len) {
+                try stderr.print("error: --seed requires a value\n", .{});
+                return .{ .exit_code = 1 };
+            }
+            i += 1;
+            seed = std.fmt.parseInt(i64, args[i], 10) catch {
+                try stderr.print("error: invalid seed value '{s}'\n", .{args[i]});
+                return .{ .exit_code = 1 };
+            };
         } else if (std.mem.startsWith(u8, arg, "-")) {
             try stderr.print("error: unknown flag '{s}'\n", .{arg});
             return .{ .exit_code = 1 };
@@ -41,9 +54,15 @@ pub fn runSpec(
         }
     }
 
+    // Generate seed if not provided
+    const actual_seed = seed orelse blk: {
+        const timestamp = std.time.milliTimestamp();
+        break :blk @as(i64, @intCast(@mod(timestamp, std.math.maxInt(i32))));
+    };
+
     // If no path argument, run all specs in spec/ directory
     if (path_arg == null) {
-        const result = spec.runAllSpecs(allocator, "spec", verbose, stdout) catch |err| {
+        const result = spec.runAllSpecs(allocator, "spec", verbose, actual_seed, stdout) catch |err| {
             try stderr.print("error: failed to run specs: {}\n", .{err});
             return .{ .exit_code = 1 };
         };
@@ -80,14 +99,14 @@ pub fn runSpec(
             return .{ .exit_code = 1 };
         }
         // Run all specs in the directory recursively
-        const result = spec.runAllSpecs(allocator, path, verbose, stdout) catch |err| {
+        const result = spec.runAllSpecs(allocator, path, verbose, actual_seed, stdout) catch |err| {
             try stderr.print("error: failed to run specs: {}\n", .{err});
             return .{ .exit_code = 1 };
         };
         return .{ .exit_code = result.exitCode() };
     } else {
         // Run the specific spec file
-        const result = spec.runSpec(allocator, path, line_number, verbose, stdout) catch |err| {
+        const result = spec.runSpec(allocator, path, line_number, verbose, actual_seed, stdout) catch |err| {
             try stderr.print("error: failed to run spec: {}\n", .{err});
             return .{ .exit_code = 1 };
         };

@@ -1,4 +1,5 @@
 { describe, it, mustEq } = import "Spec"
+Result = import "Result"
 
 describe #Result [
   describe #ok [

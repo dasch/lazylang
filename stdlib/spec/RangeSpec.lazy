@@ -1,5 +1,6 @@
 { describe, it, mustEq } = import "Spec"
 Array = import "Array"
+Range = import "Range"
 
 describe #Range [
   describe #inclusive [
