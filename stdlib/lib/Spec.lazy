@@ -389,16 +389,16 @@ Result = import "Result"
           details = Object.get "details" testResult \ Result.orDefault null
 
           if resultType == "pass" then
-            base { passed: 1, results: [{ type: "pass", path: path, description: description }] }
+            base { passed: 1, results: [{ type: "pass", path, description }] }
           else if resultType == "fail" then
-            base { failed: 1, results: [{ type: "fail", path: path, description: description, details: details }] }
+            base { failed: 1, results: [{ type: "fail", path, description, details }] }
           else
-            base { passed: 1, results: [{ type: "pass", path: path, description: description }] }
+            base { passed: 1, results: [{ type: "pass", path, description }] }
         )
 
         "xit" then (
           description = Object.get "description" item \ Result.orDefault "unknown"
-          base { ignored: 1, results: [{ type: "ignored", path: path, description: description }] }
+          base { ignored: 1, results: [{ type: "ignored", path, description }] }
         )
 
         "property" then (
@@ -409,13 +409,13 @@ Result = import "Result"
           details = Object.get "details" result \ Result.orDefault null
 
           if resultType == "pass" then
-            base { passed: 1, results: [{ type: "pass", path: path, description: description }] }
+            base { passed: 1, results: [{ type: "pass", path, description }] }
           else
-            base { failed: 1, results: [{ type: "fail", path: path, description: description, details: details }] }
+            base { failed: 1, results: [{ type: "fail", path, description, details }] }
         )
 
         otherwise
-        base { failed: 1, results: [{ type: "error", path: path, description: "Unknown type" }] }
+        base { failed: 1, results: [{ type: "error", path, description: "Unknown type" }] }
 
     runItem suite seed []
 }

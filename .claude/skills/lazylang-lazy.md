@@ -100,6 +100,18 @@ person = {
 coords = obj.{ x, y, z }
 ```
 
+**Field shorthand**: When field name matches variable name, omit the value
+```
+// Instead of verbose:
+person = { name: name, age: age, email: email }
+
+// Use shorthand:
+person = { name, age, email }
+
+// Mix with explicit values:
+result = { type: "success", data, timestamp }
+```
+
 ### Arrays
 
 **Single-line**: No space inside brackets
@@ -486,6 +498,13 @@ formatted = when result matches
      base { passed: 1, results: [item1] }
    else
      base { failed: 1, results: [item2] }
+   ```
+9. **Use field shorthand**: When field name matches variable name, use shorthand syntax
+   ```
+   // Instead of: { name: name, age: age }
+   // Write: { name, age }
+   person = { name, age, email }
+   result = { type: "success", data, timestamp }
    ```
 
 ## Example: Complete Module
