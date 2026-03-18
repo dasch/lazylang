@@ -21,6 +21,7 @@ const error_context = @import("error_context.zig");
 pub const TokenizerError = error{
     UnexpectedCharacter,
     UnterminatedString,
+    OutOfMemory,
 };
 
 pub const Tokenizer = struct {
@@ -445,7 +446,7 @@ pub const Tokenizer = struct {
             if (lines_iter2.peek() == null and line.len == 0) break;
 
             if (!first) {
-                result.append(self.arena, '\n') catch return error.UnexpectedCharacter;
+                result.append(self.arena, '\n') catch return error.OutOfMemory;
             }
             first = false;
 
@@ -455,10 +456,10 @@ pub const Tokenizer = struct {
             }
 
             const stripped = if (min_indent <= line.len) line[min_indent..] else line;
-            result.appendSlice(self.arena, stripped) catch return error.UnexpectedCharacter;
+            result.appendSlice(self.arena, stripped) catch return error.OutOfMemory;
         }
 
-        const content = result.toOwnedSlice(self.arena) catch return error.UnexpectedCharacter;
+        const content = result.toOwnedSlice(self.arena) catch return error.OutOfMemory;
 
         return ast.Token{
             .kind = .string,
