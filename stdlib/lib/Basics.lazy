@@ -184,4 +184,21 @@
   ///     crash "Input must be a string"
   /// ```
   crash: crash
+
+  /// Converts a value to its string representation.
+  ///
+  /// Supports integers, floats, booleans, null, symbols, and strings.
+  /// Strings are returned unchanged.
+  ///
+  /// **Parameter:**
+  /// - `value`: The value to convert
+  ///
+  /// **Example:**
+  /// ```
+  /// toString 42  //=> "42"
+  /// toString true  //=> "true"
+  /// toString #ok  //=> "#ok"
+  /// "port: " + toString 8080  //=> "port: 8080"
+  /// ```
+  toString: value -> __to_string value
 }

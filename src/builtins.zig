@@ -1098,6 +1098,37 @@ pub fn crash(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!
     return error.UserCrash;
 }
 
+pub fn toString(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    const value = args[0];
+    const result = switch (value) {
+        .string => |s| s,
+        .integer => |i| try std.fmt.allocPrint(arena, "{d}", .{i}),
+        .float => |f| blk: {
+            // Format float, stripping trailing zeros
+            const raw = try std.fmt.allocPrint(arena, "{d}", .{f});
+            // Check if it has a decimal point
+            if (std.mem.indexOf(u8, raw, ".")) |dot_idx| {
+                var end = raw.len;
+                while (end > dot_idx + 1 and raw[end - 1] == '0') {
+                    end -= 1;
+                }
+                // Don't strip the digit right after the dot
+                if (end == dot_idx + 1) end = dot_idx + 2;
+                break :blk raw[0..end];
+            }
+            break :blk raw;
+        },
+        .boolean => |b| if (b) "true" else "false",
+        .null_value => "null",
+        .symbol => |s| s,
+        else => return error.TypeMismatch,
+    };
+
+    return eval.Value{ .string = result };
+}
+
 // Utility to create a curried native function wrapper
 // This allows native functions to be partially applied like regular functions
 pub fn curry2(comptime impl: fn (std.mem.Allocator, eval.Value, eval.Value) eval.EvalError!eval.Value) eval.NativeFn {

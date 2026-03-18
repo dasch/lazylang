@@ -94,4 +94,30 @@ describe #Basics [
     it "is a function" do
       mustEq true (isFunction crash)
   ]
+
+  describe #toString [
+    it "converts an integer to a string" do
+      mustEq "42" (toString 42)
+
+    it "converts a negative integer to a string" do
+      mustEq "-5" (toString (0 - 5))
+
+    it "converts a float to a string" do
+      mustEq "3.14" (toString 3.14)
+
+    it "converts `true` to a string" do
+      mustEq "true" (toString true)
+
+    it "converts `false` to a string" do
+      mustEq "false" (toString false)
+
+    it "converts `null` to a string" do
+      mustEq "null" (toString null)
+
+    it "returns a string unchanged" do
+      mustEq "hello" (toString "hello")
+
+    it "converts a symbol to a string" do
+      mustEq "#ok" (toString #ok)
+  ]
 ]

@@ -90,6 +90,9 @@ pub fn createBuiltinEnvironment(arena: std.mem.Allocator) !?*Environment {
     // Error handling builtins
     env = try addBuiltin(arena, env, "crash", builtins.crash);
 
+    // Conversion builtins
+    env = try addBuiltin(arena, env, "__to_string", builtins.toString);
+
     // YAML builtins
     env = try addBuiltin(arena, env, "__yaml_parse", builtins.yamlParse);
     env = try addBuiltin(arena, env, "__yaml_encode", builtins.yamlEncode);
