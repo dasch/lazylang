@@ -772,6 +772,33 @@ pub const Parser = struct {
                         .else_expr = else_expr,
                     } }, if_token);
                 }
+                if (std.mem.eql(u8, self.current.lexeme, "assert")) {
+                    const assert_token = self.current;
+                    try self.advance();
+                    const condition = try self.parseBinary(0);
+
+                    // Expect colon and message
+                    if (self.current.kind != .colon) {
+                        self.recordError();
+                        return error.UnexpectedToken;
+                    }
+                    try self.advance();
+                    const message = try self.parseLambda();
+
+                    // Consume separator (semicolon or newline)
+                    if (self.current.kind == .semicolon) {
+                        try self.advance();
+                    }
+
+                    // Parse body expression
+                    const body = try self.parseLambda();
+
+                    return try self.makeExpression(.{ .assert_expr = .{
+                        .condition = condition,
+                        .message = message,
+                        .body = body,
+                    } }, assert_token);
+                }
                 if (std.mem.eql(u8, self.current.lexeme, "when")) {
                     const when_token = self.current; // Capture for location
                     try self.advance();

@@ -122,6 +122,7 @@ pub fn build(b: *std.Build) void {
         "tests/error_messages_test.zig",
         "tests/error_output_test.zig",
         "tests/parser_test.zig",
+        "tests/eval/assert_test.zig",
     };
 
     // Examples test module

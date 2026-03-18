@@ -1425,6 +1425,42 @@ pub fn evaluateExpression(
                 break :blk .null_value;
             }
         },
+        .assert_expr => |assert_expr| blk: {
+            const condition = try evaluateExpression(arena, assert_expr.condition, env, current_dir, ctx);
+            const cond_bool = switch (condition) {
+                .boolean => |b| b,
+                else => {
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.setErrorData(.{ .type_mismatch = .{
+                            .expected = "boolean",
+                            .found = getValueTypeName(condition),
+                            .operation = null,
+                        } });
+                    }
+                    return error.TypeMismatch;
+                },
+            };
+            if (!cond_bool) {
+                // Evaluate the message expression to get crash message
+                const msg_value = try evaluateExpression(arena, assert_expr.message, env, current_dir, ctx);
+                const msg_str = switch (msg_value) {
+                    .string => |s| s,
+                    else => "assertion failed",
+                };
+                const message_copy = try std.heap.page_allocator.dupe(u8, msg_str);
+                value_mod.setUserCrashMessage(message_copy);
+                if (ctx.error_ctx) |err_ctx| {
+                    err_ctx.setErrorLocation(
+                        expr.location.line,
+                        expr.location.column,
+                        expr.location.offset,
+                        expr.location.length,
+                    );
+                }
+                return error.UserCrash;
+            }
+            break :blk try evaluateExpression(arena, assert_expr.body, env, current_dir, ctx);
+        },
         .when_matches => |when_matches| blk: {
             const value = try evaluateExpression(arena, when_matches.value, env, current_dir, ctx);
 

@@ -125,6 +125,13 @@ pub const ExpressionData = union(enum) {
     field_projection: FieldProjection,
     operator_function: BinaryOp,
     range: Range,
+    assert_expr: Assert,
+};
+
+pub const Assert = struct {
+    condition: *Expression,
+    message: *Expression,
+    body: *Expression,
 };
 
 pub const Range = struct {
