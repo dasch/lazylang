@@ -320,6 +320,7 @@ fn measureArray(arr: ast.ArrayLiteral) ?usize {
 
 fn measureObject(obj: ast.ObjectLiteral) ?usize {
     if (obj.fields.len == 0) return 2;
+    if (obj.fields.len > 2) return null; // 3+ fields always multi-line
     if (obj.module_doc != null) return null;
     var w: usize = 4; // "{ " + " }"
     for (obj.fields, 0..) |field, i| {
@@ -328,8 +329,22 @@ fn measureObject(obj: ast.ObjectLiteral) ?usize {
         if (field.is_patch) return null;
         if (field.condition != .none) return null;
         switch (field.key) {
-            .static => |key| w += key.len + 2, // "key: "
-            .dynamic => return null,
+            .static => |key| {
+                if (needsQuoting(key)) {
+                    w += key.len + 4; // "\"key\": "
+                } else {
+                    w += key.len + 2; // "key: "
+                }
+            },
+            .dynamic => |key_expr| {
+                // For dynamic keys: [expr]: adds brackets + ": "
+                if (key_expr.data == .array) {
+                    // Array literal as dynamic key: ["a", "b"]
+                    w += (measureArray(key_expr.data.array) orelse return null) + 2; // ": "
+                } else {
+                    w += 1 + (measureExpr(key_expr) orelse return null) + 3; // "[" + expr + "]: "
+                }
+            },
         }
         w += measureExpr(field.value) orelse return null;
     }
@@ -341,10 +356,22 @@ fn measureFieldWidth(field: ast.ObjectField) ?usize {
     if (field.condition != .none) return null;
     var w: usize = 0;
     switch (field.key) {
-        .static => |key| w += key.len + 2,
-        .dynamic => return null,
+        .static => |key| {
+            if (needsQuoting(key)) {
+                w += key.len + 4;
+            } else {
+                w += key.len + 2;
+            }
+        },
+        .dynamic => |key_expr| {
+            if (key_expr.data == .array) {
+                w += (measureArray(key_expr.data.array) orelse return null) + 2;
+            } else {
+                w += 1 + (measureExpr(key_expr) orelse return null) + 3;
+            }
+        },
     }
-    if (field.is_patch) w -= 1; // no colon, just space
+    if (field.is_patch) w -= 1;
     w += measureExpr(field.value) orelse return null;
     return w;
 }
@@ -425,10 +452,9 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
         return FormatterError.ParseError;
     };
 
-    const comments = try extractComments(allocator, source);
-    defer allocator.free(comments);
+    const comments = try extractComments(arena.allocator(), source);
 
-    var w = Writer.init(allocator, comments);
+    var w = Writer.init(arena.allocator(), comments);
 
     try formatExpr(&w, expression, false);
     try w.emitRemainingComments();
@@ -437,7 +463,9 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
         try w.newline();
     }
 
-    return FormatterOutput{ .text = try w.toOwnedSlice(), .allocator = allocator };
+    // Copy output to caller's allocator (arena will be freed)
+    const text = try allocator.dupe(u8, w.buf.items);
+    return FormatterOutput{ .text = text, .allocator = allocator };
 }
 
 pub fn formatFile(allocator: std.mem.Allocator, path: []const u8) FormatterError!FormatterOutput {
@@ -500,22 +528,55 @@ fn formatExpr(w: *Writer, expr: *const ast.Expression, parens_needed: bool) Form
         .identifier => |name| try w.write(name),
         .lambda => |lam| {
             try formatPattern(w, lam.param);
-            try w.write(" -> ");
-            try formatExpr(w, lam.body, false);
+            // Check if the body fits on the same line
+            const body_width = measureExpr(lam.body);
+            const col = w.currentColumn();
+            const param_width = measurePattern(lam.param) orelse 0;
+            const fits = if (body_width) |bw| (col + param_width + 4 + bw <= MAX_LINE_WIDTH) else false;
+            if (fits) {
+                try w.write(" -> ");
+                try formatExpr(w, lam.body, false);
+            } else {
+                try w.write(" ->");
+                w.indent += 1;
+                try w.newline();
+                try formatExpr(w, lam.body, false);
+                w.indent -= 1;
+            }
         },
         .let => |let_expr| try formatLet(w, let_expr),
         .where_expr => |where| {
             try formatExpr(w, where.expr, false);
-            try w.write(" where");
-            if (where.bindings.len == 1) {
-                try w.writeByte(' ');
-                try formatPattern(w, where.bindings[0].pattern);
-                try w.write(" = ");
-                try formatExpr(w, where.bindings[0].value, false);
+            try w.write(" where ");
+            // Measure if all bindings fit on one line
+            var total_width: ?usize = @as(usize, 0);
+            for (where.bindings, 0..) |binding, i| {
+                if (total_width) |*tw| {
+                    if (i > 0) tw.* += 2; // "; "
+                    tw.* += measurePattern(binding.pattern) orelse {
+                        total_width = null;
+                        break;
+                    };
+                    tw.* += 3; // " = "
+                    tw.* += measureExpr(binding.value) orelse {
+                        total_width = null;
+                        break;
+                    };
+                }
+            }
+            const col = w.currentColumn();
+            const fits = if (total_width) |tw| (col + tw <= MAX_LINE_WIDTH) else false;
+            if (fits) {
+                for (where.bindings, 0..) |binding, i| {
+                    if (i > 0) try w.write("; ");
+                    try formatPattern(w, binding.pattern);
+                    try w.write(" = ");
+                    try formatExpr(w, binding.value, false);
+                }
             } else {
                 w.indent += 1;
-                for (where.bindings) |binding| {
-                    try w.newline();
+                for (where.bindings, 0..) |binding, i| {
+                    if (i > 0) try w.newline();
                     try formatPattern(w, binding.pattern);
                     try w.write(" = ");
                     try formatExpr(w, binding.value, false);
@@ -657,7 +718,7 @@ fn formatExpr(w: *Writer, expr: *const ast.Expression, parens_needed: bool) Form
         .assert_expr => |ae| {
             try w.write("assert ");
             try formatExpr(w, ae.condition, false);
-            try w.write(" : ");
+            try w.write(": ");
             try formatExpr(w, ae.message, false);
             try w.newline();
             try formatExpr(w, ae.body, false);
@@ -681,16 +742,25 @@ fn formatLet(w: *Writer, let_expr: ast.Let) FormatterError!void {
     } else {
         try formatPattern(w, let_expr.pattern);
     }
-    try w.write(" = ");
-
     // Decide if value goes on same line or indented next line
     const value_width = measureExpr(let_expr.value);
-    const col = w.currentColumn();
+    const col = w.currentColumn() + 3; // " = " width
     const fits_on_line = if (value_width) |vw| (col + vw <= MAX_LINE_WIDTH) else false;
 
     if (fits_on_line) {
+        try w.write(" = ");
+        try formatExpr(w, let_expr.value, false);
+    } else if (let_expr.value.data == .lambda or
+        let_expr.value.data == .object or
+        let_expr.value.data == .array or
+        let_expr.value.data == .when_matches)
+    {
+        // These values have their own multi-line formatting with opening delimiter
+        // on the same line: "= x -> ...", "= { ... }", "= [ ... ]", "= when ..."
+        try w.write(" = ");
         try formatExpr(w, let_expr.value, false);
     } else {
+        try w.write(" =");
         w.indent += 1;
         try w.newline();
         try formatExpr(w, let_expr.value, false);
@@ -728,14 +798,50 @@ fn formatSortedImportPattern(w: *Writer, pat: *const ast.Pattern) FormatterError
 }
 
 fn formatIf(w: *Writer, if_e: ast.If) FormatterError!void {
-    try w.write("if ");
-    try formatExpr(w, if_e.condition, false);
-    try w.write(" then ");
-    try formatExpr(w, if_e.then_expr, false);
-    if (if_e.else_expr) |else_expr| {
-        try w.write(" else ");
-        try formatExpr(w, else_expr, false);
+    // Measure single-line width
+    const single_line = measureIfWidth(if_e);
+    const col = w.currentColumn();
+    const fits = if (single_line) |sw| (col + sw <= MAX_LINE_WIDTH) else false;
+
+    if (fits or if_e.else_expr == null) {
+        // Single-line format
+        try w.write("if ");
+        try formatExpr(w, if_e.condition, false);
+        try w.write(" then ");
+        try formatExpr(w, if_e.then_expr, false);
+        if (if_e.else_expr) |else_expr| {
+            try w.write(" else ");
+            try formatExpr(w, else_expr, false);
+        }
+    } else {
+        // Multi-line format
+        try w.write("if ");
+        try formatExpr(w, if_e.condition, false);
+        try w.write(" then");
+        w.indent += 1;
+        try w.newline();
+        try formatExpr(w, if_e.then_expr, false);
+        w.indent -= 1;
+        if (if_e.else_expr) |else_expr| {
+            try w.newline();
+            try w.write("else");
+            w.indent += 1;
+            try w.newline();
+            try formatExpr(w, else_expr, false);
+            w.indent -= 1;
+        }
     }
+}
+
+fn measureIfWidth(if_e: ast.If) ?usize {
+    const cw = measureExpr(if_e.condition) orelse return null;
+    const tw = measureExpr(if_e.then_expr) orelse return null;
+    var w: usize = 3 + cw + 6 + tw; // "if " + cond + " then " + then
+    if (if_e.else_expr) |ee| {
+        const ew = measureExpr(ee) orelse return null;
+        w += 6 + ew; // " else " + else
+    }
+    return w;
 }
 
 fn formatApplication(w: *Writer, app: ast.Application) FormatterError!void {
@@ -805,6 +911,14 @@ fn formatArrayElement(w: *Writer, elem: ast.ArrayElement) FormatterError!void {
 }
 
 fn formatObject(w: *Writer, obj: ast.ObjectLiteral) FormatterError!void {
+    if (obj.module_doc) |doc| {
+        var doc_lines = std.mem.splitScalar(u8, doc, '\n');
+        while (doc_lines.next()) |doc_line| {
+            try w.write("/// ");
+            try w.write(std.mem.trimRight(u8, doc_line, " \t"));
+            try w.newline();
+        }
+    }
     if (obj.fields.len == 0) {
         try w.write("{}");
         return;
@@ -846,7 +960,13 @@ fn formatObjectField(w: *Writer, field: ast.ObjectField) FormatterError!void {
     }
     switch (field.key) {
         .static => |key| {
-            try w.write(key);
+            if (needsQuoting(key)) {
+                try w.writeByte('"');
+                try writeEscapedString(w, key);
+                try w.writeByte('"');
+            } else {
+                try w.write(key);
+            }
             if (field.is_patch) {
                 try w.writeByte(' ');
             } else {
@@ -854,9 +974,15 @@ fn formatObjectField(w: *Writer, field: ast.ObjectField) FormatterError!void {
             }
         },
         .dynamic => |key_expr| {
-            try w.writeByte('[');
-            try formatExpr(w, key_expr, false);
-            try w.write("]: ");
+            // If the dynamic key is an array literal, format it directly without extra brackets
+            if (key_expr.data == .array) {
+                try formatExpr(w, key_expr, false);
+            } else {
+                try w.writeByte('[');
+                try formatExpr(w, key_expr, false);
+                try w.writeByte(']');
+            }
+            try w.write(": ");
         },
     }
     try formatExpr(w, field.value, false);
@@ -931,6 +1057,14 @@ fn formatPattern(w: *Writer, pat: *const ast.Pattern) FormatterError!void {
 // ============================================================================
 // Helpers
 // ============================================================================
+
+fn needsQuoting(key: []const u8) bool {
+    if (key.len == 0) return true;
+    for (key) |c| {
+        if (c == ' ' or c == '"' or c == '\n' or c == '\t' or c == '\\' or c == ':' or c == '{' or c == '}' or c == '[' or c == ']') return true;
+    }
+    return false;
+}
 
 fn writeEscapedString(w: *Writer, s: []const u8) FormatterError!void {
     for (s) |c| {

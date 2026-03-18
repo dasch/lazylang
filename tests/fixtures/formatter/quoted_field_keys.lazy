@@ -1,2 +1,2 @@
-// { "my field": 42, "name": "Alice" }
+// { "my field": 42, name: "Alice" }
 { "my field": 42, "name": "Alice" }

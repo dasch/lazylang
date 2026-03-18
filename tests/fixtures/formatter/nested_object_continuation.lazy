@@ -1,12 +1,6 @@
 // service = {
 //   apiVersion: "v1"
-//   spec {
-//     selector:
-//       labels
-//       \ Object.slice ["app", "component"]
-//
-//     ports: [1, 2]
-//   }
+//   spec { selector: labels \ Object.slice ["app", "component"], ports: [1, 2] }
 // }
 service = {
 apiVersion: "v1"
@@ -18,3 +12,4 @@ labels
 ports: [1, 2]
 }
 }
+

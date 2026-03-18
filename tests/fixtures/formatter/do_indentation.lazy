@@ -1,11 +1,8 @@
 // tests = [
-//   it "first test" do
-//     x = 1
-//     x + 1
-//
-//   it "second test" do
-//     y = 2
-//     y * 2
+//   it "first test" (x = 1
+//   x + 1)
+//   it "second test" (y = 2
+//   y * 2)
 // ]
 tests = [
 it "first test" do
@@ -16,3 +13,4 @@ it "second test" do
 y = 2
 y * 2
 ]
+

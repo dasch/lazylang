@@ -1,14 +1,6 @@
 // config = {
-//   server: {
-//     host: "localhost"
-//     port: 8080
-//   }
-//   database: {
-//     name: "mydb"
-//     connection: {
-//       timeout: 5000
-//     }
-//   }
+//   server: { host: "localhost", port: 8080 }
+//   database: { name: "mydb", connection: { timeout: 5000 } }
 // }
 config = {
 server: {
@@ -22,3 +14,4 @@ timeout: 5000
 }
 }
 }
+

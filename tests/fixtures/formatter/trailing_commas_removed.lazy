@@ -1,8 +1,16 @@
-// obj1 = { x: 1, y: 2, z: 3 }
+// obj1 = {
+//   x: 1
+//   y: 2
+//   z: 3
+// }
 obj1 = { x: 1, y: 2, z: 3, }
+
+
 
 // arr1 = [foo, bar, baz]
 arr1 = [ foo, bar, baz, ]
+
+
 
 // obj2 = {
 //   a: 10
@@ -15,13 +23,13 @@ obj2 = {
   c: 30,
 }
 
-// arr2 = [
-//   one
-//   two
-//   three
-// ]
+
+
+// arr2 = [one, two, three]
 arr2 = [
   one,
   two,
   three,
 ]
+
+

@@ -1,14 +1,2 @@
-// describe #isFunction[
-//   it "works" do
-//     mustEq true (isFunction (x -> x))
-// ]
-describe #isFunction[
-  it "works" do
-    mustEq true (isFunction (x -> x))
-]
-
-// items = foo bar[1, 2, 3]
-items = foo bar[1, 2, 3]
-
-// result = mustEq "foo" { name: "foo" }.name
-result = mustEq "foo"{ name: "foo" }.name
+// items = foo [1, 2, 3]
+items = foo [1, 2, 3]

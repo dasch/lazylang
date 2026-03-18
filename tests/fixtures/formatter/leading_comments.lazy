@@ -1,7 +1,6 @@
-// /// Example program demonstrating lazy run
-// /// Usage: lazy run examples/hello.lazy -- Alice Bob
-// { args, env } -> { env, args }
+// { args, env } -> { env: env, args: args }
 /// Example program demonstrating lazy run
 /// Usage: lazy run examples/hello.lazy -- Alice Bob
 
 { args, env } -> { env, args }
+
