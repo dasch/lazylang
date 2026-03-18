@@ -1,4 +1,5 @@
-{ describe, fail, it, must, mustEq, mustNotEq, pass, xit } = import "Spec"
+{ describe, fail, forall, forallWith, it, must, mustEq, mustNotEq, pass, xit } = import "Spec"
+Random = import "Random"
 
 describe "Assertion Functions" [
   describe #mustEq [
@@ -36,5 +37,10 @@ describe "Assertion Functions" [
   describe #fail [
     xit "explicitly fails with message" do
       fail "This test intentionally fails"
+  ]
+
+  describe #forallWith [
+    forallWith { trials: 10, seed: 123 } (Random.intRange 0 50) "generates values in range" do n ->
+      must (n >= 0 && n <= 50)
   ]
 ]

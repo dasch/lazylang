@@ -16,6 +16,11 @@
       type: "it",
       description: "modulo result is always less than divisor",
       test: { type: "pass" }
+    },
+    {
+      type: "it",
+      description: "custom trials and seed",
+      test: { type: "pass" }
     }
   ]
 }

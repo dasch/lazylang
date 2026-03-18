@@ -1,5 +1,5 @@
-/// Property-based testing demo using forall
-{ describe, it, must, mustEq, forall } = import "Spec"
+/// Property-based testing demo using forall and forallWith
+{ describe, must, forall, forallWith } = import "Spec"
 Random = import "Random"
 Math = import "Math"
 
@@ -11,6 +11,10 @@ describe "property-based tests" [
     must (n <= 100)
 
   forall (Random.intRange 1 50) "modulo result is always less than divisor" do n ->
+    result = Math.mod n 7
+    must (result >= 0 && result < 7)
+
+  forallWith { trials: 20, seed: 999 } (Random.intRange 1 50) "custom trials and seed" do n ->
     result = Math.mod n 7
     must (result >= 0 && result < 7)
 ]
