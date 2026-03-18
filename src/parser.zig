@@ -682,6 +682,31 @@ pub const Parser = struct {
 
     fn parsePrimary(self: *Parser) ParseError!*Expression {
         switch (self.current.kind) {
+            .minus => {
+                // Unary minus: -expr
+                const minus_token = self.current;
+                try self.advance();
+                const operand = try self.parsePrimary();
+
+                // Optimize: if the operand is a literal number, negate it directly
+                switch (operand.data) {
+                    .integer => |v| {
+                        return try self.makeExpression(.{ .integer = -v }, minus_token);
+                    },
+                    .float => |v| {
+                        return try self.makeExpression(.{ .float = -v }, minus_token);
+                    },
+                    else => {
+                        // General case: 0 - expr
+                        const zero = try self.makeExpression(.{ .integer = 0 }, minus_token);
+                        return try self.makeExpression(.{ .binary = .{
+                            .op = .subtract,
+                            .left = zero,
+                            .right = operand,
+                        } }, minus_token);
+                    },
+                }
+            },
             .number => {
                 const num_token = self.current; // Capture for location
                 const lexeme = self.current.lexeme;

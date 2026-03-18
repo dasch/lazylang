@@ -198,7 +198,7 @@ test "error: not on non-boolean" {
 }
 
 test "error: negate string" {
-    try expectError("-\"hello\"", error.ExpectedExpression);
+    try expectError("-\"hello\"", error.TypeMismatch);
 }
 
 // ============================================================================
