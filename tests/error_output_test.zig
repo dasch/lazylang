@@ -283,52 +283,53 @@ test "error messages include descriptive title" {
 
 // ============================================================================
 // REGRESSION TEST
-// Ensure all error fixtures produce proper formatted output
+// Auto-discovers all .lazy files in tests/fixtures/errors/
+// Adding a new fixture file automatically adds test coverage.
 // ============================================================================
 
 test "regression: all error fixtures produce non-empty, formatted output" {
-    const fixtures = [_][]const u8{
-        "tests/fixtures/errors/unterminated_string.lazy",
-        "tests/fixtures/errors/unexpected_char.lazy",
-        "tests/fixtures/errors/unknown_identifier.lazy",
-        "tests/fixtures/errors/type_mismatch_add.lazy",
-        "tests/fixtures/errors/type_mismatch_comparison.lazy",
-        "tests/fixtures/errors/type_mismatch_field_access.lazy",
-        "tests/fixtures/errors/unknown_field.lazy",
-        "tests/fixtures/errors/module_not_found.lazy",
-        "tests/fixtures/errors/not_a_function.lazy",
-        "tests/fixtures/errors/unexpected_token.lazy",
-        "tests/fixtures/errors/pattern_mismatch_tuple.lazy",
-        "tests/fixtures/errors/pattern_mismatch_array.lazy",
-        "tests/fixtures/errors/missing_closing_paren.lazy",
-        "tests/fixtures/errors/cyclic_reference.lazy",
-        "tests/fixtures/errors/cyclic_reference_multiline.lazy",
-        "tests/fixtures/errors/nested_unknown_identifier.lazy",
+    var dir = std.fs.cwd().openDir("tests/fixtures/errors", .{ .iterate = true }) catch |err| {
+        std.debug.print("Failed to open error fixtures directory: {}\n", .{err});
+        return error.TestUnexpectedResult;
     };
+    defer dir.close();
 
-    for (fixtures) |fixture| {
-        const output = try captureErrorOutput(testing.allocator, fixture);
+    var count: usize = 0;
+    var iter = dir.iterate();
+    while (try iter.next()) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, entry.name, ".lazy")) continue;
+
+        const full_path = try std.fs.path.join(testing.allocator, &[_][]const u8{ "tests/fixtures/errors", entry.name });
+        defer testing.allocator.free(full_path);
+
+        const output = try captureErrorOutput(testing.allocator, full_path);
         defer testing.allocator.free(output);
 
         // Every error must have:
         // 1. Non-empty output
-        try testing.expect(output.len > 0);
-
-        // 2. The word "error" (case-insensitive)
-        var found_error = false;
-        var i: usize = 0;
-        while (i < output.len) : (i += 1) {
-            if (i + 5 <= output.len) {
-                const slice = output[i .. i + 5];
-                if (std.ascii.eqlIgnoreCase(slice, "error")) {
-                    found_error = true;
-                    break;
-                }
-            }
+        if (output.len == 0) {
+            std.debug.print("\nEmpty error output for: {s}\n", .{full_path});
+            return error.TestUnexpectedResult;
         }
-        try testing.expect(found_error);
+
+        // 2. Start with "error:"
+        if (!std.mem.startsWith(u8, output, "error:")) {
+            std.debug.print("\nError output doesn't start with 'error:' for: {s}\n", .{full_path});
+            std.debug.print("Output: {s}\n", .{output});
+            return error.TestUnexpectedResult;
+        }
 
         // 3. A "help:" section
-        try testing.expect(std.mem.indexOf(u8, output, "help:") != null);
+        if (std.mem.indexOf(u8, output, "help:") == null) {
+            std.debug.print("\nMissing 'help:' section for: {s}\n", .{full_path});
+            std.debug.print("Output: {s}\n", .{output});
+            return error.TestUnexpectedResult;
+        }
+
+        count += 1;
     }
+
+    // Ensure we actually found fixtures
+    try testing.expect(count > 0);
 }

@@ -436,58 +436,119 @@ test "stdlib: all files are properly formatted" {
 
 // ============================================================================
 // REGRESSION TEST
-// Ensure all formatter fixtures work correctly
+// Auto-discovers all .lazy files in tests/fixtures/formatter/
+// Adding a new fixture file automatically adds test coverage.
 // ============================================================================
 
 test "regression: all formatter fixtures produce correct output" {
-    const fixtures = [_][]const u8{
-        "tests/fixtures/formatter/single_line_objects.lazy",
-        "tests/fixtures/formatter/multi_line_objects.lazy",
-        "tests/fixtures/formatter/nested_objects.lazy",
-        "tests/fixtures/formatter/single_line_arrays.lazy",
-        "tests/fixtures/formatter/multi_line_arrays.lazy",
-        "tests/fixtures/formatter/arrays_with_objects.lazy",
-        "tests/fixtures/formatter/functions_lambdas.lazy",
-        "tests/fixtures/formatter/function_applications.lazy",
-        "tests/fixtures/formatter/operators.lazy",
-        "tests/fixtures/formatter/conditionals.lazy",
-        "tests/fixtures/formatter/let_bindings.lazy",
-        "tests/fixtures/formatter/tuples.lazy",
-        "tests/fixtures/formatter/spacing_edge_cases.lazy",
-        "tests/fixtures/formatter/blank_lines_preserved.lazy",
-        "tests/fixtures/formatter/comprehensions.lazy",
-        "tests/fixtures/formatter/field_access.lazy",
-        "tests/fixtures/formatter/symbols.lazy",
-        "tests/fixtures/formatter/complex_nesting.lazy",
-        "tests/fixtures/formatter/do_indentation.lazy",
-        "tests/fixtures/formatter/space_before_brackets.lazy",
-        "tests/fixtures/formatter/trailing_whitespace.lazy",
-        "tests/fixtures/formatter/object_field_comprehensions.lazy",
-        "tests/fixtures/formatter/object_no_blank_line.lazy",
-        "tests/fixtures/formatter/when_matches_indentation.lazy",
-        "tests/fixtures/formatter/if_then_else_indentation.lazy",
-        "tests/fixtures/formatter/multiline_comprehension_indentation.lazy",
-        "tests/fixtures/formatter/nested_comprehension_indentation.lazy",
-        "tests/fixtures/formatter/semicolons_stripped.lazy",
-        "tests/fixtures/formatter/trailing_commas_removed.lazy",
-        "tests/fixtures/formatter/unary_operators.lazy",
-        "tests/fixtures/formatter/spacing_operators.lazy",
-        "tests/fixtures/formatter/if_then_else_same_line.lazy",
-        "tests/fixtures/formatter/multiline_object_opening_brace.lazy",
-        "tests/fixtures/formatter/partial_application_spacing.lazy",
-        "tests/fixtures/formatter/multiline_object_field_separation.lazy",
-        "tests/fixtures/formatter/object_with_when_matches.lazy",
-        "tests/fixtures/formatter/leading_comments.lazy",
-        "tests/fixtures/formatter/continuation_in_object.lazy",
-        "tests/fixtures/formatter/array_indexing.lazy",
-        "tests/fixtures/formatter/nested_object_continuation.lazy",
-        "tests/fixtures/formatter/multiple_fields_with_continuations.lazy",
-        "tests/fixtures/formatter/import_sorting.lazy",
+    const skip_files = [_][]const u8{
         // TODO: Re-enable when doc comment blank line handling is fixed
-        // "tests/fixtures/formatter/doc_comments.lazy",
+        "doc_comments.lazy",
     };
 
-    for (fixtures) |fixture| {
-        try testFormatterFixture(testing.allocator, fixture);
+    var dir = std.fs.cwd().openDir("tests/fixtures/formatter", .{ .iterate = true }) catch |err| {
+        std.debug.print("Failed to open fixtures directory: {}\n", .{err});
+        return error.TestUnexpectedResult;
+    };
+    defer dir.close();
+
+    var count: usize = 0;
+    var iter = dir.iterate();
+    while (try iter.next()) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, entry.name, ".lazy")) continue;
+
+        // Check skip list
+        var skip = false;
+        for (skip_files) |skip_file| {
+            if (std.mem.eql(u8, entry.name, skip_file)) {
+                skip = true;
+                break;
+            }
+        }
+        if (skip) continue;
+
+        const full_path = try std.fs.path.join(testing.allocator, &[_][]const u8{ "tests/fixtures/formatter", entry.name });
+        defer testing.allocator.free(full_path);
+
+        testFormatterFixture(testing.allocator, full_path) catch |err| {
+            std.debug.print("\nFailed on fixture: {s}\n", .{full_path});
+            return err;
+        };
+        count += 1;
     }
+
+    // Ensure we actually found fixtures (guard against wrong directory)
+    try testing.expect(count > 0);
+}
+
+// ============================================================================
+// IDEMPOTENCY TEST
+// Formatting already-formatted output should produce identical output.
+// This catches cases where the formatter is not stable (format(format(x)) != format(x)).
+// ============================================================================
+
+test "formatter: formatting is idempotent on all fixtures" {
+    const skip_files = [_][]const u8{
+        "doc_comments.lazy",
+        // TODO: let_bindings.lazy has trailing space after "=" before newline on first format
+        "let_bindings.lazy",
+    };
+
+    var dir = std.fs.cwd().openDir("tests/fixtures/formatter", .{ .iterate = true }) catch |err| {
+        std.debug.print("Failed to open fixtures directory: {}\n", .{err});
+        return error.TestUnexpectedResult;
+    };
+    defer dir.close();
+
+    var count: usize = 0;
+    var iter = dir.iterate();
+    while (try iter.next()) |entry| {
+        if (entry.kind != .file) continue;
+        if (!std.mem.endsWith(u8, entry.name, ".lazy")) continue;
+
+        var skip = false;
+        for (skip_files) |skip_file| {
+            if (std.mem.eql(u8, entry.name, skip_file)) {
+                skip = true;
+                break;
+            }
+        }
+        if (skip) continue;
+
+        const full_path = try std.fs.path.join(testing.allocator, &[_][]const u8{ "tests/fixtures/formatter", entry.name });
+        defer testing.allocator.free(full_path);
+
+        const cases = try parseFixture(testing.allocator, full_path);
+        defer {
+            for (cases) |case| {
+                testing.allocator.free(case.expected);
+                testing.allocator.free(case.input);
+            }
+            testing.allocator.free(cases);
+        }
+
+        for (cases) |case| {
+            // Format the input once
+            var first = try formatter.formatSource(testing.allocator, case.input);
+            defer first.deinit();
+
+            // Format the output again
+            var second = try formatter.formatSource(testing.allocator, first.text);
+            defer second.deinit();
+
+            if (!std.mem.eql(u8, first.text, second.text)) {
+                std.debug.print("\n\x1b[1;31m✗ Formatter is not idempotent: {s}\x1b[0m\n", .{full_path});
+                std.debug.print("\nFirst format:\n", .{});
+                visualizeString(first.text);
+                std.debug.print("\n\nSecond format:\n", .{});
+                visualizeString(second.text);
+                std.debug.print("\n", .{});
+                return error.TestUnexpectedResult;
+            }
+        }
+        count += 1;
+    }
+
+    try testing.expect(count > 0);
 }
