@@ -2280,6 +2280,13 @@ fn importModule(
     defer module_file.file.close();
     defer ctx.allocator.free(module_file.path);
 
+    // Check module cache
+    if (ctx.module_cache) |cache| {
+        if (cache.get(module_file.path)) |cached_value| {
+            return cached_value;
+        }
+    }
+
     const contents = try module_file.file.readToEndAlloc(arena, std.math.maxInt(usize));
 
     // Save the current file so we can restore it after import
@@ -2367,6 +2374,13 @@ fn importModule(
         } else {
             err_ctx.setCurrentFile("");
         }
+    }
+
+    // Cache the result
+    if (ctx.module_cache) |cache| {
+        if (ctx.allocator.dupe(u8, module_file.path)) |path_copy| {
+            cache.put(path_copy, result) catch {};
+        } else |_| {}
     }
 
     return result;

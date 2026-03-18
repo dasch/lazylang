@@ -200,10 +200,18 @@ fn evalSourceWithFormat(
         err_ctx.setCurrentFile(fname);
     }
 
+    var module_cache = value_mod.ModuleCache.init(allocator);
+    defer {
+        var it = module_cache.keyIterator();
+        while (it.next()) |key| allocator.free(key.*);
+        module_cache.deinit();
+    }
+
     const context = EvalContext{
         .allocator = allocator,
         .lazy_paths = lazy_paths,
         .error_ctx = &err_ctx,
+        .module_cache = &module_cache,
     };
 
     var parser = Parser.initWithContext(arena.allocator(), source, &err_ctx) catch |err| {
@@ -378,10 +386,18 @@ fn evalSourceWithValue(
     var err_ctx = error_context.ErrorContext.init(allocator);
     err_ctx.setSource(source);
 
+    var module_cache2 = value_mod.ModuleCache.init(allocator);
+    defer {
+        var it = module_cache2.keyIterator();
+        while (it.next()) |key| allocator.free(key.*);
+        module_cache2.deinit();
+    }
+
     const context = EvalContext{
         .allocator = allocator,
         .lazy_paths = lazy_paths,
         .error_ctx = &err_ctx,
+        .module_cache = &module_cache2,
     };
 
     var parser = try Parser.init(arena.allocator(), source);
@@ -437,7 +453,13 @@ pub fn evalFileValue(
     defer allocator.free(contents);
 
     const lazy_paths = try collectLazyPaths(arena);
-    const context = EvalContext{ .allocator = allocator, .lazy_paths = lazy_paths };
+    var module_cache3 = value_mod.ModuleCache.init(allocator);
+    defer {
+        var it = module_cache3.keyIterator();
+        while (it.next()) |key| allocator.free(key.*);
+        module_cache3.deinit();
+    }
+    const context = EvalContext{ .allocator = allocator, .lazy_paths = lazy_paths, .module_cache = &module_cache3 };
 
     var parser = try Parser.init(arena, contents);
     const expression = try parser.parse();

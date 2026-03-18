@@ -155,10 +155,14 @@ pub const EvalError = ParseError || std.mem.Allocator.Error || std.process.GetEn
     FieldNotFound,
 };
 
+/// Cache for imported modules, keyed by resolved absolute path.
+pub const ModuleCache = std.StringHashMap(Value);
+
 /// EvalContext holds global evaluation state and configuration.
 /// Passed through the evaluation process.
 pub const EvalContext = struct {
     allocator: std.mem.Allocator,
     lazy_paths: [][]const u8,
     error_ctx: ?*error_context.ErrorContext = null,
+    module_cache: ?*ModuleCache = null,
 };
