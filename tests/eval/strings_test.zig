@@ -73,6 +73,59 @@ test "dollar sign without identifier is literal" {
     , "\"Price: $ 100\"");
 }
 
+// Multiline text blocks
+
+test "multiline text block basic" {
+    try expectEvaluates(
+        \\'''
+        \\hello
+        \\world
+        \\'''
+    ,
+        \\"hello
+        \\world"
+    );
+}
+
+test "multiline text block strips common indentation" {
+    try expectEvaluates(
+        \\'''
+        \\  hello
+        \\  world
+        \\'''
+    ,
+        \\"hello
+        \\world"
+    );
+}
+
+test "multiline text block preserves relative indentation" {
+    try expectEvaluates(
+        \\'''
+        \\  hello
+        \\    world
+        \\'''
+    ,
+        \\"hello
+        \\  world"
+    );
+}
+
+test "multiline text block single line" {
+    try expectEvaluates(
+        \\'''
+        \\hello
+        \\'''
+    , "\"hello\"");
+}
+
+test "multiline text block empty" {
+    try expectEvaluates(
+        \\'''
+        \\'''
+    , "\"\"");
+}
+
 // String concatenation with +
 
 test "string concatenation with +" {

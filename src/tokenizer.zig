@@ -200,6 +200,13 @@ pub const Tokenizer = struct {
                 return self.consumeNumber();
             },
             '\'' => {
+                // Check for triple-quote multiline text block '''
+                if (self.index + 2 < self.source.len and
+                    self.source[self.index + 1] == '\'' and
+                    self.source[self.index + 2] == '\'')
+                {
+                    return self.consumeTextBlock(start, start_line, start_column);
+                }
                 return self.consumeString('\'');
             },
             '"' => {
@@ -343,6 +350,126 @@ pub const Tokenizer = struct {
             ctx.setErrorLocation(start_line, start_column, start_content - 1, 1);
         }
         return error.UnterminatedString;
+    }
+
+    fn consumeTextBlock(self: *Tokenizer, start: usize, start_line: usize, start_column: usize) TokenizerError!ast.Token {
+        _ = start;
+        // Skip the opening '''
+        self.advance();
+        self.advance();
+        self.advance();
+
+        // Skip the rest of the opening line (including newline)
+        while (self.index < self.source.len and self.source[self.index] != '\n') {
+            self.advance();
+        }
+        if (self.index < self.source.len) {
+            self.advance(); // skip newline
+        }
+
+        // Collect content lines until we find a line that is just ''' (with optional leading whitespace)
+        const content_start = self.index;
+        var closing_start: usize = self.index;
+        var found_closing = false;
+
+        while (self.index < self.source.len) {
+            const line_start = self.index;
+
+            // Skip whitespace at start of line
+            while (self.index < self.source.len and (self.source[self.index] == ' ' or self.source[self.index] == '\t')) {
+                self.advance();
+            }
+
+            // Check if this line starts with '''
+            if (self.index + 2 < self.source.len and
+                self.source[self.index] == '\'' and
+                self.source[self.index + 1] == '\'' and
+                self.source[self.index + 2] == '\'')
+            {
+                closing_start = line_start;
+                found_closing = true;
+                // Skip the closing '''
+                self.advance();
+                self.advance();
+                self.advance();
+                break;
+            }
+
+            // Not the closing line — skip to end of line
+            while (self.index < self.source.len and self.source[self.index] != '\n') {
+                self.advance();
+            }
+            if (self.index < self.source.len) {
+                self.advance(); // skip newline
+            }
+        }
+
+        if (!found_closing) {
+            if (self.error_ctx) |ctx| {
+                ctx.setErrorLocation(start_line, start_column, content_start, 3);
+            }
+            return error.UnterminatedString;
+        }
+
+        const raw_content = self.source[content_start..closing_start];
+
+        // Dedent: find minimum indentation across all non-empty lines
+        var min_indent: usize = std.math.maxInt(usize);
+        var lines_iter = std.mem.splitScalar(u8, raw_content, '\n');
+        while (lines_iter.next()) |line| {
+            if (line.len == 0) continue; // skip empty lines for indent calculation
+            var indent: usize = 0;
+            for (line) |c| {
+                if (c == ' ') {
+                    indent += 1;
+                } else if (c == '\t') {
+                    indent += 1;
+                } else {
+                    break;
+                }
+            }
+            if (indent < min_indent) {
+                min_indent = indent;
+            }
+        }
+        if (min_indent == std.math.maxInt(usize)) {
+            min_indent = 0;
+        }
+
+        // Build dedented string
+        var result = std.ArrayList(u8){};
+        var lines_iter2 = std.mem.splitScalar(u8, raw_content, '\n');
+        var first = true;
+        while (lines_iter2.next()) |line| {
+            // Skip trailing empty line (the one before ''')
+            if (lines_iter2.peek() == null and line.len == 0) break;
+
+            if (!first) {
+                result.append(self.arena, '\n') catch return error.UnexpectedCharacter;
+            }
+            first = false;
+
+            if (line.len == 0) {
+                // Preserve empty lines
+                continue;
+            }
+
+            const stripped = if (min_indent <= line.len) line[min_indent..] else line;
+            result.appendSlice(self.arena, stripped) catch return error.UnexpectedCharacter;
+        }
+
+        const content = result.toOwnedSlice(self.arena) catch return error.UnexpectedCharacter;
+
+        return ast.Token{
+            .kind = .string,
+            .lexeme = content,
+            .preceded_by_newline = self.last_whitespace_had_newline,
+            .preceded_by_whitespace = self.last_had_whitespace,
+            .line = start_line,
+            .column = start_column,
+            .offset = content_start,
+            .doc_comments = null,
+        };
     }
 
     fn advance(self: *Tokenizer) void {
