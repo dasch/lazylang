@@ -23,6 +23,28 @@ name = "Alice"
 greeting = 'Hello'
 ```
 
+### String concatenation
+
+Strings can be concatenated using the `+` operator:
+
+```
+greeting = "Hello, " + name + "!"
+```
+
+### Multiline text blocks
+
+Triple-quoted strings (`'''`) allow multiline content without escape sequences:
+
+```
+script = '''
+  #!/bin/bash
+  echo "Hello, world"
+  exit 0
+'''
+```
+
+The content is taken literally — no interpolation or escape processing. Common leading indentation is automatically stripped, so the text aligns naturally with surrounding code.
+
 ### String interpolation
 
 String interpolation allows embedding variables and expressions directly within strings:
@@ -170,6 +192,34 @@ This works with nested accessors:
 record = { user: { name: "Alice", age: 30 } }
 record.user.{ name }  // { name: "Alice" }
 ```
+
+### Self references
+
+Object fields can reference other fields in the same object using `self`:
+
+```
+config = {
+  host: "localhost"
+  port: 8080
+  url: "http://" + self.host
+}
+```
+
+This is useful for derived fields that depend on other fields in the same object.
+
+### Conditional object fields
+
+Object fields can be conditionally included using trailing `if` or `unless` modifiers:
+
+```
+config = {
+  name: "my-service"
+  replicas: 3 if env == "production"
+  debug: true unless env == "production"
+}
+```
+
+When the condition is false (for `if`) or true (for `unless`), the field is **omitted from the object** entirely. This works the same way as [conditional array elements](#conditional-array-elements).
 
 ### Dynamically computed fields
 
@@ -423,6 +473,23 @@ This is useful for:
 - Testing error handling
 - Marking code paths that should never execute
 - Providing clear error messages for invalid states
+
+### Assertions
+
+Assertions validate conditions and crash with a message when a condition is false:
+
+```
+validatePort = port ->
+  assert port > 0 : "port must be positive"
+  assert port < 65536 : "port must be less than 65536"
+  port
+
+config = {
+  port: validatePort 8080
+}
+```
+
+The syntax is `assert condition : message`, followed by the body expression. If the condition is true, the body is evaluated and returned. If false, the program crashes with the given message.
 
 ## Lazy evaluation
 
