@@ -1231,6 +1231,9 @@ pub const Parser = struct {
                 break :blk try self.makeExpression(.{ .identifier = key }, key_token);
             };
 
+            // Check for trailing if/unless condition
+            const condition = try self.parseFieldCondition();
+
             try fields.append(self.arena, .{
                 .key = .{ .static = key },
                 .value = value_expr,
@@ -1242,6 +1245,7 @@ pub const Parser = struct {
                     .offset = key_token.offset,
                     .length = key_token.lexeme.len,
                 },
+                .condition = condition,
             });
 
             if (self.current.kind == .comma) {
@@ -1264,6 +1268,22 @@ pub const Parser = struct {
 
         const slice = try fields.toOwnedSlice(self.arena);
         return try self.makeExpression(.{ .object = .{ .fields = slice, .module_doc = module_doc } }, brace_token);
+    }
+
+    /// Parse an optional trailing if/unless condition on an object field.
+    fn parseFieldCondition(self: *Parser) ParseError!ast.ObjectFieldCondition {
+        if (self.current.kind == .identifier) {
+            if (std.mem.eql(u8, self.current.lexeme, "if")) {
+                try self.advance(); // consume 'if'
+                const cond = try self.parseLambda();
+                return .{ .if_cond = cond };
+            } else if (std.mem.eql(u8, self.current.lexeme, "unless")) {
+                try self.advance(); // consume 'unless'
+                const cond = try self.parseLambda();
+                return .{ .unless_cond = cond };
+            }
+        }
+        return .none;
     }
 
     /// Parse a dynamic key expression inside [...].

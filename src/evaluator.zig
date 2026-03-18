@@ -1663,6 +1663,25 @@ pub fn evaluateExpression(
             defer fields_list.deinit(arena);
 
             for (object.fields) |field| {
+                // Check conditional inclusion (if/unless)
+                switch (field.condition) {
+                    .none => {},
+                    .if_cond => |cond_expr| {
+                        const cond_val = try evaluateExpression(arena, cond_expr, env, current_dir, ctx);
+                        switch (cond_val) {
+                            .boolean => |b| if (!b) continue,
+                            else => return error.TypeMismatch,
+                        }
+                    },
+                    .unless_cond => |cond_expr| {
+                        const cond_val = try evaluateExpression(arena, cond_expr, env, current_dir, ctx);
+                        switch (cond_val) {
+                            .boolean => |b| if (b) continue,
+                            else => return error.TypeMismatch,
+                        }
+                    },
+                }
+
                 switch (field.key) {
                     .static => |static_key| {
                         const key_copy = try arena.dupe(u8, static_key);

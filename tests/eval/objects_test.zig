@@ -150,6 +150,50 @@ test "JSON object is valid Lazylang" {
     , "{ x: 1, y: 2 }");
 }
 
+// Conditional object fields
+
+test "conditional object field with if - true" {
+    try expectEvaluates(
+        \\enabled = true
+        \\{ x: 1, y: 2 if enabled }
+    , "{ x: 1, y: 2 }");
+}
+
+test "conditional object field with if - false" {
+    try expectEvaluates(
+        \\enabled = false
+        \\{ x: 1, y: 2 if enabled }
+    , "{ x: 1 }");
+}
+
+test "conditional object field with unless - true" {
+    try expectEvaluates(
+        \\debug = true
+        \\{ x: 1, verbose: true unless debug }
+    , "{ x: 1 }");
+}
+
+test "conditional object field with unless - false" {
+    try expectEvaluates(
+        \\debug = false
+        \\{ x: 1, verbose: true unless debug }
+    , "{ x: 1, verbose: true }");
+}
+
+test "multiple conditional object fields" {
+    try expectEvaluates(
+        \\a = true
+        \\b = false
+        \\{ x: 1 if a, y: 2 if b, z: 3 if a }
+    , "{ x: 1, z: 3 }");
+}
+
+test "all conditional object fields filtered out" {
+    try expectEvaluates(
+        \\{ x: 1 if false, y: 2 if false }
+    , "{}");
+}
+
 test "object extension can be chained" {
     try expectEvaluates(
         \\base = { a: 1 }
