@@ -38,11 +38,25 @@ Value (value.zig)             → Runtime values (Integer, String, Array, Object
 **Value** (value.zig): Runtime union (integer, string, array, tuple, object, function, native_fn, thunk)
 **Environment** (value.zig): Linked-list scope chain for lexical scoping
 
+### Builtins Architecture
+
+Native functions (implemented in Zig) are exposed to stdlib via a `Builtins` object:
+
+1. `builtin_env.zig` creates a single `Builtins` object with all native functions as fields
+2. Stdlib `.lazy` files reference them as `Builtins.array_length`, `Builtins.crash`, etc.
+3. After stdlib modules are loaded, `Builtins` is stripped from the user-visible environment
+4. User code can only access native functions through stdlib wrappers (e.g., `Array.length`)
+
+**Adding a new builtin**:
+1. Implement the function in `builtins.zig`
+2. Add an entry to `builtin_entries` in `builtin_env.zig`
+3. Expose it through a stdlib module (e.g., add a field to `stdlib/lib/Array.lazy`)
+
 ### Module System
 
 **Auto-Imported Modules** (defined in evaluator.zig):
 - `Array`, `Basics`, `Float`, `Math`, `Object`, `Range`, `Result`, `String`, `Tuple`
-- **Basics** fields are exposed as unqualified identifiers
+- **Basics** fields are exposed as unqualified identifiers (e.g., `isString`, `toString`, `crash`)
 - Others available by module name (e.g., `Array.map`)
 
 **Import Resolution**:
@@ -51,7 +65,7 @@ Value (value.zig)             → Runtime values (Integer, String, Array, Object
 3. Default: `stdlib/lib`
 4. Append `.lazy` if not present
 
-**Limitations**: No caching (each import re-evaluates), no circular import detection
+**Module caching**: Imports are cached by resolved path — repeated imports return the same value without re-evaluation.
 
 ## File Structure
 
@@ -95,8 +109,8 @@ examples/                     # Example .lazy files
 | value.zig | Runtime value types | New value types |
 | value_format.zig | Value formatting | JSON/YAML output |
 | module_resolver.zig | Module loading | Module search paths |
-| builtin_env.zig | Builtin registration | Auto-imported modules |
-| builtins.zig | Native functions | Builtin functions |
+| builtin_env.zig | Builtins object creation | New native function entries |
+| builtins.zig | Native function implementations | New builtin functions |
 | formatter.zig | Code formatter | Formatting rules |
 
 ### Common Functions
@@ -106,7 +120,8 @@ examples/                     # Example .lazy files
 | `evalString` | eval.zig | Parse and evaluate string |
 | `evaluateExpression` | evaluator.zig | Main evaluation dispatch |
 | `matchPattern` | evaluator.zig | Pattern matching |
-| `createBuiltinEnvironment` | builtin_env.zig | Setup stdlib |
+| `createBuiltinEnvironment` | builtin_env.zig | Create Builtins object |
+| `createStdlibEnvironment` | evaluator.zig | Setup full stdlib env |
 | `importModule` | evaluator.zig | Load .lazy file |
 | `formatSource` | formatter.zig | Format code |
 
@@ -123,11 +138,12 @@ examples/                     # Example .lazy files
 | Array | `[1, 2, 3]` | `array: []Expression` |
 | Object | `{ x: 1 }` | `object: Object` |
 | Comprehension | `[x * 2 for x in xs]` | `array_comprehension: ...` |
+| Assert | `assert x > 0 : "msg"; x` | `assert_expr: Assert` |
 
 ## Testing
 
 **Unit Tests (Zig)**: `tests/eval/*.zig` - Run with `zig build test`
-**Spec Tests (Lazylang)**: `stdlib/tests/*Spec.lazy` - Run with `./bin/lazy spec stdlib/tests/`
+**Spec Tests (Lazylang)**: `stdlib/spec/*Spec.lazy` - Run with `./bin/lazy spec stdlib/spec/`
 **Formatter Tests**: `tests/fixtures/formatter/*.lazy` - Fixture-based with `//` comment format
 **Integration Tests**: `examples/*.lazy` - Automated via `tests/examples_test.zig`
 
