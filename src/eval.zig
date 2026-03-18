@@ -206,12 +206,19 @@ fn evalSourceWithFormat(
         while (it.next()) |key| allocator.free(key.*);
         module_cache.deinit();
     }
+    var import_stack = value_mod.ImportStack.init(allocator);
+    defer {
+        var si = import_stack.keyIterator();
+        while (si.next()) |key| allocator.free(key.*);
+        import_stack.deinit();
+    }
 
     const context = EvalContext{
         .allocator = allocator,
         .lazy_paths = lazy_paths,
         .error_ctx = &err_ctx,
         .module_cache = &module_cache,
+        .import_stack = &import_stack,
     };
 
     var parser = Parser.initWithContext(arena.allocator(), source, &err_ctx) catch |err| {
@@ -392,12 +399,19 @@ fn evalSourceWithValue(
         while (it.next()) |key| allocator.free(key.*);
         module_cache2.deinit();
     }
+    var import_stack2 = value_mod.ImportStack.init(allocator);
+    defer {
+        var si = import_stack2.keyIterator();
+        while (si.next()) |key| allocator.free(key.*);
+        import_stack2.deinit();
+    }
 
     const context = EvalContext{
         .allocator = allocator,
         .lazy_paths = lazy_paths,
         .error_ctx = &err_ctx,
         .module_cache = &module_cache2,
+        .import_stack = &import_stack2,
     };
 
     var parser = try Parser.init(arena.allocator(), source);
@@ -459,7 +473,13 @@ pub fn evalFileValue(
         while (it.next()) |key| allocator.free(key.*);
         module_cache3.deinit();
     }
-    const context = EvalContext{ .allocator = allocator, .lazy_paths = lazy_paths, .module_cache = &module_cache3 };
+    var import_stack3 = value_mod.ImportStack.init(allocator);
+    defer {
+        var si = import_stack3.keyIterator();
+        while (si.next()) |key| allocator.free(key.*);
+        import_stack3.deinit();
+    }
+    const context = EvalContext{ .allocator = allocator, .lazy_paths = lazy_paths, .module_cache = &module_cache3, .import_stack = &import_stack3 };
 
     var parser = try Parser.init(arena, contents);
     const expression = try parser.parse();

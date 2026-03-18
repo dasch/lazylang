@@ -1,5 +1,6 @@
 const std = @import("std");
 const common = @import("common.zig");
+const eval = @import("evaluator");
 const expectEvaluates = common.expectEvaluates;
 
 test "imports modules from search paths" {
@@ -110,4 +111,33 @@ test "imports module returning array" {
     std.process.changeCurDir(module_path) catch unreachable;
 
     try expectEvaluates("import 'Items'", "[1, 2, 3]");
+}
+
+test "circular import is detected" {
+    var tmp_dir = std.testing.tmpDir(.{});
+    defer tmp_dir.cleanup();
+
+    // A imports B, B imports A
+    try tmp_dir.dir.writeFile(.{ .sub_path = "A.lazy", .data = "import 'B'" });
+    try tmp_dir.dir.writeFile(.{ .sub_path = "B.lazy", .data = "import 'A'" });
+
+    const module_path = try tmp_dir.dir.realpathAlloc(std.testing.allocator, ".");
+    defer std.testing.allocator.free(module_path);
+
+    const original_dir = try std.fs.cwd().realpathAlloc(std.testing.allocator, ".");
+    defer {
+        std.process.changeCurDir(original_dir) catch unreachable;
+        std.testing.allocator.free(original_dir);
+    }
+
+    std.process.changeCurDir(module_path) catch unreachable;
+
+    const result = eval.evalInline(std.testing.allocator, "import 'A'");
+    if (result) |*r| {
+        var res = r.*;
+        res.deinit();
+        return error.TestExpectedError;
+    } else |err| {
+        try std.testing.expectEqual(error.UserCrash, err);
+    }
 }

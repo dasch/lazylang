@@ -2283,6 +2283,19 @@ fn importModule(
         }
     }
 
+    // Check for circular imports
+    if (ctx.import_stack) |stack| {
+        if (stack.contains(module_file.path)) {
+            const msg = std.fmt.allocPrint(std.heap.page_allocator, "Circular import detected: {s}", .{module_file.path}) catch "Circular import detected";
+            value_mod.setUserCrashMessage(msg);
+            return error.UserCrash;
+        }
+        // Mark this module as being imported
+        if (ctx.allocator.dupe(u8, module_file.path)) |path_copy| {
+            stack.put(path_copy, {}) catch {};
+        } else |_| {}
+    }
+
     const contents = try module_file.file.readToEndAlloc(arena, std.math.maxInt(usize));
 
     // Save the current file so we can restore it after import
@@ -2372,11 +2385,17 @@ fn importModule(
         }
     }
 
-    // Cache the result
+    // Cache the result and remove from import stack
     if (ctx.module_cache) |cache| {
         if (ctx.allocator.dupe(u8, module_file.path)) |path_copy| {
             cache.put(path_copy, result) catch {};
         } else |_| {}
+    }
+    if (ctx.import_stack) |stack| {
+        // Remove from import stack — we need to find and free the key we added
+        if (stack.fetchRemove(module_file.path)) |entry| {
+            ctx.allocator.free(entry.key);
+        }
     }
 
     return result;

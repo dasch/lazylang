@@ -157,6 +157,9 @@ pub const EvalError = ParseError || std.mem.Allocator.Error || std.process.GetEn
 /// Cache for imported modules, keyed by resolved absolute path.
 pub const ModuleCache = std.StringHashMap(Value);
 
+/// Set of module paths currently being imported (for circular import detection).
+pub const ImportStack = std.StringHashMap(void);
+
 /// EvalContext holds global evaluation state and configuration.
 /// Passed through the evaluation process.
 pub const EvalContext = struct {
@@ -164,4 +167,5 @@ pub const EvalContext = struct {
     lazy_paths: [][]const u8,
     error_ctx: ?*error_context.ErrorContext = null,
     module_cache: ?*ModuleCache = null,
+    import_stack: ?*ImportStack = null,
 };
