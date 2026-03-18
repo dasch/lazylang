@@ -107,7 +107,6 @@ const builtin_entries = [_]BuiltinEntry{
     .{ .name = "is_float", .function = builtins.isFloat },
     .{ .name = "is_boolean", .function = builtins.isBoolean },
     .{ .name = "is_null", .function = builtins.isNull },
-    .{ .name = "is_symbol", .function = builtins.isSymbol },
     .{ .name = "is_string", .function = builtins.isString },
     .{ .name = "is_array", .function = builtins.isArray },
     .{ .name = "is_tuple", .function = builtins.isTuple },

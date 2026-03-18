@@ -1576,13 +1576,6 @@ pub fn isNull(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError
     return eval.Value{ .boolean = args[0] == .null_value };
 }
 
-/// Check if a value is a symbol (deprecated: symbols are now strings)
-pub fn isSymbol(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
-    _ = arena;
-    if (args.len != 1) return error.WrongNumberOfArguments;
-    return eval.Value{ .boolean = false };
-}
-
 /// Check if a value is a string
 pub fn isString(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
     _ = arena;

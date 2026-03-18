@@ -1,7 +1,7 @@
 /// Provides fundamental utilities and type predicates for Lazylang.
 ///
 /// This module includes functions for:
-/// - **Type Checking**: [isInteger], [isFloat], [isBoolean], [isNull], [isSymbol],
+/// - **Type Checking**: [isInteger], [isFloat], [isBoolean], [isNull],
 ///   [isString], [isArray], [isTuple], [isObject], [isFunction]
 /// - **Error Handling**: [crash]
 ///
@@ -76,21 +76,6 @@
   /// isNull ""  //=> false
   /// ```
   isNull: value -> Builtins.is_null value
-
-  /// Checks if a value is a symbol.
-  ///
-  /// **Parameter:**
-  /// - `value`: The value to check
-  ///
-  /// **Returns:** `true` if the value is a symbol, `false` otherwise
-  ///
-  /// **Example:**
-  /// ```
-  /// isSymbol #ok  //=> true
-  /// isSymbol "ok"  //=> false
-  /// isSymbol 42  //=> false
-  /// ```
-  isSymbol: value -> Builtins.is_symbol value
 
   /// Checks if a value is a string.
   ///
@@ -187,7 +172,7 @@
 
   /// Converts a value to its string representation.
   ///
-  /// Supports integers, floats, booleans, null, symbols, and strings.
+  /// Supports integers, floats, booleans, null, and strings.
   /// Strings are returned unchanged.
   ///
   /// **Parameter:**
@@ -197,7 +182,7 @@
   /// ```
   /// toString 42  //=> "42"
   /// toString true  //=> "true"
-  /// toString #ok  //=> "#ok"
+  /// toString #ok  //=> "ok"
   /// "port: " + toString 8080  //=> "port: 8080"
   /// ```
   toString: value -> Builtins.to_string value

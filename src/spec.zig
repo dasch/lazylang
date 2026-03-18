@@ -403,9 +403,7 @@ fn runTestItem(ctx: anytype, item: eval_module.Value) anyerror!void {
 }
 
 fn runDescribe(ctx: anytype, desc: eval_module.ObjectValue) anyerror!void {
-    // Get description (can be string or symbol)
     var description: ?[]const u8 = null;
-    var description_is_symbol = false;
     var children: ?eval_module.ArrayValue = null;
 
     for (desc.fields) |field| {
@@ -414,7 +412,6 @@ fn runDescribe(ctx: anytype, desc: eval_module.ObjectValue) anyerror!void {
             switch (forced_value) {
                 .string => |s| {
                     description = s;
-                    description_is_symbol = false;
                 },
                 else => {},
             }
@@ -457,20 +454,9 @@ fn runDescribe(ctx: anytype, desc: eval_module.ObjectValue) anyerror!void {
 
         try ctx.writeIndent();
 
-        // Format description based on type
-        if (description_is_symbol) {
-            // Symbols are formatted like code (blue), strip the # prefix
-            const symbol_name = if (description.?.len > 0 and description.?[0] == '#')
-                description.?[1..]
-            else
-                description.?;
-            try ctx.writer.print("{s}{s}{s}{s}\n", .{ Color.bold, Color.blue, symbol_name, Color.reset });
-        } else {
-            // Strings use the full markdown-light formatting (white/no color) with bold
-            const formatted_desc = try formatDescription(ctx.allocator, description.?, Color.blue, Color.bold);
-            defer ctx.allocator.free(formatted_desc);
-            try ctx.writer.print("{s}{s}{s}\n", .{ Color.bold, formatted_desc, Color.reset });
-        }
+        const formatted_desc = try formatDescription(ctx.allocator, description.?, Color.blue, Color.bold);
+        defer ctx.allocator.free(formatted_desc);
+        try ctx.writer.print("{s}{s}{s}\n", .{ Color.bold, formatted_desc, Color.reset });
     }
 
     if (should_run_children) {

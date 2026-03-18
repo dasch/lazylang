@@ -444,12 +444,14 @@ There is also special syntax for function arguments:
 
 ## Tags
 
-Tags are symbolic values with fixed identity, similar to atoms in Erlang or symbols in Ruby. They are identifiers prefixed with a single `#` character:
+Tags are string shorthand using the `#` prefix. `#foo` is syntactic sugar for the string `"foo"`:
 
 ```
-#name
-#region
+#name      // equivalent to "name"
+#region    // equivalent to "region"
 ```
+
+Tags are particularly useful as discriminators in tagged tuples for error handling and pattern matching, where they're more visually distinct than quoted strings.
 
 ## Error handling
 
@@ -459,6 +461,14 @@ Errors are handled similar to Erlang; code that may fail should evaluate to a tu
 when Object.get "team" resource matches
   (#ok, team) then team
   #noSuchKey then defaultTeam
+```
+
+Since tags are just strings, you can also match with string literals:
+
+```
+when Object.get "team" resource matches
+  ("ok", team) then team
+  "noSuchKey" then defaultTeam
 ```
 
 ### Runtime errors with `crash`

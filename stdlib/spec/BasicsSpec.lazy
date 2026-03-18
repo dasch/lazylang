@@ -39,14 +39,6 @@ describe #Basics [
       mustEq false (isNull 0)
   ]
 
-  describe #isSymbol [
-    it "returns false (symbols are now strings)" do
-      mustEq false (isSymbol #ok)
-
-    it "returns false for strings" do
-      mustEq false (isSymbol "ok")
-  ]
-
   describe #isString [
     it "returns true for strings" do
       mustEq true (isString "hello")

@@ -15,7 +15,7 @@ const eval = @import("eval.zig");
 //
 // ENCODING:
 // ✓ Converts Lazylang values to JSON format
-// ✓ Symbols encoded as strings
+// ✓ Tags (#foo) are strings
 // ✓ Tuples encoded as arrays
 // ✓ Pretty-printing with indentation
 // ✓ Proper string escaping
