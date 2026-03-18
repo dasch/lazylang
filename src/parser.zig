@@ -199,9 +199,9 @@ pub const Parser = struct {
                 return error.UnexpectedToken;
             }
 
-            // If we're at EOF or closing delimiter, return just the value
+            // If we're at EOF or closing delimiter, the body is the value itself
             if (self.current.kind == .eof or self.current.kind == .r_paren) {
-                return value;
+                return try self.makeExpression(.{ .let = .{ .pattern = pattern, .value = value, .body = value, .doc = doc } }, start_token);
             }
 
             const body = try self.parseLambda();

@@ -1,5 +1,8 @@
 const std = @import("std");
-const evaluator = @import("eval.zig");
+const ast = @import("ast.zig");
+const parser_mod = @import("parser.zig");
+const tokenizer_mod = @import("tokenizer.zig");
+const error_context = @import("error_context.zig");
 
 pub const FormatterError = error{
     ParseError,
@@ -15,1152 +18,781 @@ pub const FormatterOutput = struct {
     }
 };
 
-const BraceType = enum {
-    brace,
-    bracket,
-    paren,
+const Comment = struct {
+    text: []const u8,
+    line: usize, // 1-indexed source line
+    is_doc: bool, // true for /// comments
+    blank_line_before: bool,
 };
 
-const BraceInfo = struct {
-    brace_type: BraceType,
-    is_single_line: bool,
-    skipped: bool = false, // True if this paren pair should be skipped in output
-    context_do_indent: usize = 0, // The do_indent_level when this brace was opened
-};
+const Writer = struct {
+    buf: std.ArrayList(u8),
+    allocator: std.mem.Allocator,
+    indent: usize,
+    at_line_start: bool,
+    source: []const u8,
+    comments: []const Comment,
+    next_comment: usize,
 
-const TokenInfo = struct {
-    token: evaluator.Token,
-    source_start: usize,
-    source_end: usize,
-};
-
-/// Count newlines in a slice
-fn countNewlines(text: []const u8) usize {
-    var count: usize = 0;
-    for (text) |c| {
-        if (c == '\n') count += 1;
+    fn init(allocator: std.mem.Allocator, source: []const u8, comments: []const Comment) Writer {
+        return .{
+            .buf = std.ArrayList(u8){},
+            .allocator = allocator,
+            .indent = 0,
+            .at_line_start = true,
+            .source = source,
+            .comments = comments,
+            .next_comment = 0,
+        };
     }
-    return count;
+
+    fn write(self: *Writer, text: []const u8) !void {
+        if (self.at_line_start and text.len > 0 and text[0] != '\n') {
+            try self.writeIndent();
+            self.at_line_start = false;
+        }
+        try self.buf.appendSlice(self.allocator, text);
+    }
+
+    fn writeByte(self: *Writer, byte: u8) !void {
+        if (self.at_line_start and byte != '\n') {
+            try self.writeIndent();
+            self.at_line_start = false;
+        }
+        try self.buf.append(self.allocator, byte);
+    }
+
+    fn newline(self: *Writer) !void {
+        try self.buf.append(self.allocator, '\n');
+        self.at_line_start = true;
+    }
+
+    fn writeIndent(self: *Writer) !void {
+        for (0..self.indent) |_| {
+            try self.buf.appendSlice(self.allocator, "  ");
+        }
+    }
+
+    /// Emit any comments that appear before the given source line
+    fn emitCommentsBefore(self: *Writer, before_line: usize) !void {
+        while (self.next_comment < self.comments.len) {
+            const comment = self.comments[self.next_comment];
+            if (comment.line >= before_line) break;
+            if (comment.is_doc) {
+                self.next_comment += 1;
+                continue; // Doc comments are handled by AST nodes
+            }
+            if (comment.blank_line_before and self.buf.items.len > 0) {
+                // Ensure blank line before this comment
+                if (!endsWith2Newlines(self.buf.items)) {
+                    try self.newline();
+                }
+            }
+            try self.write(comment.text);
+            try self.newline();
+            self.next_comment += 1;
+        }
+    }
+
+    /// Emit remaining comments at end of file
+    fn emitRemainingComments(self: *Writer) !void {
+        while (self.next_comment < self.comments.len) {
+            const comment = self.comments[self.next_comment];
+            if (comment.is_doc) {
+                self.next_comment += 1;
+                continue;
+            }
+            try self.write(comment.text);
+            try self.newline();
+            self.next_comment += 1;
+        }
+    }
+
+    fn toOwnedSlice(self: *Writer) ![]const u8 {
+        return self.buf.toOwnedSlice(self.allocator);
+    }
+};
+
+fn endsWith2Newlines(s: []const u8) bool {
+    return s.len >= 2 and s[s.len - 1] == '\n' and s[s.len - 2] == '\n';
+}
+
+/// Extract comments from source text
+fn extractComments(allocator: std.mem.Allocator, source: []const u8) ![]Comment {
+    var comments = std.ArrayList(Comment){};
+    var line_num: usize = 1;
+    var prev_was_blank = false;
+    var lines = std.mem.splitScalar(u8, source, '\n');
+
+    while (lines.next()) |line| {
+        const trimmed = std.mem.trimLeft(u8, line, " \t");
+        if (trimmed.len == 0) {
+            prev_was_blank = true;
+        } else if (std.mem.startsWith(u8, trimmed, "///")) {
+            try comments.append(allocator, .{
+                .text = trimmed,
+                .line = line_num,
+                .is_doc = true,
+                .blank_line_before = prev_was_blank,
+            });
+            prev_was_blank = false;
+        } else if (std.mem.startsWith(u8, trimmed, "//")) {
+            try comments.append(allocator, .{
+                .text = trimmed,
+                .line = line_num,
+                .is_doc = false,
+                .blank_line_before = prev_was_blank,
+            });
+            prev_was_blank = false;
+        } else {
+            prev_was_blank = false;
+        }
+        line_num += 1;
+    }
+
+    return comments.toOwnedSlice(allocator);
 }
 
 /// Format a Lazylang source string
 pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterError!FormatterOutput {
-    // Create an arena for tokenizer allocations (doc comments, etc.)
-    var tokenizer_arena = std.heap.ArenaAllocator.init(allocator);
-    defer tokenizer_arena.deinit();
-
-    // First pass: collect all tokens with their source positions
-    var tokens = std.ArrayList(TokenInfo){};
-    defer tokens.deinit(allocator);
-
-    var tokenizer = evaluator.Tokenizer.init(source, tokenizer_arena.allocator());
-    defer tokenizer.deinit();
-
-    while (true) {
-        const token = tokenizer.next() catch {
-            return FormatterError.ParseError;
-        };
-        if (token.kind == .eof) break;
-
-        // Use token's offset for accurate source position tracking
-        const tok_start = token.offset;
-        var tok_end = tok_start + token.lexeme.len;
-        if (token.kind == .string) {
-            tok_end += 2; // Account for quotes
-        }
-
-        try tokens.append(allocator, .{
-            .token = token,
-            .source_start = tok_start,
-            .source_end = tok_end,
-        });
-    }
-
-    // Determine which braces/brackets are single-line
-    var brace_is_single_line = std.AutoHashMap(usize, bool).init(allocator);
-    defer brace_is_single_line.deinit();
-
-    // Extract just tokens for analysis
-    var token_list = std.ArrayList(evaluator.Token){};
-    defer token_list.deinit(allocator);
-    for (tokens.items) |info| {
-        try token_list.append(allocator, info.token);
-    }
-    try analyzeBraces(token_list.items, &brace_is_single_line);
-
-    // Second pass: format based on analysis
-    var output = std.ArrayList(u8){};
-    defer output.deinit(allocator);
-
-    var indent_level: usize = 0;
-    var prev_indent_level: usize = 0;
-    var prev_token: ?evaluator.TokenKind = null;
-    var at_line_start = true;
-    var brace_stack = std.ArrayList(BraceInfo){};
-    var just_closed_multiline_collection = false; // Track if we just closed a multi-line brace/bracket
-    var skip_next_paren_pair = false; // Track if we should skip parens after = or :
-    defer brace_stack.deinit(allocator);
-    var do_indent_level: usize = 0; // Track additional indent from `do`
-    var just_saw_equals_or_colon = false; // Track if we just saw = or : for continuation indent
-    var skip_until_index: ?usize = null; // Track tokens to skip (for import sorting)
-
-    for (tokens.items, 0..) |info, i| {
-        const token = info.token;
-
-        // Skip tokens if we're in the middle of a pattern we've already processed
-        if (skip_until_index) |skip_idx| {
-            if (i <= skip_idx) {
-                continue;
-            } else {
-                skip_until_index = null;
-            }
-        }
-        // For single-line objects/brackets, handle special spacing before popping stack
-        if (token.kind == .r_brace and brace_stack.items.len > 0) {
-            const brace_info = brace_stack.items[brace_stack.items.len - 1];
-            if (brace_info.brace_type == .brace and brace_info.is_single_line) {
-                // Skip if we already wrote this brace (empty object case)
-                if (brace_info.skipped) {
-                    _ = brace_stack.pop();
-                    prev_token = token.kind;
-                    continue;
-                }
-                try output.appendSlice(allocator, " }");
-                _ = brace_stack.pop();
-                prev_token = token.kind;
-                continue;
-            }
-        }
-
-        // Handle closing brace/bracket/paren indentation - decrease before writing
-        if (token.kind == .r_brace or token.kind == .r_bracket or token.kind == .r_paren) {
-            if (brace_stack.items.len > 0) {
-                const brace_info = brace_stack.items[brace_stack.items.len - 1];
-
-                // Skip closing paren if we skipped the opening (unnecessary parens around let-bindings)
-                if (token.kind == .r_paren and brace_info.brace_type == .paren and brace_info.skipped) {
-                    _ = brace_stack.pop();
-                    prev_token = token.kind;
-                    skip_next_paren_pair = false;
-                    // Restore do_indent_level to the context when this paren was opened
-                    do_indent_level = brace_info.context_do_indent;
-                    continue;
-                }
-
-                // For multi-line brackets/braces in comprehensions, ensure closing bracket/brace is on new line
-                if ((brace_info.brace_type == .bracket or brace_info.brace_type == .brace) and !brace_info.is_single_line and !token.preceded_by_newline) {
-                    // Check if we recently saw a 'for' keyword (likely a comprehension)
-                    if (i > 0 and prev_token == .identifier) {
-                        try output.appendSlice(allocator, "\n");
-                        at_line_start = true;
-                    }
-                }
-
-                _ = brace_stack.pop();
-                if (!brace_info.is_single_line and indent_level > 0) {
-                    indent_level -= 1;
-                    // Update prev_indent_level so dedenting logic can run on closing brace line
-                    prev_indent_level = indent_level;
-                }
-                // Restore do_indent_level to the context when this brace was opened
-                do_indent_level = brace_info.context_do_indent;
-                // Track if we just closed a multi-line brace/bracket
-                just_closed_multiline_collection = !brace_info.is_single_line and
-                    (brace_info.brace_type == .brace or brace_info.brace_type == .bracket);
-            }
-        }
-
-        // Special handling for 'for' keyword in multi-line comprehensions
-        // If we're in a multi-line bracket/brace and see 'for', it should be on its own line
-        // Check only the INNERMOST bracket/brace, not outer ones
-        if (token.kind == .identifier and std.mem.eql(u8, token.lexeme, "for")) {
-            var in_multiline_comprehension = false;
-            if (brace_stack.items.len > 0) {
-                const innermost = brace_stack.items[brace_stack.items.len - 1];
-                if ((innermost.brace_type == .bracket or innermost.brace_type == .brace) and !innermost.is_single_line) {
-                    in_multiline_comprehension = true;
-                }
-            }
-
-            if (in_multiline_comprehension and !token.preceded_by_newline) {
-                // Add a newline before 'for' in multi-line comprehensions
-                try output.appendSlice(allocator, "\n");
-                at_line_start = true;
-            }
-        }
-
-        // Skip unnecessary parens around let-bindings after = or : or -> or keywords EARLY (before spacing)
-        // Pattern: identifier = ( let-bindings ) should become: identifier =\n  let-bindings
-        // Keep parens only if the content inside has no indentation (poorly formatted, parens are structural)
-        // Trailing semicolons are stripped by the semicolon-stripping logic elsewhere
-        if (token.kind == .l_paren) {
-            const is_multi = !(brace_is_single_line.get(i) orelse true);
-            var should_check_paren_skip = false;
-            var is_after_keyword = false;
-
-            if (is_multi and prev_token != null) {
-                if (prev_token.? == .equals or prev_token.? == .colon or prev_token.? == .arrow) {
-                    should_check_paren_skip = true;
-                } else if (prev_token.? == .identifier and i > 0) {
-                    const prev_tok = tokens.items[i - 1].token;
-                    // Check if previous token is a keyword that should skip parens
-                    if (std.mem.eql(u8, prev_tok.lexeme, "else") or
-                        std.mem.eql(u8, prev_tok.lexeme, "then") or
-                        std.mem.eql(u8, prev_tok.lexeme, "do")) {
-                        should_check_paren_skip = true;
-                        is_after_keyword = true;
-                    }
-                }
-            }
-
-            if (should_check_paren_skip) {
-                // Check if content is properly indented
-                var has_proper_indentation = false;
-                var has_top_level_let_binding = false;
-                var depth: i32 = 1;
-                var j = i + 1;
-                var first_content_tok: ?evaluator.Token = null;
-
-                while (j < tokens.items.len) : (j += 1) {
-                    const t = tokens.items[j].token;
-                    if (t.kind == .l_paren) {
-                        depth += 1;
-                    } else if (t.kind == .r_paren) {
-                        depth -= 1;
-                        if (depth == 0) {
-                            break;
-                        }
-                    }
-                    // Check if first content token inside parens is indented
-                    if (depth == 1 and !has_proper_indentation and t.preceded_by_newline) {
-                        // First token after opening paren on new line - check if it has any indentation
-                        // If column > 1, it's indented (well-formatted)
-                        if (t.column > 1) {
-                            has_proper_indentation = true;
-                        }
-                        // Save first content token to check for let-bindings
-                        if (first_content_tok == null) {
-                            first_content_tok = t;
-                        }
-                    }
-                }
-
-                // Check if content starts with a pattern followed by = (let-binding)
-                // If after a keyword (else/then/do), don't skip parens with let-bindings
-                // as they're structurally necessary
-                if (is_after_keyword and first_content_tok != null) {
-                    // Look for an equals sign at depth 1 before any semicolons
-                    var k = i + 1;
-                    var check_depth: i32 = 1;
-                    while (k < tokens.items.len) : (k += 1) {
-                        const tk = tokens.items[k].token;
-                        if (tk.kind == .l_paren or tk.kind == .l_bracket or tk.kind == .l_brace) {
-                            check_depth += 1;
-                        } else if (tk.kind == .r_paren) {
-                            check_depth -= 1;
-                            if (check_depth == 0) break;
-                        } else if (tk.kind == .r_bracket or tk.kind == .r_brace) {
-                            check_depth -= 1;
-                        }
-
-                        if (check_depth == 1) {
-                            if (tk.kind == .equals) {
-                                has_top_level_let_binding = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                if ((has_proper_indentation or !is_after_keyword) and !has_top_level_let_binding) {
-                    // Skip this opening paren and mark it for skipping the close
-                    // Always increment do_indent_level to maintain indentation
-                    // The content needs to be indented relative to the context
-                    skip_next_paren_pair = true;
-                    const context = do_indent_level;
-                    do_indent_level += 1;
-                    try brace_stack.append(allocator, BraceInfo{ .brace_type = .paren, .is_single_line = false, .skipped = true, .context_do_indent = context });
-                    continue;
-                }
-            }
-        }
-
-        // Special handling for `if` after `=` or `:` on same line
-        // If this is a multi-line if/then/else (has `else` on its own line),
-        // force newline before the `if` for better formatting
-        if (token.kind == .identifier and std.mem.eql(u8, token.lexeme, "if") and
-            !token.preceded_by_newline and prev_token != null and
-            (prev_token.? == .equals or prev_token.? == .colon))
-        {
-            // Look ahead to see if there's an `else` on its own line (indicates multi-line if/then/else)
-            var found_multiline_else = false;
-            var depth: i32 = 0;
-            for (tokens.items[i + 1 ..]) |future_info| {
-                const future_tok = future_info.token;
-
-                // Track brace/bracket/paren depth
-                if (future_tok.kind == .l_brace or future_tok.kind == .l_bracket or future_tok.kind == .l_paren) {
-                    depth += 1;
-                } else if (future_tok.kind == .r_brace or future_tok.kind == .r_bracket or future_tok.kind == .r_paren) {
-                    depth -= 1;
-                    if (depth < 0) break;
-                }
-
-                // Only look for else at depth 0 (not inside nested structures)
-                if (depth == 0) {
-                    if (future_tok.kind == .identifier and std.mem.eql(u8, future_tok.lexeme, "else")) {
-                        if (future_tok.preceded_by_newline) {
-                            found_multiline_else = true;
-                        }
-                        break;
-                    }
-                    // Stop at semicolon at depth 0
-                    if (future_tok.kind == .semicolon) break;
-                }
-            }
-
-            // If this is a multi-line if/then/else, force newline before the `if`
-            // and increment indent level for the if block
-            if (found_multiline_else) {
-                try output.appendSlice(allocator, "\n");
-                at_line_start = true;
-                do_indent_level += 1;
-            }
-        }
-
-        // Handle newlines
-        if (token.preceded_by_newline) {
-            // Special handling for `then` keyword - move it to same line as condition
-            // `else` stays on its own line
-            var suppress_newline = false;
-            if (token.kind == .identifier and std.mem.eql(u8, token.lexeme, "then")) {
-                suppress_newline = true;
-            }
-
-            // For `else`, dedent back to the level before `then`
-            if (token.kind == .identifier and std.mem.eql(u8, token.lexeme, "else") and do_indent_level > 0) {
-                do_indent_level -= 1;
-            }
-
-            if (suppress_newline) {
-                // Don't output newline, just mark that we're not at line start
-                // The spacing logic will handle adding a space if needed
-                at_line_start = false;
-            } else {
-                // Check if this token is dedented in the source compared to expected indentation
-                // Only dedent if the source appears to be intentionally dedented (not just badly formatted)
-                // Don't dedent if:
-                // 1. indent_level changed since last line (we just opened a brace)
-                // 2. This is an object field name (identifier followed by colon at object field level)
-
-                // Check if this is an object field name by looking ahead
-                var is_object_field = false;
-                if (token.kind == .identifier and i + 1 < tokens.items.len) {
-                    const next_token = tokens.items[i + 1].token;
-                    // If next token is a colon, this is a field name
-                    if (next_token.kind == .colon) {
-                        // Check if we're inside a multi-line object
-                        for (brace_stack.items) |brace_info| {
-                            if (brace_info.brace_type == .brace and !brace_info.is_single_line) {
-                                is_object_field = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                // For object fields, reset do_indent_level to the context from when the object was opened
-                // This preserves outer indentation (like from 'else') while removing field-value indentation
-                if (is_object_field) {
-                    // Find the innermost enclosing multi-line object's context (search backwards)
-                    var stack_idx = brace_stack.items.len;
-                    while (stack_idx > 0) {
-                        stack_idx -= 1;
-                        const brace_info = brace_stack.items[stack_idx];
-                        if (brace_info.brace_type == .brace and !brace_info.is_single_line) {
-                            do_indent_level = brace_info.context_do_indent;
-                            break;
-                        }
-                    }
-                // Don't apply source-based dedenting for control flow keywords (else, then)
-                // or closing braces/brackets/parens - these should be positioned by structural rules
-                } else if (do_indent_level > 0 and indent_level == prev_indent_level) {
-                    const is_control_flow_keyword = token.kind == .identifier and
-                        (std.mem.eql(u8, token.lexeme, "else") or std.mem.eql(u8, token.lexeme, "then"));
-                    const is_closing_brace = token.kind == .r_brace or token.kind == .r_bracket or token.kind == .r_paren;
-
-                    // Don't apply source-based dedenting when inside a skipped paren
-                    // (the content wasn't indented in source but needs indentation now)
-                    var in_skipped_paren = false;
-                    for (brace_stack.items) |brace_info| {
-                        if (brace_info.brace_type == .paren and brace_info.skipped) {
-                            in_skipped_paren = true;
-                            break;
-                        }
-                    }
-
-                    if (!is_control_flow_keyword and !is_closing_brace and !in_skipped_paren) {
-                        const source_indent = if (token.column > 1) (token.column - 1) / 2 else 0;
-                        const base_indent = indent_level;
-                        const expected_indent = indent_level + do_indent_level;
-                        if (source_indent > 0 or base_indent == 0) {
-                            if (source_indent <= base_indent) {
-                                do_indent_level = 0;
-                            } else if (source_indent < expected_indent) {
-                                do_indent_level = source_indent - base_indent;
-                            }
-                        }
-                    }
-                }
-
-                // Remember indent level for next newline
-                prev_indent_level = indent_level;
-
-            // Check if previous token was `do`, `where`, `matches`, `then`, `else`, or `->` to increase indent
-            // For `=` and `:`, only apply continuation indent for continuation operators like `\`
-            if (just_saw_equals_or_colon and (token.kind == .backslash)) {
-                do_indent_level += 1;
-                just_saw_equals_or_colon = false;
-            } else if (just_saw_equals_or_colon) {
-                // Clear the flag if we're not on a continuation operator
-                just_saw_equals_or_colon = false;
-            }
-
-            if (i > 0) {
-                const prev_tok = tokens.items[i - 1].token;
-                if (prev_tok.kind == .arrow) {
-                    do_indent_level += 1;
-                } else if (prev_tok.kind == .equals) {
-                    // Indent after equals on new line
-                    do_indent_level += 1;
-                } else if (prev_tok.kind == .colon) {
-                    // Indent after colon in object fields
-                    // Check if we're in a multi-line object
-                    for (brace_stack.items) |brace_info| {
-                        if (brace_info.brace_type == .brace and !brace_info.is_single_line) {
-                            do_indent_level += 1;
-                            break;
-                        }
-                    }
-                } else if (prev_tok.kind == .identifier and
-                    (std.mem.eql(u8, prev_tok.lexeme, "do") or
-                     std.mem.eql(u8, prev_tok.lexeme, "where") or
-                     std.mem.eql(u8, prev_tok.lexeme, "matches") or
-                     std.mem.eql(u8, prev_tok.lexeme, "then") or
-                     std.mem.eql(u8, prev_tok.lexeme, "else"))) {
-                    do_indent_level += 1;
-                }
-            }
-
-            // Extract regular comments from the gap before this token
-            const CommentLine = struct {
-                text: []const u8,
-                blank_line_after: bool,
-            };
-            var comments = std.ArrayList(CommentLine){};
-            defer comments.deinit(allocator);
-
-            // Get the text between previous token (or start of file) and current token
-            const between = if (i > 0)
-                source[tokens.items[i - 1].source_end..info.source_start]
-            else
-                source[0..info.source_start];
-
-            if (between.len > 0) {
-
-                var search_idx: usize = 0;
-                while (search_idx < between.len) {
-                    if (search_idx + 1 < between.len and between[search_idx] == '/' and between[search_idx + 1] == '/') {
-                        // Check if it's a doc comment (///)
-                        if (search_idx + 2 < between.len and between[search_idx + 2] == '/') {
-                            // Skip doc comments - they're handled separately
-                            search_idx += 3;
-                            while (search_idx < between.len and between[search_idx] != '\n') {
-                                search_idx += 1;
-                            }
-                            continue;
-                        }
-
-                        // Regular comment - extract it
-                        const comment_content_start = search_idx + 2;
-                        var comment_content_end = comment_content_start;
-                        while (comment_content_end < between.len and between[comment_content_end] != '\n') {
-                            comment_content_end += 1;
-                        }
-                        const comment_text = between[comment_content_start..comment_content_end];
-
-                        // Check if there's a blank line after this comment
-                        var check_idx = comment_content_end;
-                        if (check_idx < between.len and between[check_idx] == '\n') {
-                            check_idx += 1;
-                        }
-                        const blank_line_after = check_idx < between.len and between[check_idx] == '\n';
-
-                        try comments.append(allocator, CommentLine{
-                            .text = comment_text,
-                            .blank_line_after = blank_line_after,
-                        });
-
-                        search_idx = comment_content_end;
-                    } else {
-                        search_idx += 1;
-                    }
-                }
-            }
-
-            // Count newlines between previous token and this one
-            var newline_count: usize = 1;
-            if (i > 0) {
-                const prev_info = tokens.items[i - 1];
-                const prev_tok = prev_info.token;
-                const raw_newline_count = countNewlines(between);
-
-                // If this token has doc comments, the space between includes those doc comment lines.
-                // We only want to preserve blank lines, not count doc comment lines.
-                // So limit to 2 newlines (one blank line max) when doc comments are present.
-                if (token.doc_comments != null) {
-                    // Special case: if previous token is opening brace/bracket, no blank lines
-                    if (prev_tok.kind == .l_brace or prev_tok.kind == .l_bracket) {
-                        newline_count = 1;
-                    } else {
-                        newline_count = @min(raw_newline_count, 2);
-                    }
-                } else {
-                    newline_count = raw_newline_count;
-                    // Still limit excessive blank lines to 2 (meaning 3 newlines)
-                    if (newline_count > 3) newline_count = 3;
-                }
-            } else {
-                // First token - check if we have leading comments
-                if (comments.items.len > 0) {
-                    // Count newlines for blank lines after comments
-                    newline_count = countNewlines(between);
-                } else if (token.doc_comments == null) {
-                    // No comments and no doc comments - preserve any newlines
-                    newline_count = countNewlines(between);
-                } else {
-                    // Has doc comments - no newlines before
-                    newline_count = 0;
-                }
-            }
-
-            // Determine newlines before comments block
-            // Don't add extra newlines - comments preserve their blank lines internally
-            var newlines_before_comments: usize = 0;
-
-            if (i > 0 and comments.items.len > 0) {
-                // For comments after a token, check if there should be a blank line before the block
-                // Count blank lines that appear before the first comment
-                var blank_lines_before: usize = 0;
-                const total_newlines = countNewlines(between);
-                // Count blank lines consumed by comments (each comment has 1 newline, plus any blank_line_after)
-                var comment_newlines: usize = 0;
-                for (comments.items) |comment_line| {
-                    comment_newlines += 1;
-                    if (comment_line.blank_line_after) comment_newlines += 1;
-                }
-                if (total_newlines > comment_newlines) {
-                    blank_lines_before = total_newlines - comment_newlines;
-                }
-                newlines_before_comments = blank_lines_before;
-            }
-
-            // Output newlines before comments
-            for (0..newlines_before_comments) |_| {
-                try output.appendSlice(allocator, "\n");
-            }
-
-            // Output comments with proper indentation and blank lines between them
-            for (comments.items) |comment_line| {
-                const total_indent = indent_level + do_indent_level;
-                for (0..total_indent) |_| {
-                    try output.appendSlice(allocator, "  ");
-                }
-
-                try output.appendSlice(allocator, "//");
-                const trimmed = std.mem.trimRight(u8, comment_line.text, " \t");
-                if (trimmed.len > 0 and trimmed[0] == ' ') {
-                    try output.appendSlice(allocator, trimmed);
-                } else if (trimmed.len > 0) {
-                    try output.appendSlice(allocator, " ");
-                    try output.appendSlice(allocator, trimmed);
-                }
-                try output.appendSlice(allocator, "\n");
-
-                // Add blank line after comment if it had one in the source
-                if (comment_line.blank_line_after) {
-                    try output.appendSlice(allocator, "\n");
-                }
-            }
-
-            // If no comments were output, we still need to output newlines
-            if (comments.items.len == 0) {
-                // Output newlines, limiting excessive blank lines to 2
-                var lines_to_output = newline_count;
-                if (lines_to_output > 3) lines_to_output = 3;
-                for (0..lines_to_output) |_| {
-                    try output.appendSlice(allocator, "\n");
-                }
-            }
-
-            at_line_start = true;
-            }  // end of else block for suppress_newline
-        }
-
-
-        // Calculate if we need space before this token
-        // Get the token before prev_token for unary operator detection
-        var token_before_prev: ?evaluator.TokenKind = null;
-        if (i >= 2) {
-            token_before_prev = tokens.items[i - 2].token.kind;
-        }
-        var needs_space_before = !at_line_start and prev_token != null and
-            needsSpaceBefore(token_before_prev, prev_token.?, token.kind, brace_stack.items);
-
-        // Special case: preserve space before `.` for partial application syntax
-        // e.g., `Array.sortBy .age` should keep the space before `.age`
-        if (!needs_space_before and token.kind == .dot and token.preceded_by_whitespace and !at_line_start) {
-            needs_space_before = true;
-        }
-
-        // Special case: preserve spacing before brackets after identifiers/symbols
-        // We can't reliably distinguish between array indexing (arr[0]) and function calls (foo [1,2])
-        // since in a functional language the left-hand side could be either an array or a function.
-        // So we preserve whatever spacing the user wrote in the source.
-        if (token.kind == .l_bracket and prev_token != null and
-            (prev_token.? == .identifier or prev_token.? == .symbol)) {
-            // Override the normal spacing rule - preserve source spacing
-            needs_space_before = token.preceded_by_whitespace and !at_line_start;
-        }
-
-        // Reset do_indent_level if we're starting a new statement at array level
-        if (at_line_start and token.kind == .identifier and do_indent_level > 0) {
-            // Keywords that start new statements
-            if (std.mem.eql(u8, token.lexeme, "it") or
-                std.mem.eql(u8, token.lexeme, "describe")) {
-                do_indent_level = 0;
-            }
-        }
-
-        // Output doc comments before the token
-        if (token.doc_comments) |docs| {
-            // Split doc comments by newlines and output each line with proper indentation
-            var lines = std.mem.splitScalar(u8, docs, '\n');
-            while (lines.next()) |line| {
-                // Write indentation if at line start
-                if (at_line_start) {
-                    const total_indent = indent_level + do_indent_level;
-                    for (0..total_indent) |_| {
-                        try output.appendSlice(allocator, "  ");
-                    }
-                }
-                // Trim trailing whitespace from doc comment line
-                const trimmed_line = std.mem.trimRight(u8, line, " \t");
-                if (trimmed_line.len > 0) {
-                    try output.appendSlice(allocator, "/// ");
-                    try output.appendSlice(allocator, trimmed_line);
-                } else {
-                    // Empty line - just output ///
-                    try output.appendSlice(allocator, "///");
-                }
-                try output.appendSlice(allocator, "\n");
-                at_line_start = true;
-            }
-        }
-
-        // Write indentation at line start
-        if (at_line_start and token.kind != .eof) {
-            const total_indent = indent_level + do_indent_level;
-            for (0..total_indent) |_| {
-                try output.appendSlice(allocator, "  ");
-            }
-            at_line_start = false;
-        } else if (needs_space_before) {
-            try output.appendSlice(allocator, " ");
-        }
-
-        // Special case: sort identifiers in import destructuring
-        // Pattern: { b, a } = import "Foo" should become { a, b } = import "Foo"
-        if (token.kind == .l_brace) {
-            // Check if this is an import destructuring pattern
-            var is_import_pattern = false;
-            var closing_brace_idx: ?usize = null;
-
-            // Find the matching closing brace
-            var depth: i32 = 1;
-            var j = i + 1;
-            while (j < tokens.items.len and depth > 0) : (j += 1) {
-                const t = tokens.items[j].token;
-                if (t.kind == .l_brace) {
-                    depth += 1;
-                } else if (t.kind == .r_brace) {
-                    depth -= 1;
-                    if (depth == 0) {
-                        closing_brace_idx = j;
-                        break;
-                    }
-                }
-            }
-
-            // Check if followed by `= import`
-            if (closing_brace_idx) |close_idx| {
-                if (close_idx + 2 < tokens.items.len) {
-                    const tok_after_brace = tokens.items[close_idx + 1].token;
-                    const tok_after_equals = tokens.items[close_idx + 2].token;
-                    if (tok_after_brace.kind == .equals and
-                        tok_after_equals.kind == .identifier and
-                        std.mem.eql(u8, tok_after_equals.lexeme, "import")) {
-                        is_import_pattern = true;
-                    }
-                }
-            }
-
-            if (is_import_pattern and closing_brace_idx != null) {
-                // Collect all identifiers inside the braces
-                var identifiers = std.ArrayList([]const u8){};
-                defer identifiers.deinit(allocator);
-
-                j = i + 1;
-                while (j < closing_brace_idx.?) : (j += 1) {
-                    const t = tokens.items[j].token;
-                    if (t.kind == .identifier) {
-                        try identifiers.append(allocator, t.lexeme);
-                    }
-                }
-
-                // Sort identifiers alphabetically
-                std.mem.sort([]const u8, identifiers.items, {}, struct {
-                    fn lessThan(_: void, a: []const u8, b: []const u8) bool {
-                        return std.mem.lessThan(u8, a, b);
-                    }
-                }.lessThan);
-
-                // Output the sorted import destructuring
-                try output.appendSlice(allocator, "{ ");
-                for (identifiers.items, 0..) |name, idx| {
-                    if (idx > 0) {
-                        try output.appendSlice(allocator, ", ");
-                    }
-                    try output.appendSlice(allocator, name);
-                }
-                try output.appendSlice(allocator, " }");
-
-                // Skip all tokens until after the closing brace
-                skip_until_index = closing_brace_idx.?;
-                prev_token = .r_brace;
-                continue;
-            }
-        }
-
-        // For single-line objects, add space after opening brace
-        // For object projections (e.g., obj.{ x, y }), also add spaces
-        // Exception: Empty objects `{}` should not have spaces
-        if (token.kind == .l_brace) {
-            if (brace_is_single_line.get(i)) |is_single| {
-                if (is_single) {
-                    // Check if next token is closing brace (empty object)
-                    const is_empty = i + 1 < tokens.items.len and tokens.items[i + 1].token.kind == .r_brace;
-                    if (is_empty) {
-                        try output.appendSlice(allocator, "{}");
-                        // Skip the closing brace since we already wrote it
-                        try brace_stack.append(allocator, BraceInfo{ .brace_type = .brace, .is_single_line = true, .skipped = true, .context_do_indent = do_indent_level });
-                    } else {
-                        try output.appendSlice(allocator, "{ ");
-                        try brace_stack.append(allocator, BraceInfo{ .brace_type = .brace, .is_single_line = true, .context_do_indent = do_indent_level });
-                    }
-                    prev_token = token.kind;
-                    continue;
-                }
-            }
-        }
-
-        // Skip semicolons in multi-line parenthesized blocks
-        // (They're used for sequencing in let-bindings but shouldn't appear in formatted output)
-        if (token.kind == .semicolon) {
-            // Check if we're in a multi-line paren block
-            var in_multiline_paren = false;
-            for (brace_stack.items) |brace_info| {
-                if (brace_info.brace_type == .paren and !brace_info.is_single_line) {
-                    in_multiline_paren = true;
-                    break;
-                }
-            }
-
-            if (in_multiline_paren) {
-                prev_token = token.kind;
-                continue; // Skip this semicolon
-            }
-        }
-
-        // Handle commas in collections
-        if (token.kind == .comma) {
-            // Check if the IMMEDIATE parent collection (brace/bracket/paren) is multi-line
-            // We need to skip parentheses when looking for objects/arrays, but not skip them entirely
-            // because function calls with parens should not have forced newlines
-            var in_multiline_collection = false;
-            var in_single_line_collection = false;
-
-            // Start from the end (innermost) and find the first brace/bracket/paren
-            if (brace_stack.items.len > 0) {
-                const immediate_parent = brace_stack.items[brace_stack.items.len - 1];
-                // Only apply multi-line formatting to braces and brackets, not parens
-                if (immediate_parent.brace_type == .brace or immediate_parent.brace_type == .bracket) {
-                    if (immediate_parent.is_single_line) {
-                        in_single_line_collection = true;
-                    } else {
-                        in_multiline_collection = true;
-                    }
-                }
-            }
-
-            // Check if this is a trailing comma
-            const is_trailing = if (i + 1 < tokens.items.len) blk: {
-                const next_token = tokens.items[i + 1].token;
-                break :blk next_token.kind == .r_brace or next_token.kind == .r_bracket;
-            } else false;
-
-            // Skip trailing commas in all collections
-            if (is_trailing) {
-                prev_token = token.kind;
-                continue;
-            }
-
-            // For multi-line objects (braces) and arrays (brackets), skip all commas but force newline
-            if (in_multiline_collection) {
-                // Force newline if next token isn't already on one
-                if (i + 1 < tokens.items.len) {
-                    const next_token = tokens.items[i + 1].token;
-                    if (!next_token.preceded_by_newline) {
-                        try output.appendSlice(allocator, "\n");
-                        at_line_start = true;
-                    }
-                }
-                prev_token = token.kind;
-                continue;
-            }
-
-            // For single-line collections, commas are written normally (below)
-        }
-
-        // Write the token
-        if (token.kind == .string) {
-            try output.appendSlice(allocator, "\"");
-            try output.appendSlice(allocator, token.lexeme);
-            try output.appendSlice(allocator, "\"");
-        } else {
-            try output.appendSlice(allocator, token.lexeme);
-        }
-
-        // After closing brace of a multi-line object/array, force newline if next token isn't on one
-        // This ensures each closing brace is on its own line
-        // Exception: if next token is a comma, keep it on the same line
-        if (just_closed_multiline_collection and i + 1 < tokens.items.len) {
-            const next_token = tokens.items[i + 1].token;
-            if (!next_token.preceded_by_newline and next_token.kind != .comma) {
-                try output.appendSlice(allocator, "\n");
-                at_line_start = true;
-            }
-            just_closed_multiline_collection = false;
-        }
-
-        // After `then`, check if this is a multi-line if/then/else
-        // If we find an `else` ahead that's on its own line, force newline after `then`
-        if (token.kind == .identifier and std.mem.eql(u8, token.lexeme, "then")) {
-            // Look ahead for else, tracking brace depth to skip over nested structures
-            var found_multiline_else = false;
-            var depth: i32 = 0;
-            for (tokens.items[i + 1 ..]) |future_info| {
-                const future_tok = future_info.token;
-
-                // Track brace/bracket/paren depth
-                if (future_tok.kind == .l_brace or future_tok.kind == .l_bracket or future_tok.kind == .l_paren) {
-                    depth += 1;
-                } else if (future_tok.kind == .r_brace or future_tok.kind == .r_bracket or future_tok.kind == .r_paren) {
-                    depth -= 1;
-                    // If we've closed all braces and see a closing brace at depth < 0, stop
-                    if (depth < 0) break;
-                }
-
-                // Only look for else at depth 0 (not inside nested structures)
-                if (depth == 0) {
-                    if (future_tok.kind == .identifier and std.mem.eql(u8, future_tok.lexeme, "else")) {
-                        if (future_tok.preceded_by_newline) {
-                            found_multiline_else = true;
-                        }
-                        break;
-                    }
-                    // Stop at semicolon at depth 0
-                    if (future_tok.kind == .semicolon) break;
-                }
-            }
-
-            // If we found a multi-line else, force newline after then
-            if (found_multiline_else and i + 1 < tokens.items.len) {
-                const next_token = tokens.items[i + 1].token;
-                if (!next_token.preceded_by_newline) {
-                    try output.appendSlice(allocator, "\n");
-                    at_line_start = true;
-                    // Increment indent for the then branch body
-                    do_indent_level += 1;
-                }
-            }
-        }
-
-        // After `else`, if it was on its own line, force newline for the else branch
-        if (token.kind == .identifier and std.mem.eql(u8, token.lexeme, "else")) {
-            // Check if this else was preceded by a newline (multi-line mode)
-            if (token.preceded_by_newline and i + 1 < tokens.items.len) {
-                const next_token = tokens.items[i + 1].token;
-                if (!next_token.preceded_by_newline) {
-                    try output.appendSlice(allocator, "\n");
-                    at_line_start = true;
-                    // Increment indent for the else branch body
-                    do_indent_level += 1;
-                }
-            }
-        }
-
-
-        // Update indentation for opening braces/brackets
-        if (token.kind == .l_brace) {
-            const is_single = brace_is_single_line.get(i) orelse false;
-            try brace_stack.append(allocator, BraceInfo{ .brace_type = .brace, .is_single_line = is_single, .context_do_indent = do_indent_level });
-            if (!is_single) {
-                indent_level += 1;
-                // For multi-line objects, force newline if next token is on same line
-                if (i + 1 < tokens.items.len) {
-                    const next_token = tokens.items[i + 1].token;
-                    if (!next_token.preceded_by_newline) {
-                        try output.appendSlice(allocator, "\n");
-                        at_line_start = true;
-                    }
-                }
-            }
-        } else if (token.kind == .l_bracket) {
-            const is_single = brace_is_single_line.get(i) orelse false;
-            try brace_stack.append(allocator, BraceInfo{ .brace_type = .bracket, .is_single_line = is_single, .context_do_indent = do_indent_level });
-            if (!is_single) {
-                indent_level += 1;
-                // Don't reset do_indent_level - maintain accumulated indentation
-            }
-        } else if (token.kind == .l_paren) {
-            const is_single = brace_is_single_line.get(i) orelse true;
-            try brace_stack.append(allocator, BraceInfo{ .brace_type = .paren, .is_single_line = is_single, .context_do_indent = do_indent_level });
-            if (!is_single) {
-                indent_level += 1;
-            }
-        }
-
-        // Set flag if we just saw = or : and there's content on the same line
-        // (This handles continuation lines like: result = 42 \ double)
-        if (token.kind == .equals or token.kind == .colon) {
-            // Check if next token is on the same line
-            if (i + 1 < tokens.items.len) {
-                const next_token = tokens.items[i + 1].token;
-                if (!next_token.preceded_by_newline) {
-                    just_saw_equals_or_colon = true;
-                }
-            }
-        }
-
-        // Clear flag if we encounter a newline directly after = or : (handled by arrow logic)
-        if (token.preceded_by_newline and prev_token != null and
-            (prev_token.? == .equals or prev_token.? == .colon)) {
-            just_saw_equals_or_colon = false;
-        }
-
-        prev_token = token.kind;
-    }
-
-    // Ensure file ends with newline
-    if (output.items.len > 0 and output.items[output.items.len - 1] != '\n') {
-        try output.appendSlice(allocator, "\n");
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+
+    // Parse the source to AST
+    var err_ctx = error_context.ErrorContext.init(allocator);
+    defer err_ctx.deinit();
+
+    var parser = parser_mod.Parser.initWithContext(arena.allocator(), source, &err_ctx) catch {
+        return FormatterError.ParseError;
+    };
+    const expression = parser.parse() catch {
+        return FormatterError.ParseError;
+    };
+
+    // Extract comments from source
+    const comments = try extractComments(allocator, source);
+    defer allocator.free(comments);
+
+    // Pretty-print from AST
+    var w = Writer.init(allocator, source, comments);
+
+    try formatExpr(&w, expression, false);
+
+    // Emit any trailing comments
+    try w.emitRemainingComments();
+
+    // Ensure trailing newline
+    if (w.buf.items.len > 0 and w.buf.items[w.buf.items.len - 1] != '\n') {
+        try w.newline();
     }
 
     return FormatterOutput{
-        .text = try output.toOwnedSlice(allocator),
+        .text = try w.toOwnedSlice(),
         .allocator = allocator,
     };
 }
 
-/// Analyze which braces/brackets/parens are single-line
-fn analyzeBraces(tokens: []const evaluator.Token, map: *std.AutoHashMap(usize, bool)) !void {
-    var stack = std.ArrayList(usize){};
-    defer stack.deinit(map.allocator);
+/// Format a file (read, format, return)
+pub fn formatFile(allocator: std.mem.Allocator, path: []const u8) FormatterError!FormatterOutput {
+    const file = std.fs.cwd().openFile(path, .{}) catch return FormatterError.FormatError;
+    defer file.close();
+    const source = file.readToEndAlloc(allocator, 10 * 1024 * 1024) catch return FormatterError.FormatError;
+    defer allocator.free(source);
+    return formatSource(allocator, source);
+}
 
-    for (tokens, 0..) |token, i| {
-        if (token.kind == .l_brace or token.kind == .l_bracket or token.kind == .l_paren) {
-            try stack.append(map.allocator, i);
-        } else if (token.kind == .r_brace or token.kind == .r_bracket or token.kind == .r_paren) {
-            if (stack.items.len > 0) {
-                const open_idx = stack.items[stack.items.len - 1];
-                _ = stack.pop();
-                // Check if there's a newline between open and close
-                var has_newline = false;
-                for (tokens[open_idx + 1 .. i]) |t| {
-                    if (t.preceded_by_newline) {
-                        has_newline = true;
-                        break;
-                    }
-                }
-                try map.put(open_idx, !has_newline);
+// ============================================================================
+// AST Pretty Printer
+// ============================================================================
+
+fn formatExpr(w: *Writer, expr: *const ast.Expression, parens_needed: bool) FormatterError!void {
+    try w.emitCommentsBefore(expr.location.line);
+
+    switch (expr.data) {
+        .integer => |v| {
+            const s = try std.fmt.allocPrint(w.allocator, "{d}", .{v});
+            try w.write(s);
+        },
+        .float => |v| {
+            const s = try std.fmt.allocPrint(w.allocator, "{d}", .{v});
+            // Strip trailing zeros after decimal
+            if (std.mem.indexOf(u8, s, ".")) |dot| {
+                var end = s.len;
+                while (end > dot + 1 and s[end - 1] == '0') end -= 1;
+                if (end == dot + 1) end = dot + 2;
+                try w.write(s[0..end]);
+            } else {
+                try w.write(s);
             }
+        },
+        .boolean => |v| try w.write(if (v) "true" else "false"),
+        .null_literal => try w.write("null"),
+        .string_literal => |s| {
+            try w.writeByte('"');
+            try writeEscapedString(w, s);
+            try w.writeByte('"');
+        },
+        .symbol => |s| try w.write(s),
+        .string_interpolation => |interp| {
+            try w.writeByte('"');
+            for (interp.parts) |part| {
+                switch (part) {
+                    .literal => |lit| try writeEscapedString(w, lit),
+                    .interpolation => |interp_expr| {
+                        // Check if it's a simple identifier
+                        if (interp_expr.data == .identifier) {
+                            try w.writeByte('$');
+                            try w.write(interp_expr.data.identifier);
+                        } else {
+                            try w.write("${");
+                            try formatExpr(w, interp_expr, false);
+                            try w.writeByte('}');
+                        }
+                    },
+                }
+            }
+            try w.writeByte('"');
+        },
+        .identifier => |name| try w.write(name),
+        .lambda => |lam| {
+            try formatPattern(w, lam.param);
+            try w.write(" -> ");
+            try formatExpr(w, lam.body, false);
+        },
+        .let => |let_expr| {
+            try formatLet(w, let_expr, expr.location.line);
+        },
+        .where_expr => |where| {
+            try formatExpr(w, where.expr, false);
+            try w.write(" where");
+            if (where.bindings.len == 1) {
+                try w.writeByte(' ');
+                try formatPattern(w, where.bindings[0].pattern);
+                try w.write(" = ");
+                try formatExpr(w, where.bindings[0].value, false);
+            } else {
+                w.indent += 1;
+                for (where.bindings) |binding| {
+                    try w.newline();
+                    try formatPattern(w, binding.pattern);
+                    try w.write(" = ");
+                    try formatExpr(w, binding.value, false);
+                }
+                w.indent -= 1;
+            }
+        },
+        .unary => |un| {
+            switch (un.op) {
+                .logical_not => {
+                    try w.writeByte('!');
+                    try formatExpr(w, un.operand, true);
+                },
+            }
+        },
+        .binary => |bin| {
+            if (parens_needed) try w.writeByte('(');
+            try formatExpr(w, bin.left, needsParens(bin.left, .left, bin.op));
+            try w.writeByte(' ');
+            try w.write(binaryOpStr(bin.op));
+            try w.writeByte(' ');
+            try formatExpr(w, bin.right, needsParens(bin.right, .right, bin.op));
+            if (parens_needed) try w.writeByte(')');
+        },
+        .application => |app| {
+            try formatApplication(w, app);
+        },
+        .if_expr => |if_e| {
+            try formatIf(w, if_e);
+        },
+        .when_matches => |wm| {
+            try w.write("when ");
+            try formatExpr(w, wm.value, false);
+            try w.write(" matches");
+            w.indent += 1;
+            for (wm.branches) |branch| {
+                try w.newline();
+                try formatPattern(w, branch.pattern);
+                try w.write(" then ");
+                try formatExpr(w, branch.expression, false);
+            }
+            if (wm.otherwise) |otherwise| {
+                try w.newline();
+                try w.write("otherwise ");
+                try formatExpr(w, otherwise, false);
+            }
+            w.indent -= 1;
+        },
+        .array => |arr| {
+            try formatArray(w, arr, expr.location.line);
+        },
+        .tuple => |tup| {
+            try w.writeByte('(');
+            for (tup.elements, 0..) |elem, i| {
+                if (i > 0) try w.write(", ");
+                try formatExpr(w, elem, false);
+            }
+            if (tup.elements.len == 1) try w.writeByte(',');
+            try w.writeByte(')');
+        },
+        .object => |obj| {
+            try formatObject(w, obj);
+        },
+        .object_extend => |ext| {
+            try formatExpr(w, ext.base, false);
+            try w.write(" { ");
+            for (ext.fields, 0..) |field, i| {
+                if (i > 0) try w.write(", ");
+                try formatObjectField(w, field, true);
+            }
+            try w.write(" }");
+        },
+        .import_expr => |imp| {
+            try w.write("import ");
+            try w.writeByte('"');
+            try w.write(imp.path);
+            try w.writeByte('"');
+        },
+        .array_comprehension => |comp| {
+            try w.writeByte('[');
+            try formatExpr(w, comp.body, false);
+            for (comp.clauses) |clause| {
+                try w.write(" for ");
+                try formatPattern(w, clause.pattern);
+                try w.write(" in ");
+                try formatExpr(w, clause.iterable, false);
+            }
+            if (comp.filter) |filter| {
+                try w.write(" when ");
+                try formatExpr(w, filter, false);
+            }
+            try w.writeByte(']');
+        },
+        .object_comprehension => |comp| {
+            try w.write("{ [");
+            try formatExpr(w, comp.key, false);
+            try w.write("]: ");
+            try formatExpr(w, comp.value, false);
+            for (comp.clauses) |clause| {
+                try w.write(" for ");
+                try formatPattern(w, clause.pattern);
+                try w.write(" in ");
+                try formatExpr(w, clause.iterable, false);
+            }
+            if (comp.filter) |filter| {
+                try w.write(" when ");
+                try formatExpr(w, filter, false);
+            }
+            try w.write(" }");
+        },
+        .field_access => |fa| {
+            try formatExpr(w, fa.object, false);
+            try w.writeByte('.');
+            try w.write(fa.field);
+        },
+        .index => |idx| {
+            try formatExpr(w, idx.object, false);
+            try w.writeByte('[');
+            try formatExpr(w, idx.index, false);
+            try w.writeByte(']');
+        },
+        .field_accessor => |fa| {
+            try w.writeByte('.');
+            for (fa.fields, 0..) |field, i| {
+                if (i > 0) try w.writeByte('.');
+                try w.write(field);
+            }
+        },
+        .field_projection => |fp| {
+            try formatExpr(w, fp.object, false);
+            try w.write(".{ ");
+            for (fp.fields, 0..) |field, i| {
+                if (i > 0) try w.write(", ");
+                try w.write(field);
+            }
+            try w.write(" }");
+        },
+        .operator_function => |op| {
+            try w.writeByte('(');
+            try w.write(binaryOpStr(op));
+            try w.writeByte(')');
+        },
+        .range => |r| {
+            try formatExpr(w, r.start, false);
+            try w.write(if (r.inclusive) ".." else "...");
+            try formatExpr(w, r.end, false);
+        },
+        .assert_expr => |assert_e| {
+            try w.write("assert ");
+            try formatExpr(w, assert_e.condition, false);
+            try w.write(" : ");
+            try formatExpr(w, assert_e.message, false);
+            try w.newline();
+            try formatExpr(w, assert_e.body, false);
+        },
+    }
+}
+
+fn formatLet(w: *Writer, let_expr: ast.Let, start_line: usize) FormatterError!void {
+    // Emit doc comment if present
+    if (let_expr.doc) |doc| {
+        var doc_lines = std.mem.splitScalar(u8, doc, '\n');
+        while (doc_lines.next()) |doc_line| {
+            try w.write("/// ");
+            try w.write(std.mem.trimRight(u8, doc_line, " \t"));
+            try w.newline();
+        }
+    }
+
+    _ = start_line;
+    try formatPattern(w, let_expr.pattern);
+    try w.write(" = ");
+
+    // Check if the value is a multi-line construct that needs indentation
+    const value_needs_indent = switch (let_expr.value.data) {
+        .let => true,
+        .if_expr => |ie| ie.else_expr != null,
+        .when_matches => true,
+        else => false,
+    };
+
+    if (value_needs_indent) {
+        w.indent += 1;
+        try w.newline();
+        try formatExpr(w, let_expr.value, false);
+        w.indent -= 1;
+    } else {
+        try formatExpr(w, let_expr.value, false);
+    }
+
+    // Body — skip if body is same as value (EOF let binding)
+    if (let_expr.body != let_expr.value) {
+        try w.newline();
+        try formatExpr(w, let_expr.body, false);
+    }
+}
+
+fn formatIf(w: *Writer, if_e: ast.If) FormatterError!void {
+    try w.write("if ");
+    try formatExpr(w, if_e.condition, false);
+    try w.write(" then ");
+    try formatExpr(w, if_e.then_expr, false);
+    if (if_e.else_expr) |else_expr| {
+        try w.write(" else ");
+        try formatExpr(w, else_expr, false);
+    }
+}
+
+fn formatApplication(w: *Writer, app: ast.Application) FormatterError!void {
+    // Flatten left-associative application chain: f a b c
+    try formatExpr(w, app.function, false);
+    try w.writeByte(' ');
+
+    // Check if argument needs parens (is it a complex expression?)
+    const needs_parens = switch (app.argument.data) {
+        .application, .binary, .lambda, .let, .if_expr, .when_matches, .where_expr, .assert_expr => true,
+        .unary => true,
+        else => false,
+    };
+    if (needs_parens) {
+        try w.writeByte('(');
+        try formatExpr(w, app.argument, false);
+        try w.writeByte(')');
+    } else {
+        try formatExpr(w, app.argument, false);
+    }
+}
+
+fn formatArray(w: *Writer, arr: ast.ArrayLiteral, _: usize) FormatterError!void {
+    if (arr.elements.len == 0) {
+        try w.write("[]");
+        return;
+    }
+
+    // Check if all elements are simple and short enough for single line
+    const single_line = shouldArrayBeSingleLine(arr);
+
+    if (single_line) {
+        try w.writeByte('[');
+        for (arr.elements, 0..) |elem, i| {
+            if (i > 0) try w.write(", ");
+            try formatArrayElement(w, elem);
+        }
+        try w.writeByte(']');
+    } else {
+        try w.writeByte('[');
+        w.indent += 1;
+        for (arr.elements) |elem| {
+            try w.newline();
+            try formatArrayElement(w, elem);
+        }
+        w.indent -= 1;
+        try w.newline();
+        try w.writeByte(']');
+    }
+}
+
+fn formatArrayElement(w: *Writer, elem: ast.ArrayElement) FormatterError!void {
+    switch (elem) {
+        .normal => |e| try formatExpr(w, e, false),
+        .spread => |e| {
+            try w.write("...");
+            try formatExpr(w, e, false);
+        },
+        .conditional_if => |ce| {
+            try formatExpr(w, ce.expr, false);
+            try w.write(" if ");
+            try formatExpr(w, ce.condition, false);
+        },
+        .conditional_unless => |ce| {
+            try formatExpr(w, ce.expr, false);
+            try w.write(" unless ");
+            try formatExpr(w, ce.condition, false);
+        },
+    }
+}
+
+fn shouldArrayBeSingleLine(arr: ast.ArrayLiteral) bool {
+    if (arr.elements.len > 5) return false;
+    for (arr.elements) |elem| {
+        switch (elem) {
+            .normal => |e| {
+                if (!isSimpleExpr(e)) return false;
+            },
+            .spread => return false,
+            .conditional_if, .conditional_unless => return false,
+        }
+    }
+    return true;
+}
+
+fn formatObject(w: *Writer, obj: ast.ObjectLiteral) FormatterError!void {
+    if (obj.fields.len == 0) {
+        try w.write("{}");
+        return;
+    }
+
+    // Single-line for simple objects with few fields
+    const single_line = shouldObjectBeSingleLine(obj);
+
+    if (single_line) {
+        try w.write("{ ");
+        for (obj.fields, 0..) |field, i| {
+            if (i > 0) try w.write(", ");
+            try formatObjectField(w, field, true);
+        }
+        try w.write(" }");
+    } else {
+        try w.writeByte('{');
+        w.indent += 1;
+        for (obj.fields, 0..) |field, i| {
+            // Blank line between fields that have doc comments (except first)
+            if (i > 0 and field.doc != null) {
+                try w.newline();
+            }
+            try w.newline();
+            try formatObjectField(w, field, false);
+        }
+        w.indent -= 1;
+        try w.newline();
+        try w.writeByte('}');
+    }
+}
+
+fn formatObjectField(w: *Writer, field: ast.ObjectField, _: bool) FormatterError!void {
+    // Doc comment
+    if (field.doc) |doc| {
+        var doc_lines = std.mem.splitScalar(u8, doc, '\n');
+        while (doc_lines.next()) |doc_line| {
+            try w.write("/// ");
+            try w.write(std.mem.trimRight(u8, doc_line, " \t"));
+            try w.newline();
+        }
+    }
+
+    switch (field.key) {
+        .static => |key| {
+            try w.write(key);
+            if (field.is_patch) {
+                try w.writeByte(' ');
+            } else {
+                try w.write(": ");
+            }
+        },
+        .dynamic => |key_expr| {
+            try w.writeByte('[');
+            try formatExpr(w, key_expr, false);
+            try w.write("]: ");
+        },
+    }
+    try formatExpr(w, field.value, false);
+
+    // Conditional
+    switch (field.condition) {
+        .none => {},
+        .if_cond => |cond| {
+            try w.write(" if ");
+            try formatExpr(w, cond, false);
+        },
+        .unless_cond => |cond| {
+            try w.write(" unless ");
+            try formatExpr(w, cond, false);
+        },
+    }
+}
+
+fn shouldObjectBeSingleLine(obj: ast.ObjectLiteral) bool {
+    if (obj.fields.len > 2) return false;
+    if (obj.module_doc != null) return false;
+    for (obj.fields) |field| {
+        if (field.doc != null) return false;
+        if (field.is_patch) return false;
+        if (field.condition != .none) return false;
+        switch (field.key) {
+            .dynamic => return false,
+            .static => {},
+        }
+        if (!isSimpleExpr(field.value)) return false;
+    }
+    return true;
+}
+
+fn isSimpleExpr(expr: *const ast.Expression) bool {
+    return switch (expr.data) {
+        .integer, .float, .boolean, .null_literal, .string_literal, .symbol, .identifier => true,
+        .field_access => true,
+        .field_accessor => true,
+        .unary => |u| isSimpleExpr(u.operand),
+        .binary => |b| isSimpleExpr(b.left) and isSimpleExpr(b.right),
+        .application => |a| isSimpleExpr(a.function) and isSimpleExpr(a.argument),
+        .object => |o| shouldObjectBeSingleLine(o),
+        .array => |a| shouldArrayBeSingleLine(a),
+        .tuple => |t| blk: {
+            for (t.elements) |e| {
+                if (!isSimpleExpr(e)) break :blk false;
+            }
+            break :blk t.elements.len <= 5;
+        },
+        else => false,
+    };
+}
+
+// ============================================================================
+// Pattern Formatting
+// ============================================================================
+
+fn formatPattern(w: *Writer, pat: *const ast.Pattern) FormatterError!void {
+    switch (pat.data) {
+        .identifier => |name| try w.write(name),
+        .integer => |v| {
+            const s = try std.fmt.allocPrint(w.allocator, "{d}", .{v});
+            try w.write(s);
+        },
+        .float => |v| {
+            const s = try std.fmt.allocPrint(w.allocator, "{d}", .{v});
+            try w.write(s);
+        },
+        .boolean => |v| try w.write(if (v) "true" else "false"),
+        .null_literal => try w.write("null"),
+        .symbol => |s| try w.write(s),
+        .string_literal => |s| {
+            try w.writeByte('"');
+            try writeEscapedString(w, s);
+            try w.writeByte('"');
+        },
+        .tuple => |tup| {
+            try w.writeByte('(');
+            for (tup.elements, 0..) |elem, i| {
+                if (i > 0) try w.write(", ");
+                try formatPattern(w, elem);
+            }
+            try w.writeByte(')');
+        },
+        .array => |arr| {
+            try w.writeByte('[');
+            for (arr.elements, 0..) |elem, i| {
+                if (i > 0) try w.write(", ");
+                try formatPattern(w, elem);
+            }
+            if (arr.rest) |rest| {
+                if (arr.elements.len > 0) try w.write(", ");
+                try w.write("...");
+                try w.write(rest);
+            }
+            try w.writeByte(']');
+        },
+        .object => |obj| {
+            try w.write("{ ");
+            for (obj.fields, 0..) |field, i| {
+                if (i > 0) try w.write(", ");
+                try w.write(field.key);
+                // Check if pattern is different from key (literal value match)
+                if (field.pattern.data != .identifier or
+                    !std.mem.eql(u8, field.pattern.data.identifier, field.key))
+                {
+                    try w.write(": ");
+                    try formatPattern(w, field.pattern);
+                }
+            }
+            try w.write(" }");
+        },
+    }
+}
+
+// ============================================================================
+// Helpers
+// ============================================================================
+
+fn writeEscapedString(w: *Writer, s: []const u8) FormatterError!void {
+    for (s) |c| {
+        switch (c) {
+            '"' => try w.write("\\\""),
+            '\\' => try w.write("\\\\"),
+            '\n' => try w.write("\\n"),
+            '\t' => try w.write("\\t"),
+            '\r' => try w.write("\\r"),
+            else => try w.writeByte(c),
         }
     }
 }
 
-/// Format a file and return the formatted source
-pub fn formatFile(allocator: std.mem.Allocator, file_path: []const u8) FormatterError!FormatterOutput {
-    const file = std.fs.cwd().openFile(file_path, .{}) catch {
-        return FormatterError.ParseError;
+fn binaryOpStr(op: ast.BinaryOp) []const u8 {
+    return switch (op) {
+        .add => "+",
+        .subtract => "-",
+        .multiply => "*",
+        .divide => "/",
+        .logical_and => "&&",
+        .logical_or => "||",
+        .pipeline => "\\",
+        .equal => "==",
+        .not_equal => "!=",
+        .less_than => "<",
+        .greater_than => ">",
+        .less_or_equal => "<=",
+        .greater_or_equal => ">=",
+        .merge => "&",
     };
-    defer file.close();
-
-    const source = file.readToEndAlloc(allocator, 10 * 1024 * 1024) catch {
-        return FormatterError.ParseError;
-    };
-    defer allocator.free(source);
-
-    return formatSource(allocator, source);
 }
 
-fn needsSpaceBefore(token_before_prev: ?evaluator.TokenKind, prev: evaluator.TokenKind, current: evaluator.TokenKind, brace_stack: []const BraceInfo) bool {
-    _ = brace_stack; // Not currently used, but may be needed for future rules
+const Side = enum { left, right };
 
-    // Space before opening paren after number/identifier/string/symbol (function call)
-    if (current == .l_paren and (prev == .number or prev == .identifier or prev == .string or prev == .symbol)) {
-        return true;
-    }
+fn needsParens(expr: *const ast.Expression, side: Side, parent_op: ast.BinaryOp) bool {
+    _ = side;
+    return switch (expr.data) {
+        .binary => |inner| opPrecedence(inner.op) < opPrecedence(parent_op),
+        else => false,
+    };
+}
 
-    // No space after opening brackets/parens
-    if (prev == .l_paren or prev == .l_bracket) {
-        return false;
-    }
-
-    // Space before opening bracket after identifier/number/string/symbol/r_paren
-    if (current == .l_bracket and (prev == .identifier or prev == .number or prev == .string or prev == .symbol or prev == .r_paren)) {
-        return true;
-    }
-
-    // Space before opening brace after identifier/string/symbol/r_paren/r_bracket
-    if (current == .l_brace and (prev == .identifier or prev == .string or prev == .symbol or prev == .r_paren or prev == .r_bracket)) {
-        return true;
-    }
-
-    // Space after opening brace only handled specially in main loop
-    if (prev == .l_brace) {
-        return false;
-    }
-
-    // No space before closing brackets/parens
-    if (current == .r_paren or current == .r_bracket) {
-        return false;
-    }
-
-    // Space before closing brace only handled specially in main loop
-    if (current == .r_brace) {
-        return false;
-    }
-
-    // No space before comma, colon, or semicolon
-    if (current == .comma or current == .colon or current == .semicolon) {
-        return false;
-    }
-
-    // Space after comma, colon, semicolon
-    if (prev == .comma or prev == .semicolon) {
-        return true;
-    }
-
-    // Space after colon
-    if (prev == .colon) {
-        return true;
-    }
-
-    // Space around equals and arrow
-    if (prev == .equals or current == .equals) {
-        return true;
-    }
-    if (prev == .arrow or current == .arrow) {
-        return true;
-    }
-
-    // Space between identifiers, numbers, strings, symbols
-    if ((prev == .identifier or prev == .number or prev == .string or prev == .symbol) and
-        (current == .identifier or current == .number or current == .string or current == .symbol))
-    {
-        return true;
-    }
-
-    // Space before unary operators after identifiers/numbers/strings/symbols
-    if ((prev == .identifier or prev == .number or prev == .string or prev == .symbol) and
-        (current == .bang or current == .minus))
-    {
-        return true;
-    }
-
-    // Space between closing and opening brackets/parens/braces
-    if ((prev == .r_paren or prev == .r_bracket or prev == .r_brace) and
-        (current == .l_paren or current == .l_bracket or current == .l_brace or
-        current == .identifier or current == .number or current == .string or current == .symbol))
-    {
-        return true;
-    }
-
-    // Unary operators: no space after ! or - when used as unary
-    // Unary context: after =, :, ->, (, [, ,, or other operators
-    const prev_is_unary_context = if (token_before_prev) |before|
-        before == .equals or before == .colon or before == .arrow or before == .l_paren or before == .l_bracket or
-            before == .comma or before == .l_brace or
-            before == .plus or before == .minus or before == .star or before == .slash or
-            before == .ampersand_ampersand or before == .pipe_pipe
-    else
-        true; // At start of expression, treat as unary context
-
-    // No space after unary ! or -
-    if (prev_is_unary_context and (prev == .bang or prev == .minus)) {
-        return false;
-    }
-
-    // Space around arithmetic operators (binary)
-    if (prev == .plus or prev == .minus or prev == .star or prev == .slash or
-        current == .plus or current == .minus or current == .star or current == .slash)
-    {
-        return true;
-    }
-
-    // Space around comparison operators
-    if (prev == .less or prev == .greater or prev == .less_equals or prev == .greater_equals or
-        prev == .equals_equals or prev == .bang_equals or
-        current == .less or current == .greater or current == .less_equals or current == .greater_equals or
-        current == .equals_equals or current == .bang_equals)
-    {
-        return true;
-    }
-
-    // Space around logical operators (binary operators only)
-    // Note: .bang is unary only, not binary, so it's not included here
-    if (prev == .ampersand_ampersand or prev == .pipe_pipe or
-        current == .ampersand_ampersand or current == .pipe_pipe)
-    {
-        return true;
-    }
-
-    // Space around & (merge operator)
-    if (prev == .ampersand or current == .ampersand) {
-        return true;
-    }
-
-    // Space around \ (backslash/pipeline operator)
-    if (prev == .backslash or current == .backslash) {
-        return true;
-    }
-
-    // No space before opening paren after closing paren (function call result)
-    // e.g., `(f x)(y)` not `(f x) (y)`
-    if (current == .l_paren and prev == .r_paren) {
-        return false;
-    }
-
-    return false;
+fn opPrecedence(op: ast.BinaryOp) u8 {
+    return switch (op) {
+        .pipeline => 1,
+        .logical_or => 2,
+        .logical_and => 3,
+        .equal, .not_equal => 4,
+        .less_than, .greater_than, .less_or_equal, .greater_or_equal => 5,
+        .merge => 6,
+        .add, .subtract => 7,
+        .multiply, .divide => 8,
+    };
 }
