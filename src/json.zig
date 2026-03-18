@@ -148,14 +148,6 @@ fn encodeValue(value: eval.Value, buf: *std.ArrayList(u8), indent: usize, arena:
             }
             try buf.append(arena, '"');
         },
-        .symbol => |s| {
-            // Encode symbols as strings (without the # prefix)
-            try buf.append(arena, '"');
-            // Skip the '#' at the start if present
-            const str = if (s.len > 0 and s[0] == '#') s[1..] else s;
-            try buf.appendSlice(arena, str);
-            try buf.append(arena, '"');
-        },
         .array => |arr| {
             if (arr.elements.len == 0) {
                 try buf.appendSlice(arena, "[]");

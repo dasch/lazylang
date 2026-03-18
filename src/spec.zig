@@ -416,10 +416,6 @@ fn runDescribe(ctx: anytype, desc: eval_module.ObjectValue) anyerror!void {
                     description = s;
                     description_is_symbol = false;
                 },
-                .symbol => |s| {
-                    description = s;
-                    description_is_symbol = true;
-                },
                 else => {},
             }
         } else if (std.mem.eql(u8, field.key, "children")) {

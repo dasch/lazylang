@@ -533,10 +533,6 @@ fn encodeValue(value: eval.Value, buf: *std.ArrayList(u8), indent: usize, arena:
                 }
             }
         },
-        .symbol => |s| {
-            // Encode symbols as strings
-            try buf.appendSlice(arena, s);
-        },
         .tuple => |t| {
             // Encode tuples as arrays
             if (t.elements.len == 0) {

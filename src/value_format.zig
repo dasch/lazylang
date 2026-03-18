@@ -33,7 +33,6 @@ pub fn formatValueShort(allocator: std.mem.Allocator, value: Value) ![]u8 {
         .float => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
         .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
         .null_value => try allocator.dupe(u8, "null"),
-        .symbol => |s| try std.fmt.allocPrint(allocator, "#{s}", .{s}),
         .string => |s| if (s.len > 20)
             try std.fmt.allocPrint(allocator, "\"{s}...\"", .{s[0..20]})
         else
@@ -57,7 +56,6 @@ pub fn valueToString(allocator: std.mem.Allocator, value: Value) ![]u8 {
         .float => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
         .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
         .null_value => try std.fmt.allocPrint(allocator, "null", .{}),
-        .symbol => |s| try allocator.dupe(u8, s),
         .string => |str| try allocator.dupe(u8, str),
         else => try formatValue(allocator, value),
     };
@@ -87,7 +85,6 @@ fn formatValueAsJsonImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator,
         .float => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
         .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
         .null_value => try std.fmt.allocPrint(allocator, "null", .{}),
-        .symbol => |s| try std.fmt.allocPrint(allocator, "\"{s}\"", .{s}),
         .function => {
             const message = "Cannot represent function in JSON output. Functions are not serializable.";
             const message_copy = try std.heap.page_allocator.dupe(u8, message);
@@ -223,19 +220,6 @@ fn formatValueAsYamlImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator,
         .float => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
         .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
         .null_value => try std.fmt.allocPrint(allocator, "null", .{}),
-        .symbol => |s| blk: {
-            // Symbols are represented as strings in YAML
-            if (yamlNeedsQuoting(s)) {
-                var builder = std.ArrayList(u8){};
-                errdefer builder.deinit(allocator);
-                try builder.append(allocator, '"');
-                try yamlEscapeString(&builder, allocator, s);
-                try builder.append(allocator, '"');
-                break :blk try builder.toOwnedSlice(allocator);
-            } else {
-                break :blk try allocator.dupe(u8, s);
-            }
-        },
         .function => {
             const message = "Cannot represent function in YAML output. Functions are not serializable.";
             const message_copy = try std.heap.page_allocator.dupe(u8, message);
@@ -510,7 +494,6 @@ fn formatValuePrettyImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator,
         .float => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
         .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
         .null_value => try std.fmt.allocPrint(allocator, "null", .{}),
-        .symbol => |s| try std.fmt.allocPrint(allocator, "{s}", .{s}),
         .function => try std.fmt.allocPrint(allocator, "<function>", .{}),
         .native_fn => try std.fmt.allocPrint(allocator, "<native function>", .{}),
         .thunk => blk: {
@@ -698,7 +681,6 @@ fn formatValueWithArena(allocator: std.mem.Allocator, arena: std.mem.Allocator, 
         .float => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
         .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
         .null_value => try std.fmt.allocPrint(allocator, "null", .{}),
-        .symbol => |s| try std.fmt.allocPrint(allocator, "{s}", .{s}),
         .function => try std.fmt.allocPrint(allocator, "<function>", .{}),
         .native_fn => try std.fmt.allocPrint(allocator, "<native function>", .{}),
         .thunk => blk: {

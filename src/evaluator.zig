@@ -71,10 +71,6 @@ fn valuesEqual(arena: std.mem.Allocator, a: Value, b: Value) bool {
             .null_value => true,
             else => false,
         },
-        .symbol => |av| switch (b_forced) {
-            .symbol => |bv| std.mem.eql(u8, av, bv),
-            else => false,
-        },
         .string => |av| switch (b_forced) {
             .string => |bv| std.mem.eql(u8, av, bv),
             else => false,
@@ -340,9 +336,11 @@ pub fn matchPattern(
             }
             break :blk base_env;
         },
-        .symbol => |expected| blk: {
+        .symbol => |raw_expected| blk: {
+            // Symbol patterns match against strings (strip # prefix)
+            const expected = if (raw_expected.len > 0 and raw_expected[0] == '#') raw_expected[1..] else raw_expected;
             const actual = switch (value) {
-                .symbol => |v| v,
+                .string => |v| v,
                 else => {
                     if (ctx.error_ctx) |err_ctx| {
                         err_ctx.setErrorLocation(
@@ -352,7 +350,7 @@ pub fn matchPattern(
                             pattern.location.length,
                         );
                         err_ctx.setErrorData(.{ .type_mismatch = .{
-                            .expected = "symbol",
+                            .expected = "string",
                             .found = getValueTypeName(value),
                             .operation = "destructuring",
                         } });
@@ -869,7 +867,7 @@ pub fn evaluateExpression(
         .float => |value| .{ .float = value },
         .boolean => |value| .{ .boolean = value },
         .null_literal => .null_value,
-        .symbol => |value| .{ .symbol = try arena.dupe(u8, value) },
+        .symbol => |value| .{ .string = try arena.dupe(u8, if (value.len > 0 and value[0] == '#') value[1..] else value) },
         .identifier => |name| blk: {
             const resolved = lookup(env, name) orelse {
                 // Set error location and data for unknown identifier
@@ -1936,7 +1934,6 @@ pub fn evaluateExpression(
                 .object => |obj| blk2: {
                     const key = switch (forced_index) {
                         .string => |s| s,
-                        .symbol => |s| s,
                         else => return error.TypeMismatch,
                     };
 
@@ -2223,7 +2220,6 @@ fn evaluateObjectComprehension(
         const key_string = switch (key_value) {
             .string => |s| try arena.dupe(u8, s),
             .integer => |i| try std.fmt.allocPrint(arena, "{d}", .{i}),
-            .symbol => |s| try arena.dupe(u8, s),
             else => return error.TypeMismatch,
         };
 
@@ -2485,7 +2481,6 @@ fn getValueTypeName(value: Value) []const u8 {
         .float => "float",
         .boolean => "boolean",
         .null_value => "null",
-        .symbol => "symbol",
         .string => "string",
         .array => "array",
         .tuple => "tuple",
@@ -2504,7 +2499,7 @@ fn getPatternTypeName(pattern: *Pattern) []const u8 {
         .float => "float",
         .boolean => "boolean",
         .null_literal => "null",
-        .symbol => "symbol",
+        .symbol => "string",
         .string_literal => "string",
         .tuple => "tuple",
         .array => "array",
@@ -2519,7 +2514,7 @@ fn formatPatternValue(allocator: std.mem.Allocator, pattern: *Pattern) ![]u8 {
         .float => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
         .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
         .null_literal => try allocator.dupe(u8, "null"),
-        .symbol => |s| try std.fmt.allocPrint(allocator, "#{s}", .{s}),
+        .symbol => |s| try std.fmt.allocPrint(allocator, "{s}", .{s}),
         .string_literal => |s| try std.fmt.allocPrint(allocator, "\"{s}\"", .{s}),
         .tuple => |t| try std.fmt.allocPrint(allocator, "tuple with {d} elements", .{t.elements.len}),
         .array => |a| if (a.rest) |_|

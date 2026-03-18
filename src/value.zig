@@ -8,7 +8,7 @@
 //! - Supporting types: FunctionValue, ArrayValue, TupleValue, ObjectValue
 //!
 //! Values are created during evaluation and can be:
-//! - Primitives: integers, floats, booleans, null, symbols, strings
+//! - Primitives: integers, floats, booleans, null, strings
 //! - Collections: arrays, tuples, objects
 //! - Callables: functions (closures) and native functions
 //! - Thunks: unevaluated expressions for lazy evaluation
@@ -92,7 +92,6 @@ pub const Value = union(enum) {
     float: f64,
     boolean: bool,
     null_value,
-    symbol: []const u8,
     function: *FunctionValue,
     native_fn: NativeFn,
     array: ArrayValue,
