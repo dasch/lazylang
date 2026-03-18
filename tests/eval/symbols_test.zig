@@ -1,24 +1,24 @@
 const common = @import("common.zig");
 const expectEvaluates = common.expectEvaluates;
 
-test "evaluates simple symbol" {
-    try expectEvaluates("#foo", "#foo");
+test "evaluates simple symbol as string" {
+    try expectEvaluates("#foo", "\"foo\"");
 }
 
-test "evaluates symbol with underscore" {
-    try expectEvaluates("#hello_world", "#hello_world");
+test "evaluates symbol with underscore as string" {
+    try expectEvaluates("#hello_world", "\"hello_world\"");
 }
 
 test "evaluates symbol in tuple" {
-    try expectEvaluates("(#ok, 42)", "(#ok, 42)");
+    try expectEvaluates("(#ok, 42)", "(\"ok\", 42)");
 }
 
 test "evaluates symbol in array" {
-    try expectEvaluates("[#one, #two, #three]", "[#one, #two, #three]");
+    try expectEvaluates("[#one, #two, #three]", "[\"one\", \"two\", \"three\"]");
 }
 
 test "evaluates symbol in object" {
-    try expectEvaluates("{ status: #active }", "{ status: #active }");
+    try expectEvaluates("{ status: #active }", "{ status: \"active\" }");
 }
 
 test "evaluates pattern matching with symbol" {
@@ -77,5 +77,24 @@ test "evaluates nested pattern with symbols" {
         \\  ((#ok, #success), x) then x
     ,
         "42",
+    );
+}
+
+test "symbol is interchangeable with string" {
+    try expectEvaluates(
+        \\when ("ok", 42) matches
+        \\  (#ok, x) then x
+    ,
+        "42",
+    );
+}
+
+test "string matches symbol pattern" {
+    try expectEvaluates(
+        \\when #ok matches
+        \\  "ok" then 1
+        \\  otherwise 2
+    ,
+        "1",
     );
 }

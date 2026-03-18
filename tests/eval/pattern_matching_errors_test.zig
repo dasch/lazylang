@@ -162,10 +162,13 @@ test "symbol pattern: value mismatch" {
     , error.TypeMismatch);
 }
 
-test "symbol pattern: type mismatch with string" {
-    try expectError(
-        \\when "ok" matches #ok then 0
-    , error.TypeMismatch);
+test "symbol pattern: matches equivalent string" {
+    // Symbols are syntactic sugar for strings, so "ok" matches #ok
+    var result = try evaluator.evalInline(std.testing.allocator,
+        \\when "ok" matches #ok then 1
+    );
+    defer result.deinit();
+    try std.testing.expectEqualStrings("1", result.text);
 }
 
 // Nested pattern matching errors

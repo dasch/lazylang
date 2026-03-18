@@ -9,7 +9,7 @@ test "YAML: parse simple string" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "hello") != null);
 }
 
@@ -20,7 +20,7 @@ test "YAML: parse integer" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "42") != null);
 }
 
@@ -31,7 +31,7 @@ test "YAML: parse boolean true" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "true") != null);
 }
 
@@ -42,7 +42,7 @@ test "YAML: parse boolean false" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "false") != null);
 }
 
@@ -53,7 +53,7 @@ test "YAML: parse null" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "null") != null);
 }
 
@@ -64,7 +64,7 @@ test "YAML: parse flow array" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "[1, 2, 3]") != null);
 }
 
@@ -75,7 +75,7 @@ test "YAML: parse block array" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "apple") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "banana") != null);
 }
@@ -87,7 +87,7 @@ test "YAML: parse simple object" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "name") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "John") != null);
 }
@@ -99,7 +99,7 @@ test "YAML: parse flow object" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "name") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "Alice") != null);
 }
@@ -172,7 +172,7 @@ test "YAML: handles special strings correctly" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "test") != null);
 }
 
@@ -196,7 +196,7 @@ test "YAML: parse string with spaces" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "hello world") != null);
 }
 
@@ -207,7 +207,7 @@ test "YAML: parse empty string returns null" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "null") != null);
 }
 
@@ -221,7 +221,7 @@ test "YAML: parse flow objects with multiple fields" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "server") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "localhost") != null);
 }
@@ -246,7 +246,7 @@ test "YAML: parse array with mixed simple types" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "1") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "hello") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "true") != null);
