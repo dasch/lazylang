@@ -70,6 +70,22 @@ test "Dynamic keys: computed from array comprehension" {
     );
 }
 
+test "Dynamic keys: comma-separated multi-value keys" {
+    try expectEvaluates(
+        \\{ ["foo", "bar"]: 42 }
+    ,
+        "{ foo: 42, bar: 42 }",
+    );
+}
+
+test "Dynamic keys: comma-separated with null" {
+    try expectEvaluates(
+        \\{ ["foo", null, "bar"]: 42 }
+    ,
+        "{ foo: 42, bar: 42 }",
+    );
+}
+
 test "Dynamic keys: object comprehension still works" {
     try expectEvaluates(
         \\String = import 'String'

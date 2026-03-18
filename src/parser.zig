@@ -1073,9 +1073,9 @@ pub const Parser = struct {
 
         // Check for object comprehension with dynamic field syntax: { [key]: value for ... }
         if (self.current.kind == .l_bracket) {
+            const bracket_token = self.current;
             try self.advance(); // consume '['
-            const key_expr = try self.parseLambda();
-            try self.expect(.r_bracket);
+            const key_expr = try self.parseDynamicKey(bracket_token);
             try self.expect(.colon);
             const value_expr = try self.parseLambda();
 
@@ -1107,9 +1107,9 @@ pub const Parser = struct {
                 // Parse next field (could be static or dynamic)
                 if (self.current.kind == .l_bracket) {
                     // Another dynamic field
+                    const next_bracket_token = self.current;
                     try self.advance(); // consume '['
-                    const next_key_expr = try self.parseLambda();
-                    try self.expect(.r_bracket);
+                    const next_key_expr = try self.parseDynamicKey(next_bracket_token);
                     try self.expect(.colon);
                     const next_value_expr = try self.parseLambda();
                     try fields.append(self.arena, .{
@@ -1264,6 +1264,39 @@ pub const Parser = struct {
 
         const slice = try fields.toOwnedSlice(self.arena);
         return try self.makeExpression(.{ .object = .{ .fields = slice, .module_doc = module_doc } }, brace_token);
+    }
+
+    /// Parse a dynamic key expression inside [...].
+    /// Supports both single expressions `[expr]` and comma-separated lists `["a", "b", "c"]`.
+    /// Comma-separated lists are wrapped in an array expression.
+    fn parseDynamicKey(self: *Parser, bracket_token: Token) ParseError!*Expression {
+        const first_expr = try self.parseLambda();
+
+        if (self.current.kind == .r_bracket) {
+            // Single expression: [expr]
+            try self.advance(); // consume ']'
+            return first_expr;
+        }
+
+        if (self.current.kind == .comma) {
+            // Comma-separated list: ["a", "b", "c"] -> wrap in array
+            var elements = std.ArrayListUnmanaged(ArrayElement){};
+            try elements.append(self.arena, .{ .normal = first_expr });
+
+            while (self.current.kind == .comma) {
+                try self.advance(); // consume ','
+                if (self.current.kind == .r_bracket) break;
+                const next = try self.parseLambda();
+                try elements.append(self.arena, .{ .normal = next });
+            }
+
+            try self.expect(.r_bracket);
+            return try self.makeExpression(.{ .array = .{ .elements = try elements.toOwnedSlice(self.arena) } }, bracket_token);
+        }
+
+        // Unexpected token after first expression
+        try self.expect(.r_bracket);
+        return first_expr;
     }
 
     fn parseObjectComprehension(self: *Parser, key: *Expression, value: *Expression) ParseError!*Expression {
