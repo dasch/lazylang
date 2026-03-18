@@ -491,8 +491,6 @@ test "regression: all formatter fixtures produce correct output" {
 test "formatter: formatting is idempotent on all fixtures" {
     const skip_files = [_][]const u8{
         "doc_comments.lazy",
-        // TODO: let_bindings.lazy has trailing space after "=" before newline on first format
-        "let_bindings.lazy",
     };
 
     var dir = std.fs.cwd().openDir("tests/fixtures/formatter", .{ .iterate = true }) catch |err| {

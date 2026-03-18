@@ -272,7 +272,7 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                     }
                 }
 
-                if (has_proper_indentation and !has_top_level_let_binding) {
+                if ((has_proper_indentation or !is_after_keyword) and !has_top_level_let_binding) {
                     // Skip this opening paren and mark it for skipping the close
                     // Always increment do_indent_level to maintain indentation
                     // The content needs to be indented relative to the context
@@ -389,17 +389,20 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
                         (std.mem.eql(u8, token.lexeme, "else") or std.mem.eql(u8, token.lexeme, "then"));
                     const is_closing_brace = token.kind == .r_brace or token.kind == .r_bracket or token.kind == .r_paren;
 
-                    if (!is_control_flow_keyword and !is_closing_brace) {
+                    // Don't apply source-based dedenting when inside a skipped paren
+                    // (the content wasn't indented in source but needs indentation now)
+                    var in_skipped_paren = false;
+                    for (brace_stack.items) |brace_info| {
+                        if (brace_info.brace_type == .paren and brace_info.skipped) {
+                            in_skipped_paren = true;
+                            break;
+                        }
+                    }
+
+                    if (!is_control_flow_keyword and !is_closing_brace and !in_skipped_paren) {
                         const source_indent = if (token.column > 1) (token.column - 1) / 2 else 0;
                         const base_indent = indent_level;
                         const expected_indent = indent_level + do_indent_level;
-                        // Use source indentation for dedenting:
-                        // 1. If source is at or below base level, reset to 0 (explicit dedent)
-                        // 2. If source is between base and expected, match source (partial dedent)
-                        // 3. If source is at or above expected, keep current level (no dedent)
-                        //
-                        // Special case: only apply dedenting if source_indent > 0 OR if base_indent == 0
-                        // (to handle closing brackets at root level)
                         if (source_indent > 0 or base_indent == 0) {
                             if (source_indent <= base_indent) {
                                 do_indent_level = 0;

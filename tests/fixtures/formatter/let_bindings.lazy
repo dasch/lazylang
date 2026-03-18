@@ -1,8 +1,7 @@
-// result = (
+// result =
 //   x = 10
 //   y = 20
 //   x + y
-// )
 result = (
 x=10;
 y=20;
