@@ -4,6 +4,8 @@ const parser_mod = @import("parser.zig");
 const tokenizer_mod = @import("tokenizer.zig");
 const error_context = @import("error_context.zig");
 
+const MAX_LINE_WIDTH: usize = 100;
+
 pub const FormatterError = error{
     ParseError,
     FormatError,
@@ -20,8 +22,8 @@ pub const FormatterOutput = struct {
 
 const Comment = struct {
     text: []const u8,
-    line: usize, // 1-indexed source line
-    is_doc: bool, // true for /// comments
+    line: usize,
+    is_doc: bool,
     blank_line_before: bool,
 };
 
@@ -30,20 +32,29 @@ const Writer = struct {
     allocator: std.mem.Allocator,
     indent: usize,
     at_line_start: bool,
-    source: []const u8,
     comments: []const Comment,
     next_comment: usize,
 
-    fn init(allocator: std.mem.Allocator, source: []const u8, comments: []const Comment) Writer {
+    fn init(allocator: std.mem.Allocator, comments: []const Comment) Writer {
         return .{
             .buf = std.ArrayList(u8){},
             .allocator = allocator,
             .indent = 0,
             .at_line_start = true,
-            .source = source,
             .comments = comments,
             .next_comment = 0,
         };
+    }
+
+    fn currentColumn(self: *const Writer) usize {
+        if (self.at_line_start) return self.indent * 2;
+        // Walk back from end to find last newline
+        var i = self.buf.items.len;
+        while (i > 0) {
+            i -= 1;
+            if (self.buf.items[i] == '\n') return self.buf.items.len - i - 1;
+        }
+        return self.buf.items.len;
     }
 
     fn write(self: *Writer, text: []const u8) !void {
@@ -67,26 +78,28 @@ const Writer = struct {
         self.at_line_start = true;
     }
 
+    fn blankLine(self: *Writer) !void {
+        if (!endsWith2Newlines(self.buf.items)) {
+            try self.newline();
+        }
+    }
+
     fn writeIndent(self: *Writer) !void {
         for (0..self.indent) |_| {
             try self.buf.appendSlice(self.allocator, "  ");
         }
     }
 
-    /// Emit any comments that appear before the given source line
     fn emitCommentsBefore(self: *Writer, before_line: usize) !void {
         while (self.next_comment < self.comments.len) {
             const comment = self.comments[self.next_comment];
             if (comment.line >= before_line) break;
             if (comment.is_doc) {
                 self.next_comment += 1;
-                continue; // Doc comments are handled by AST nodes
+                continue;
             }
             if (comment.blank_line_before and self.buf.items.len > 0) {
-                // Ensure blank line before this comment
-                if (!endsWith2Newlines(self.buf.items)) {
-                    try self.newline();
-                }
+                try self.blankLine();
             }
             try self.write(comment.text);
             try self.newline();
@@ -94,7 +107,6 @@ const Writer = struct {
         }
     }
 
-    /// Emit remaining comments at end of file
     fn emitRemainingComments(self: *Writer) !void {
         while (self.next_comment < self.comments.len) {
             const comment = self.comments[self.next_comment];
@@ -117,48 +129,292 @@ fn endsWith2Newlines(s: []const u8) bool {
     return s.len >= 2 and s[s.len - 1] == '\n' and s[s.len - 2] == '\n';
 }
 
-/// Extract comments from source text
 fn extractComments(allocator: std.mem.Allocator, source: []const u8) ![]Comment {
     var comments = std.ArrayList(Comment){};
     var line_num: usize = 1;
     var prev_was_blank = false;
     var lines = std.mem.splitScalar(u8, source, '\n');
-
     while (lines.next()) |line| {
         const trimmed = std.mem.trimLeft(u8, line, " \t");
         if (trimmed.len == 0) {
             prev_was_blank = true;
         } else if (std.mem.startsWith(u8, trimmed, "///")) {
-            try comments.append(allocator, .{
-                .text = trimmed,
-                .line = line_num,
-                .is_doc = true,
-                .blank_line_before = prev_was_blank,
-            });
+            try comments.append(allocator, .{ .text = trimmed, .line = line_num, .is_doc = true, .blank_line_before = prev_was_blank });
             prev_was_blank = false;
         } else if (std.mem.startsWith(u8, trimmed, "//")) {
-            try comments.append(allocator, .{
-                .text = trimmed,
-                .line = line_num,
-                .is_doc = false,
-                .blank_line_before = prev_was_blank,
-            });
+            try comments.append(allocator, .{ .text = trimmed, .line = line_num, .is_doc = false, .blank_line_before = prev_was_blank });
             prev_was_blank = false;
         } else {
             prev_was_blank = false;
         }
         line_num += 1;
     }
-
     return comments.toOwnedSlice(allocator);
 }
 
-/// Format a Lazylang source string
+// ============================================================================
+// Width measurement — returns single-line width or null if inherently multi-line
+// ============================================================================
+
+fn measureExpr(expr: *const ast.Expression) ?usize {
+    return switch (expr.data) {
+        .integer => |v| digitCount(v),
+        .float => |v| floatWidth(v),
+        .boolean => |v| if (v) @as(usize, 4) else @as(usize, 5),
+        .null_literal => 4,
+        .string_literal => |s| s.len + 2,
+        .symbol => |s| s.len,
+        .identifier => |name| name.len,
+        .field_access => |fa| {
+            const obj_w = measureExpr(fa.object) orelse return null;
+            return obj_w + 1 + fa.field.len;
+        },
+        .field_accessor => |fa| {
+            var w: usize = 0;
+            for (fa.fields, 0..) |field, i| {
+                if (i > 0) w += 1;
+                w += field.len;
+            }
+            return w + 1; // leading dot
+        },
+        .binary => |bin| {
+            const lw = measureExpr(bin.left) orelse return null;
+            const rw = measureExpr(bin.right) orelse return null;
+            return lw + 3 + rw + binaryOpStr(bin.op).len - 1;
+        },
+        .unary => |un| {
+            const ow = measureExpr(un.operand) orelse return null;
+            return 1 + ow;
+        },
+        .application => |app| {
+            const fw = measureExpr(app.function) orelse return null;
+            const aw = measureExpr(app.argument) orelse return null;
+            const needs_parens = switch (app.argument.data) {
+                .application, .binary, .lambda, .let, .if_expr, .when_matches, .where_expr, .assert_expr, .unary => true,
+                else => false,
+            };
+            return fw + 1 + aw + if (needs_parens) @as(usize, 2) else @as(usize, 0);
+        },
+        .operator_function => |op| binaryOpStr(op).len + 2,
+        .tuple => |tup| {
+            var w: usize = 2; // ( )
+            for (tup.elements, 0..) |elem, i| {
+                if (i > 0) w += 2;
+                w += measureExpr(elem) orelse return null;
+            }
+            if (tup.elements.len == 1) w += 1; // trailing comma
+            return w;
+        },
+        .array => |arr| measureArray(arr),
+        .object => |obj| measureObject(obj),
+        .import_expr => |imp| imp.path.len + 9, // import "..."
+        .range => |r| {
+            const sw = measureExpr(r.start) orelse return null;
+            const ew = measureExpr(r.end) orelse return null;
+            return sw + (if (r.inclusive) @as(usize, 2) else @as(usize, 3)) + ew;
+        },
+        .index => |idx| {
+            const ow = measureExpr(idx.object) orelse return null;
+            const iw = measureExpr(idx.index) orelse return null;
+            return ow + iw + 2;
+        },
+        .if_expr => |ie| {
+            const cw = measureExpr(ie.condition) orelse return null;
+            const tw = measureExpr(ie.then_expr) orelse return null;
+            var w: usize = 3 + cw + 6 + tw; // "if " + cond + " then " + then
+            if (ie.else_expr) |ee| {
+                const ew = measureExpr(ee) orelse return null;
+                w += 6 + ew; // " else " + else
+            }
+            return w;
+        },
+        .string_interpolation => |interp| {
+            var w: usize = 2; // quotes
+            for (interp.parts) |part| {
+                switch (part) {
+                    .literal => |lit| w += lit.len,
+                    .interpolation => |ie| {
+                        if (ie.data == .identifier) {
+                            w += 1 + ie.data.identifier.len;
+                        } else {
+                            const iw = measureExpr(ie) orelse return null;
+                            w += 3 + iw; // ${ + expr + }
+                        }
+                    },
+                }
+            }
+            return w;
+        },
+        .lambda => |lam| {
+            const pw = measurePattern(lam.param) orelse return null;
+            const bw = measureExpr(lam.body) orelse return null;
+            return pw + 4 + bw; // " -> "
+        },
+        .field_projection => |fp| {
+            const ow = measureExpr(fp.object) orelse return null;
+            var w: usize = ow + 4; // ".{ " + " }"
+            for (fp.fields, 0..) |field, i| {
+                if (i > 0) w += 2;
+                w += field.len;
+            }
+            return w;
+        },
+        .object_extend => |ext| {
+            const bw = measureExpr(ext.base) orelse return null;
+            var w: usize = bw + 4; // " { " + " }"
+            for (ext.fields, 0..) |field, i| {
+                if (i > 0) w += 2;
+                const fw = measureFieldWidth(field) orelse return null;
+                w += fw;
+            }
+            return w;
+        },
+        .array_comprehension => |comp| {
+            var w: usize = 2; // [ ]
+            w += measureExpr(comp.body) orelse return null;
+            for (comp.clauses) |clause| {
+                w += 5; // " for "
+                w += measurePattern(clause.pattern) orelse return null;
+                w += 4; // " in "
+                w += measureExpr(clause.iterable) orelse return null;
+            }
+            if (comp.filter) |filter| {
+                w += 6; // " when "
+                w += measureExpr(filter) orelse return null;
+            }
+            return w;
+        },
+        .object_comprehension => |comp| {
+            var w: usize = 6; // "{ [" + "]: " + " }"
+            w += measureExpr(comp.key) orelse return null;
+            w += measureExpr(comp.value) orelse return null;
+            for (comp.clauses) |clause| {
+                w += 5;
+                w += measurePattern(clause.pattern) orelse return null;
+                w += 4;
+                w += measureExpr(clause.iterable) orelse return null;
+            }
+            if (comp.filter) |filter| {
+                w += 6;
+                w += measureExpr(filter) orelse return null;
+            }
+            return w;
+        },
+        // These are inherently multi-line
+        .let, .when_matches, .where_expr, .assert_expr => null,
+    };
+}
+
+fn measureArray(arr: ast.ArrayLiteral) ?usize {
+    if (arr.elements.len == 0) return 2;
+    var w: usize = 2; // [ ]
+    for (arr.elements, 0..) |elem, i| {
+        if (i > 0) w += 2;
+        switch (elem) {
+            .normal => |e| w += measureExpr(e) orelse return null,
+            .spread, .conditional_if, .conditional_unless => return null,
+        }
+    }
+    return w;
+}
+
+fn measureObject(obj: ast.ObjectLiteral) ?usize {
+    if (obj.fields.len == 0) return 2;
+    if (obj.module_doc != null) return null;
+    var w: usize = 4; // "{ " + " }"
+    for (obj.fields, 0..) |field, i| {
+        if (i > 0) w += 2; // ", "
+        if (field.doc != null) return null;
+        if (field.is_patch) return null;
+        if (field.condition != .none) return null;
+        switch (field.key) {
+            .static => |key| w += key.len + 2, // "key: "
+            .dynamic => return null,
+        }
+        w += measureExpr(field.value) orelse return null;
+    }
+    return w;
+}
+
+fn measureFieldWidth(field: ast.ObjectField) ?usize {
+    if (field.doc != null) return null;
+    if (field.condition != .none) return null;
+    var w: usize = 0;
+    switch (field.key) {
+        .static => |key| w += key.len + 2,
+        .dynamic => return null,
+    }
+    if (field.is_patch) w -= 1; // no colon, just space
+    w += measureExpr(field.value) orelse return null;
+    return w;
+}
+
+fn measurePattern(pat: *const ast.Pattern) ?usize {
+    return switch (pat.data) {
+        .identifier => |name| name.len,
+        .integer => |v| digitCount(v),
+        .float => |v| floatWidth(v),
+        .boolean => |v| if (v) @as(usize, 4) else @as(usize, 5),
+        .null_literal => 4,
+        .symbol => |s| s.len,
+        .string_literal => |s| s.len + 2,
+        .tuple => |tup| {
+            var w: usize = 2;
+            for (tup.elements, 0..) |elem, i| {
+                if (i > 0) w += 2;
+                w += measurePattern(elem) orelse return null;
+            }
+            return w;
+        },
+        .array => |arr| {
+            var w: usize = 2;
+            for (arr.elements, 0..) |elem, i| {
+                if (i > 0) w += 2;
+                w += measurePattern(elem) orelse return null;
+            }
+            if (arr.rest) |rest| {
+                if (arr.elements.len > 0) w += 2;
+                w += 3 + rest.len;
+            }
+            return w;
+        },
+        .object => |obj| {
+            var w: usize = 4;
+            for (obj.fields, 0..) |field, i| {
+                if (i > 0) w += 2;
+                w += field.key.len;
+                if (field.pattern.data != .identifier or
+                    !std.mem.eql(u8, field.pattern.data.identifier, field.key))
+                {
+                    w += 2 + (measurePattern(field.pattern) orelse return null);
+                }
+            }
+            return w;
+        },
+    };
+}
+
+fn digitCount(v: i64) usize {
+    if (v == 0) return 1;
+    var n = if (v < 0) ~v + 1 else v;
+    var count: usize = if (v < 0) 1 else 0;
+    while (n > 0) : (n = @divTrunc(n, 10)) count += 1;
+    return count;
+}
+
+fn floatWidth(v: f64) usize {
+    _ = v;
+    return 8; // rough estimate
+}
+
+// ============================================================================
+// Public API
+// ============================================================================
+
 pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterError!FormatterOutput {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
 
-    // Parse the source to AST
     var err_ctx = error_context.ErrorContext.init(allocator);
     defer err_ctx.deinit();
 
@@ -169,30 +425,21 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
         return FormatterError.ParseError;
     };
 
-    // Extract comments from source
     const comments = try extractComments(allocator, source);
     defer allocator.free(comments);
 
-    // Pretty-print from AST
-    var w = Writer.init(allocator, source, comments);
+    var w = Writer.init(allocator, comments);
 
     try formatExpr(&w, expression, false);
-
-    // Emit any trailing comments
     try w.emitRemainingComments();
 
-    // Ensure trailing newline
     if (w.buf.items.len > 0 and w.buf.items[w.buf.items.len - 1] != '\n') {
         try w.newline();
     }
 
-    return FormatterOutput{
-        .text = try w.toOwnedSlice(),
-        .allocator = allocator,
-    };
+    return FormatterOutput{ .text = try w.toOwnedSlice(), .allocator = allocator };
 }
 
-/// Format a file (read, format, return)
 pub fn formatFile(allocator: std.mem.Allocator, path: []const u8) FormatterError!FormatterOutput {
     const file = std.fs.cwd().openFile(path, .{}) catch return FormatterError.FormatError;
     defer file.close();
@@ -210,12 +457,10 @@ fn formatExpr(w: *Writer, expr: *const ast.Expression, parens_needed: bool) Form
 
     switch (expr.data) {
         .integer => |v| {
-            const s = try std.fmt.allocPrint(w.allocator, "{d}", .{v});
-            try w.write(s);
+            try w.write(try std.fmt.allocPrint(w.allocator, "{d}", .{v}));
         },
         .float => |v| {
             const s = try std.fmt.allocPrint(w.allocator, "{d}", .{v});
-            // Strip trailing zeros after decimal
             if (std.mem.indexOf(u8, s, ".")) |dot| {
                 var end = s.len;
                 while (end > dot + 1 and s[end - 1] == '0') end -= 1;
@@ -238,14 +483,13 @@ fn formatExpr(w: *Writer, expr: *const ast.Expression, parens_needed: bool) Form
             for (interp.parts) |part| {
                 switch (part) {
                     .literal => |lit| try writeEscapedString(w, lit),
-                    .interpolation => |interp_expr| {
-                        // Check if it's a simple identifier
-                        if (interp_expr.data == .identifier) {
+                    .interpolation => |ie| {
+                        if (ie.data == .identifier) {
                             try w.writeByte('$');
-                            try w.write(interp_expr.data.identifier);
+                            try w.write(ie.data.identifier);
                         } else {
                             try w.write("${");
-                            try formatExpr(w, interp_expr, false);
+                            try formatExpr(w, ie, false);
                             try w.writeByte('}');
                         }
                     },
@@ -259,9 +503,7 @@ fn formatExpr(w: *Writer, expr: *const ast.Expression, parens_needed: bool) Form
             try w.write(" -> ");
             try formatExpr(w, lam.body, false);
         },
-        .let => |let_expr| {
-            try formatLet(w, let_expr, expr.location.line);
-        },
+        .let => |let_expr| try formatLet(w, let_expr),
         .where_expr => |where| {
             try formatExpr(w, where.expr, false);
             try w.write(" where");
@@ -291,19 +533,15 @@ fn formatExpr(w: *Writer, expr: *const ast.Expression, parens_needed: bool) Form
         },
         .binary => |bin| {
             if (parens_needed) try w.writeByte('(');
-            try formatExpr(w, bin.left, needsParens(bin.left, .left, bin.op));
+            try formatExpr(w, bin.left, needsParens(bin.left, bin.op));
             try w.writeByte(' ');
             try w.write(binaryOpStr(bin.op));
             try w.writeByte(' ');
-            try formatExpr(w, bin.right, needsParens(bin.right, .right, bin.op));
+            try formatExpr(w, bin.right, needsParens(bin.right, bin.op));
             if (parens_needed) try w.writeByte(')');
         },
-        .application => |app| {
-            try formatApplication(w, app);
-        },
-        .if_expr => |if_e| {
-            try formatIf(w, if_e);
-        },
+        .application => |app| try formatApplication(w, app),
+        .if_expr => |if_e| try formatIf(w, if_e),
         .when_matches => |wm| {
             try w.write("when ");
             try formatExpr(w, wm.value, false);
@@ -322,9 +560,7 @@ fn formatExpr(w: *Writer, expr: *const ast.Expression, parens_needed: bool) Form
             }
             w.indent -= 1;
         },
-        .array => |arr| {
-            try formatArray(w, arr, expr.location.line);
-        },
+        .array => |arr| try formatArray(w, arr),
         .tuple => |tup| {
             try w.writeByte('(');
             for (tup.elements, 0..) |elem, i| {
@@ -334,21 +570,18 @@ fn formatExpr(w: *Writer, expr: *const ast.Expression, parens_needed: bool) Form
             if (tup.elements.len == 1) try w.writeByte(',');
             try w.writeByte(')');
         },
-        .object => |obj| {
-            try formatObject(w, obj);
-        },
+        .object => |obj| try formatObject(w, obj),
         .object_extend => |ext| {
             try formatExpr(w, ext.base, false);
             try w.write(" { ");
             for (ext.fields, 0..) |field, i| {
                 if (i > 0) try w.write(", ");
-                try formatObjectField(w, field, true);
+                try formatObjectField(w, field);
             }
             try w.write(" }");
         },
         .import_expr => |imp| {
-            try w.write("import ");
-            try w.writeByte('"');
+            try w.write("import \"");
             try w.write(imp.path);
             try w.writeByte('"');
         },
@@ -421,19 +654,18 @@ fn formatExpr(w: *Writer, expr: *const ast.Expression, parens_needed: bool) Form
             try w.write(if (r.inclusive) ".." else "...");
             try formatExpr(w, r.end, false);
         },
-        .assert_expr => |assert_e| {
+        .assert_expr => |ae| {
             try w.write("assert ");
-            try formatExpr(w, assert_e.condition, false);
+            try formatExpr(w, ae.condition, false);
             try w.write(" : ");
-            try formatExpr(w, assert_e.message, false);
+            try formatExpr(w, ae.message, false);
             try w.newline();
-            try formatExpr(w, assert_e.body, false);
+            try formatExpr(w, ae.body, false);
         },
     }
 }
 
-fn formatLet(w: *Writer, let_expr: ast.Let, start_line: usize) FormatterError!void {
-    // Emit doc comment if present
+fn formatLet(w: *Writer, let_expr: ast.Let) FormatterError!void {
     if (let_expr.doc) |doc| {
         var doc_lines = std.mem.splitScalar(u8, doc, '\n');
         while (doc_lines.next()) |doc_line| {
@@ -443,25 +675,26 @@ fn formatLet(w: *Writer, let_expr: ast.Let, start_line: usize) FormatterError!vo
         }
     }
 
-    _ = start_line;
-    try formatPattern(w, let_expr.pattern);
+    // Check if this is a sorted import destructuring
+    if (isImportDestructuring(let_expr)) {
+        try formatSortedImportPattern(w, let_expr.pattern);
+    } else {
+        try formatPattern(w, let_expr.pattern);
+    }
     try w.write(" = ");
 
-    // Check if the value is a multi-line construct that needs indentation
-    const value_needs_indent = switch (let_expr.value.data) {
-        .let => true,
-        .if_expr => |ie| ie.else_expr != null,
-        .when_matches => true,
-        else => false,
-    };
+    // Decide if value goes on same line or indented next line
+    const value_width = measureExpr(let_expr.value);
+    const col = w.currentColumn();
+    const fits_on_line = if (value_width) |vw| (col + vw <= MAX_LINE_WIDTH) else false;
 
-    if (value_needs_indent) {
+    if (fits_on_line) {
+        try formatExpr(w, let_expr.value, false);
+    } else {
         w.indent += 1;
         try w.newline();
         try formatExpr(w, let_expr.value, false);
         w.indent -= 1;
-    } else {
-        try formatExpr(w, let_expr.value, false);
     }
 
     // Body — skip if body is same as value (EOF let binding)
@@ -469,6 +702,29 @@ fn formatLet(w: *Writer, let_expr: ast.Let, start_line: usize) FormatterError!vo
         try w.newline();
         try formatExpr(w, let_expr.body, false);
     }
+}
+
+fn isImportDestructuring(let_expr: ast.Let) bool {
+    if (let_expr.pattern.data != .object) return false;
+    return let_expr.value.data == .import_expr;
+}
+
+fn formatSortedImportPattern(w: *Writer, pat: *const ast.Pattern) FormatterError!void {
+    const obj = pat.data.object;
+    // Collect and sort field names
+    const sorted = try w.allocator.alloc([]const u8, obj.fields.len);
+    for (obj.fields, 0..) |field, i| sorted[i] = field.key;
+    std.mem.sort([]const u8, sorted, {}, struct {
+        fn cmp(_: void, a: []const u8, b: []const u8) bool {
+            return std.mem.order(u8, a, b) == .lt;
+        }
+    }.cmp);
+    try w.write("{ ");
+    for (sorted, 0..) |key, i| {
+        if (i > 0) try w.write(", ");
+        try w.write(key);
+    }
+    try w.write(" }");
 }
 
 fn formatIf(w: *Writer, if_e: ast.If) FormatterError!void {
@@ -483,14 +739,10 @@ fn formatIf(w: *Writer, if_e: ast.If) FormatterError!void {
 }
 
 fn formatApplication(w: *Writer, app: ast.Application) FormatterError!void {
-    // Flatten left-associative application chain: f a b c
     try formatExpr(w, app.function, false);
     try w.writeByte(' ');
-
-    // Check if argument needs parens (is it a complex expression?)
     const needs_parens = switch (app.argument.data) {
-        .application, .binary, .lambda, .let, .if_expr, .when_matches, .where_expr, .assert_expr => true,
-        .unary => true,
+        .application, .binary, .lambda, .let, .if_expr, .when_matches, .where_expr, .assert_expr, .unary => true,
         else => false,
     };
     if (needs_parens) {
@@ -502,33 +754,34 @@ fn formatApplication(w: *Writer, app: ast.Application) FormatterError!void {
     }
 }
 
-fn formatArray(w: *Writer, arr: ast.ArrayLiteral, _: usize) FormatterError!void {
+fn formatArray(w: *Writer, arr: ast.ArrayLiteral) FormatterError!void {
     if (arr.elements.len == 0) {
         try w.write("[]");
         return;
     }
-
-    // Check if all elements are simple and short enough for single line
-    const single_line = shouldArrayBeSingleLine(arr);
-
-    if (single_line) {
-        try w.writeByte('[');
-        for (arr.elements, 0..) |elem, i| {
-            if (i > 0) try w.write(", ");
-            try formatArrayElement(w, elem);
+    const single_line_width = measureArray(arr);
+    const col = w.currentColumn();
+    if (single_line_width) |width| {
+        if (col + width <= MAX_LINE_WIDTH) {
+            try w.writeByte('[');
+            for (arr.elements, 0..) |elem, i| {
+                if (i > 0) try w.write(", ");
+                try formatArrayElement(w, elem);
+            }
+            try w.writeByte(']');
+            return;
         }
-        try w.writeByte(']');
-    } else {
-        try w.writeByte('[');
-        w.indent += 1;
-        for (arr.elements) |elem| {
-            try w.newline();
-            try formatArrayElement(w, elem);
-        }
-        w.indent -= 1;
-        try w.newline();
-        try w.writeByte(']');
     }
+    // Multi-line
+    try w.writeByte('[');
+    w.indent += 1;
+    for (arr.elements) |elem| {
+        try w.newline();
+        try formatArrayElement(w, elem);
+    }
+    w.indent -= 1;
+    try w.newline();
+    try w.writeByte(']');
 }
 
 fn formatArrayElement(w: *Writer, elem: ast.ArrayElement) FormatterError!void {
@@ -551,55 +804,38 @@ fn formatArrayElement(w: *Writer, elem: ast.ArrayElement) FormatterError!void {
     }
 }
 
-fn shouldArrayBeSingleLine(arr: ast.ArrayLiteral) bool {
-    if (arr.elements.len > 5) return false;
-    for (arr.elements) |elem| {
-        switch (elem) {
-            .normal => |e| {
-                if (!isSimpleExpr(e)) return false;
-            },
-            .spread => return false,
-            .conditional_if, .conditional_unless => return false,
-        }
-    }
-    return true;
-}
-
 fn formatObject(w: *Writer, obj: ast.ObjectLiteral) FormatterError!void {
     if (obj.fields.len == 0) {
         try w.write("{}");
         return;
     }
-
-    // Single-line for simple objects with few fields
-    const single_line = shouldObjectBeSingleLine(obj);
-
-    if (single_line) {
-        try w.write("{ ");
-        for (obj.fields, 0..) |field, i| {
-            if (i > 0) try w.write(", ");
-            try formatObjectField(w, field, true);
-        }
-        try w.write(" }");
-    } else {
-        try w.writeByte('{');
-        w.indent += 1;
-        for (obj.fields, 0..) |field, i| {
-            // Blank line between fields that have doc comments (except first)
-            if (i > 0 and field.doc != null) {
-                try w.newline();
+    const single_line_width = measureObject(obj);
+    const col = w.currentColumn();
+    if (single_line_width) |width| {
+        if (col + width <= MAX_LINE_WIDTH) {
+            try w.write("{ ");
+            for (obj.fields, 0..) |field, i| {
+                if (i > 0) try w.write(", ");
+                try formatObjectField(w, field);
             }
-            try w.newline();
-            try formatObjectField(w, field, false);
+            try w.write(" }");
+            return;
         }
-        w.indent -= 1;
-        try w.newline();
-        try w.writeByte('}');
     }
+    // Multi-line
+    try w.writeByte('{');
+    w.indent += 1;
+    for (obj.fields, 0..) |field, i| {
+        if (i > 0 and field.doc != null) try w.newline();
+        try w.newline();
+        try formatObjectField(w, field);
+    }
+    w.indent -= 1;
+    try w.newline();
+    try w.writeByte('}');
 }
 
-fn formatObjectField(w: *Writer, field: ast.ObjectField, _: bool) FormatterError!void {
-    // Doc comment
+fn formatObjectField(w: *Writer, field: ast.ObjectField) FormatterError!void {
     if (field.doc) |doc| {
         var doc_lines = std.mem.splitScalar(u8, doc, '\n');
         while (doc_lines.next()) |doc_line| {
@@ -608,7 +844,6 @@ fn formatObjectField(w: *Writer, field: ast.ObjectField, _: bool) FormatterError
             try w.newline();
         }
     }
-
     switch (field.key) {
         .static => |key| {
             try w.write(key);
@@ -625,8 +860,6 @@ fn formatObjectField(w: *Writer, field: ast.ObjectField, _: bool) FormatterError
         },
     }
     try formatExpr(w, field.value, false);
-
-    // Conditional
     switch (field.condition) {
         .none => {},
         .if_cond => |cond| {
@@ -640,42 +873,6 @@ fn formatObjectField(w: *Writer, field: ast.ObjectField, _: bool) FormatterError
     }
 }
 
-fn shouldObjectBeSingleLine(obj: ast.ObjectLiteral) bool {
-    if (obj.fields.len > 2) return false;
-    if (obj.module_doc != null) return false;
-    for (obj.fields) |field| {
-        if (field.doc != null) return false;
-        if (field.is_patch) return false;
-        if (field.condition != .none) return false;
-        switch (field.key) {
-            .dynamic => return false,
-            .static => {},
-        }
-        if (!isSimpleExpr(field.value)) return false;
-    }
-    return true;
-}
-
-fn isSimpleExpr(expr: *const ast.Expression) bool {
-    return switch (expr.data) {
-        .integer, .float, .boolean, .null_literal, .string_literal, .symbol, .identifier => true,
-        .field_access => true,
-        .field_accessor => true,
-        .unary => |u| isSimpleExpr(u.operand),
-        .binary => |b| isSimpleExpr(b.left) and isSimpleExpr(b.right),
-        .application => |a| isSimpleExpr(a.function) and isSimpleExpr(a.argument),
-        .object => |o| shouldObjectBeSingleLine(o),
-        .array => |a| shouldArrayBeSingleLine(a),
-        .tuple => |t| blk: {
-            for (t.elements) |e| {
-                if (!isSimpleExpr(e)) break :blk false;
-            }
-            break :blk t.elements.len <= 5;
-        },
-        else => false,
-    };
-}
-
 // ============================================================================
 // Pattern Formatting
 // ============================================================================
@@ -683,14 +880,8 @@ fn isSimpleExpr(expr: *const ast.Expression) bool {
 fn formatPattern(w: *Writer, pat: *const ast.Pattern) FormatterError!void {
     switch (pat.data) {
         .identifier => |name| try w.write(name),
-        .integer => |v| {
-            const s = try std.fmt.allocPrint(w.allocator, "{d}", .{v});
-            try w.write(s);
-        },
-        .float => |v| {
-            const s = try std.fmt.allocPrint(w.allocator, "{d}", .{v});
-            try w.write(s);
-        },
+        .integer => |v| try w.write(try std.fmt.allocPrint(w.allocator, "{d}", .{v})),
+        .float => |v| try w.write(try std.fmt.allocPrint(w.allocator, "{d}", .{v})),
         .boolean => |v| try w.write(if (v) "true" else "false"),
         .null_literal => try w.write("null"),
         .symbol => |s| try w.write(s),
@@ -725,7 +916,6 @@ fn formatPattern(w: *Writer, pat: *const ast.Pattern) FormatterError!void {
             for (obj.fields, 0..) |field, i| {
                 if (i > 0) try w.write(", ");
                 try w.write(field.key);
-                // Check if pattern is different from key (literal value match)
                 if (field.pattern.data != .identifier or
                     !std.mem.eql(u8, field.pattern.data.identifier, field.key))
                 {
@@ -774,10 +964,7 @@ fn binaryOpStr(op: ast.BinaryOp) []const u8 {
     };
 }
 
-const Side = enum { left, right };
-
-fn needsParens(expr: *const ast.Expression, side: Side, parent_op: ast.BinaryOp) bool {
-    _ = side;
+fn needsParens(expr: *const ast.Expression, parent_op: ast.BinaryOp) bool {
     return switch (expr.data) {
         .binary => |inner| opPrecedence(inner.op) < opPrecedence(parent_op),
         else => false,
