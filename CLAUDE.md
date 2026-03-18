@@ -131,7 +131,7 @@ examples/                     # Example .lazy files
 |------|---------|----------|
 | Integer | `42` | `integer: i64` |
 | String | `"hello"` | `string_literal: []const u8` |
-| Symbol | `#ok` | `symbol: []const u8` |
+| Symbol | `#ok` | `symbol: []const u8` (evaluates to string `"ok"`) |
 | Lambda | `x -> x + 1` | `lambda: Lambda` |
 | Let | `x = 5; x` | `let: Let` |
 | If | `if x > 0 then 1 else 0` | `if_expr: If` |
