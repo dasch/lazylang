@@ -72,3 +72,24 @@ test "dollar sign without identifier is literal" {
         \\"Price: $ 100"
     , "\"Price: $ 100\"");
 }
+
+// String concatenation with +
+
+test "string concatenation with +" {
+    try expectEvaluates(
+        \\"hello" + " " + "world"
+    , "\"hello world\"");
+}
+
+test "string concatenation with variable" {
+    try expectEvaluates(
+        \\name = "Alice"
+        \\"Hello, " + name + "!"
+    , "\"Hello, Alice!\"");
+}
+
+test "string concatenation empty strings" {
+    try expectEvaluates(
+        \\"" + "hello" + ""
+    , "\"hello\"");
+}

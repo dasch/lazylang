@@ -1017,6 +1017,16 @@ pub fn evaluateExpression(
 
             const result = switch (binary.op) {
                 .add, .subtract, .multiply, .divide => blk2: {
+                    // String concatenation: "hello" + "world"
+                    if (binary.op == .add) {
+                        if (left_value == .string and right_value == .string) {
+                            const left_str = left_value.string;
+                            const right_str = right_value.string;
+                            const concatenated = try std.fmt.allocPrint(arena, "{s}{s}", .{ left_str, right_str });
+                            break :blk2 Value{ .string = concatenated };
+                        }
+                    }
+
                     // Check if either operand is a float
                     const is_float_op = (left_value == .float or right_value == .float);
 
