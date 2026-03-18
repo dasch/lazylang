@@ -124,6 +124,32 @@ test "object patch syntax in literal" {
     );
 }
 
+// Quoted string field keys
+
+test "quoted string field key" {
+    try expectEvaluates(
+        \\{ "name": "Alice" }
+    , "{ name: \"Alice\" }");
+}
+
+test "quoted string field key with spaces" {
+    try expectEvaluates(
+        \\{ "my field": 42 }
+    , "{ my field: 42 }");
+}
+
+test "mixed quoted and unquoted field keys" {
+    try expectEvaluates(
+        \\{ "name": "Alice", age: 30 }
+    , "{ name: \"Alice\", age: 30 }");
+}
+
+test "JSON object is valid Lazylang" {
+    try expectEvaluates(
+        \\{ "x": 1, "y": 2 }
+    , "{ x: 1, y: 2 }");
+}
+
 test "object extension can be chained" {
     try expectEvaluates(
         \\base = { a: 1 }

@@ -1162,6 +1162,45 @@ pub const Parser = struct {
         var fields = std.ArrayListUnmanaged(ObjectField){};
 
         while (self.current.kind != .r_brace) {
+            if (self.current.kind == .string) {
+                // Quoted string field key: { "name": value }
+                const key_token = self.current;
+                const key = self.current.lexeme;
+                try self.advance();
+
+                // Quoted keys require a colon and value
+                try self.expect(.colon);
+                const value_expr = try self.parseLambda();
+
+                try fields.append(self.arena, .{
+                    .key = .{ .static = key },
+                    .value = value_expr,
+                    .is_patch = false,
+                    .doc = null,
+                    .key_location = .{
+                        .line = key_token.line,
+                        .column = key_token.column,
+                        .offset = key_token.offset,
+                        .length = key_token.lexeme.len,
+                    },
+                });
+
+                if (self.current.kind == .comma) {
+                    try self.advance();
+                    if (self.current.kind == .r_brace) break;
+                    continue;
+                }
+
+                if (self.current.kind == .r_brace) break;
+
+                if (self.current.preceded_by_newline) {
+                    continue;
+                }
+
+                self.recordError();
+                return error.UnexpectedToken;
+            }
+
             if (self.current.kind != .identifier) {
                 // Clear any pending doc comments if we don't find an identifier
                 self.tokenizer.clearDocComments();
