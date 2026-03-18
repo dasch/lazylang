@@ -49,10 +49,9 @@ const formatValueShort = value_format.formatValueShort;
 const valueToString = value_format.valueToString;
 
 // Value comparison helper (depends on force, so kept here)
-fn valuesEqual(arena: std.mem.Allocator, a: Value, b: Value) bool {
-    // Force thunks before comparison
-    const a_forced = force(arena, a) catch a;
-    const b_forced = force(arena, b) catch b;
+fn valuesEqual(arena: std.mem.Allocator, a: Value, b: Value) EvalError!bool {
+    const a_forced = try force(arena, a);
+    const b_forced = try force(arena, b);
 
     return switch (a_forced) {
         .integer => |av| switch (b_forced) {
@@ -75,14 +74,14 @@ fn valuesEqual(arena: std.mem.Allocator, a: Value, b: Value) bool {
             .string => |bv| std.mem.eql(u8, av, bv),
             else => false,
         },
-        .function => false, // Functions are not comparable
-        .native_fn => false, // Native functions are not comparable
-        .thunk => false, // Should not happen after forcing above
+        .function => false,
+        .native_fn => false,
+        .thunk => false,
         .array => |av| switch (b_forced) {
             .array => |bv| blk: {
                 if (av.elements.len != bv.elements.len) break :blk false;
                 for (av.elements, 0..) |elem, i| {
-                    if (!valuesEqual(arena, elem, bv.elements[i])) break :blk false;
+                    if (!try valuesEqual(arena, elem, bv.elements[i])) break :blk false;
                 }
                 break :blk true;
             },
@@ -92,7 +91,7 @@ fn valuesEqual(arena: std.mem.Allocator, a: Value, b: Value) bool {
             .tuple => |bv| blk: {
                 if (av.elements.len != bv.elements.len) break :blk false;
                 for (av.elements, 0..) |elem, i| {
-                    if (!valuesEqual(arena, elem, bv.elements[i])) break :blk false;
+                    if (!try valuesEqual(arena, elem, bv.elements[i])) break :blk false;
                 }
                 break :blk true;
             },
@@ -105,7 +104,7 @@ fn valuesEqual(arena: std.mem.Allocator, a: Value, b: Value) bool {
                     var found = false;
                     for (bv.fields) |bfield| {
                         if (std.mem.eql(u8, afield.key, bfield.key)) {
-                            if (!valuesEqual(arena, afield.value, bfield.value)) break :blk false;
+                            if (!try valuesEqual(arena, afield.value, bfield.value)) break :blk false;
                             found = true;
                             break;
                         }
@@ -1190,8 +1189,8 @@ pub fn evaluateExpression(
                 },
                 .equal, .not_equal => blk2: {
                     const bool_result = switch (binary.op) {
-                        .equal => valuesEqual(arena, left_value, right_value),
-                        .not_equal => !valuesEqual(arena, left_value, right_value),
+                        .equal => try valuesEqual(arena, left_value, right_value),
+                        .not_equal => !try valuesEqual(arena, left_value, right_value),
                         else => unreachable,
                     };
                     break :blk2 Value{ .boolean = bool_result };
