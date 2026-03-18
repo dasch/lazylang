@@ -190,4 +190,23 @@ describe #Array [
       result = Array.zip [42] ["hello"]
       mustEq [(42, "hello")] result
   ]
+
+  describe #first [
+    it "returns `(#ok, value)` for the *first* element" do
+      mustEq (#ok, 10) (Array.first [10, 20, 30])
+
+    it "returns `#empty` for an *empty* array" do
+      mustEq #empty (Array.first [])
+  ]
+
+  describe #last [
+    it "returns `(#ok, value)` for the *last* element" do
+      mustEq (#ok, 30) (Array.last [10, 20, 30])
+
+    it "returns `#empty` for an *empty* array" do
+      mustEq #empty (Array.last [])
+
+    it "returns `(#ok, value)` for a *single* element array" do
+      mustEq (#ok, 42) (Array.last [42])
+  ]
 ]
