@@ -182,10 +182,10 @@ record.user.{ name }  // { name: "Alice" }
   [if foo then 'bar']: 42
 
   // This results in `{ bim: 42, boo: 42 }`.
-  ['bim', 'boo', null]: 42
+  ["bim", "boo", null]: 42
 
-  // This results in `{ KEY1: 42, KEY2: 42 }`. Multiple fields can be created by returning an array.
-  [toUpper(key) for key in keys]: 42
+  // An array of strings can also be used for multi-field creation.
+  [keys]: 42
 }
 ```
 
@@ -406,7 +406,7 @@ Tags are symbolic values with fixed identity, similar to atoms in Erlang or symb
 Errors are handled similar to Erlang; code that may fail should evaluate to a tuple `(#ok, value)` rather than just `value`, and on failure should use some other value, e.g. `#noSuchKey`. Then, pattern matching can be used to handle errors:
 
 ```
-when Object.find "team" resource matches
+when Object.get "team" resource matches
   (#ok, team) then team
   #noSuchKey then defaultTeam
 ```
