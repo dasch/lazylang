@@ -2437,7 +2437,47 @@ pub fn createStdlibEnvironment(
         env = new_env;
     }
 
+    // Strip __-prefixed internal builtins from the user-visible environment.
+    // Stdlib closures already captured these in their defining environments,
+    // so they still work — but user code can no longer reference them directly.
+    env = try stripInternalBindings(arena, env);
+
     return env;
+}
+
+/// Rebuild an environment chain, skipping bindings whose names start with "__".
+/// Returns a new chain where internal builtins are not directly accessible.
+fn stripInternalBindings(arena: std.mem.Allocator, env: ?*Environment) !?*Environment {
+    if (env == null) return null;
+
+    // Collect all bindings into a list (reversed, since the chain is LIFO)
+    var bindings = std.ArrayList(struct { name: []const u8, value: Value }){};
+    defer bindings.deinit(arena);
+
+    var current = env;
+    while (current) |node| {
+        if (!std.mem.startsWith(u8, node.name, "__")) {
+            try bindings.append(arena, .{ .name = node.name, .value = node.value });
+        }
+        current = node.parent;
+    }
+
+    // Rebuild the chain in reverse order (so the first binding is outermost)
+    var new_env: ?*Environment = null;
+    var i = bindings.items.len;
+    while (i > 0) {
+        i -= 1;
+        const binding = bindings.items[i];
+        const node = try arena.create(Environment);
+        node.* = .{
+            .parent = new_env,
+            .name = binding.name,
+            .value = binding.value,
+        };
+        new_env = node;
+    }
+
+    return new_env;
 }
 
 // Helper functions for error reporting

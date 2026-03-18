@@ -4,7 +4,8 @@ const testing = std.testing;
 
 test "JSON: parse simple string" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__json_parse '"hello"'
+        \\JSON = import 'JSON'
+        \\JSON.parse '"hello"'
     );
     defer result.deinit();
 
@@ -14,7 +15,8 @@ test "JSON: parse simple string" {
 
 test "JSON: parse integer" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__json_parse "42"
+        \\JSON = import 'JSON'
+        \\JSON.parse "42"
     );
     defer result.deinit();
 
@@ -24,7 +26,8 @@ test "JSON: parse integer" {
 
 test "JSON: parse negative integer" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__json_parse "-123"
+        \\JSON = import 'JSON'
+        \\JSON.parse "-123"
     );
     defer result.deinit();
 
@@ -34,7 +37,8 @@ test "JSON: parse negative integer" {
 
 test "JSON: parse boolean true" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__json_parse "true"
+        \\JSON = import 'JSON'
+        \\JSON.parse "true"
     );
     defer result.deinit();
 
@@ -44,7 +48,8 @@ test "JSON: parse boolean true" {
 
 test "JSON: parse boolean false" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__json_parse "false"
+        \\JSON = import 'JSON'
+        \\JSON.parse "false"
     );
     defer result.deinit();
 
@@ -54,7 +59,8 @@ test "JSON: parse boolean false" {
 
 test "JSON: parse null" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__json_parse "null"
+        \\JSON = import 'JSON'
+        \\JSON.parse "null"
     );
     defer result.deinit();
 
@@ -64,7 +70,8 @@ test "JSON: parse null" {
 
 test "JSON: parse array" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__json_parse "[1, 2, 3]"
+        \\JSON = import 'JSON'
+        \\JSON.parse "[1, 2, 3]"
     );
     defer result.deinit();
 
@@ -74,7 +81,8 @@ test "JSON: parse array" {
 
 test "JSON: parse nested array" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__json_parse "[[1, 2], [3, 4]]"
+        \\JSON = import 'JSON'
+        \\JSON.parse "[[1, 2], [3, 4]]"
     );
     defer result.deinit();
 
@@ -85,7 +93,8 @@ test "JSON: parse nested array" {
 
 test "JSON: parse object" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__json_parse '{"name": "John", "age": 30}'
+        \\JSON = import 'JSON'
+        \\JSON.parse '{"name": "John", "age": 30}'
     );
     defer result.deinit();
 
@@ -96,7 +105,8 @@ test "JSON: parse object" {
 
 test "JSON: parse nested object" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__json_parse '{"user": {"name": "Alice", "age": 25}}'
+        \\JSON = import 'JSON'
+        \\JSON.parse '{"user": {"name": "Alice", "age": 25}}'
     );
     defer result.deinit();
 
@@ -107,7 +117,8 @@ test "JSON: parse nested object" {
 
 test "JSON: parse empty array" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__json_parse "[]"
+        \\JSON = import 'JSON'
+        \\JSON.parse "[]"
     );
     defer result.deinit();
 
@@ -117,7 +128,8 @@ test "JSON: parse empty array" {
 
 test "JSON: parse empty object" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__json_parse "{}"
+        \\JSON = import 'JSON'
+        \\JSON.parse "{}"
     );
     defer result.deinit();
 
@@ -127,7 +139,8 @@ test "JSON: parse empty object" {
 
 test "JSON: parse with whitespace" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__json_parse '  { "x" : 42 }  '
+        \\JSON = import 'JSON'
+        \\JSON.parse '  { "x" : 42 }  '
     );
     defer result.deinit();
 
@@ -137,7 +150,8 @@ test "JSON: parse with whitespace" {
 
 test "JSON: parse invalid JSON returns error" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__json_parse "{ invalid }"
+        \\JSON = import 'JSON'
+        \\JSON.parse "{ invalid }"
     );
     defer result.deinit();
 
@@ -146,7 +160,8 @@ test "JSON: parse invalid JSON returns error" {
 
 test "JSON: parse empty string returns null" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__json_parse ""
+        \\JSON = import 'JSON'
+        \\JSON.parse ""
     );
     defer result.deinit();
 
@@ -156,7 +171,8 @@ test "JSON: parse empty string returns null" {
 
 test "JSON: encode string" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__json_encode "hello"
+        \\JSON = import 'JSON'
+        \\JSON.encode "hello"
     );
     defer result.deinit();
 
@@ -165,7 +181,8 @@ test "JSON: encode string" {
 
 test "JSON: encode integer" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__json_encode 42
+        \\JSON = import 'JSON'
+        \\JSON.encode 42
     );
     defer result.deinit();
 
@@ -174,7 +191,8 @@ test "JSON: encode integer" {
 
 test "JSON: encode boolean" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__json_encode true
+        \\JSON = import 'JSON'
+        \\JSON.encode true
     );
     defer result.deinit();
 
@@ -183,7 +201,8 @@ test "JSON: encode boolean" {
 
 test "JSON: encode null" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__json_encode null
+        \\JSON = import 'JSON'
+        \\JSON.encode null
     );
     defer result.deinit();
 
@@ -192,7 +211,8 @@ test "JSON: encode null" {
 
 test "JSON: encode array" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__json_encode [1, 2, 3]
+        \\JSON = import 'JSON'
+        \\JSON.encode [1, 2, 3]
     );
     defer result.deinit();
 
@@ -201,7 +221,8 @@ test "JSON: encode array" {
 
 test "JSON: encode object" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__json_encode { name: "John", age: 30 }
+        \\JSON = import 'JSON'
+        \\JSON.encode { name: "John", age: 30 }
     );
     defer result.deinit();
 
@@ -211,7 +232,8 @@ test "JSON: encode object" {
 
 test "JSON: encode symbol" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__json_encode #success
+        \\JSON = import 'JSON'
+        \\JSON.encode #success
     );
     defer result.deinit();
 
@@ -220,7 +242,8 @@ test "JSON: encode symbol" {
 
 test "JSON: encode tuple" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__json_encode (1, 2, 3)
+        \\JSON = import 'JSON'
+        \\JSON.encode (1, 2, 3)
     );
     defer result.deinit();
 
@@ -229,7 +252,8 @@ test "JSON: encode tuple" {
 
 test "JSON: encode nested structures" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__json_encode { items: [1, 2, 3], meta: { count: 3 } }
+        \\JSON = import 'JSON'
+        \\JSON.encode { items: [1, 2, 3], meta: { count: 3 } }
     );
     defer result.deinit();
 
@@ -240,7 +264,8 @@ test "JSON: encode nested structures" {
 test "JSON: encode string with special characters" {
     var result = try evaluator.evalInline(testing.allocator,
         \\str = "line1\nline2\ttab"
-        \\__json_encode str
+        \\JSON = import 'JSON'
+        \\JSON.encode str
     );
     defer result.deinit();
 
@@ -250,9 +275,10 @@ test "JSON: encode string with special characters" {
 
 test "JSON: round-trip simple values" {
     var result = try evaluator.evalInline(testing.allocator,
+        \\JSON = import 'JSON'
         \\value = { name: "Alice", age: 30 }
-        \\json = __json_encode value
-        \\(#ok, parsed) = __json_parse json
+        \\json = JSON.encode value
+        \\(#ok, parsed) = JSON.parse json
         \\parsed.name == value.name
     );
     defer result.deinit();
@@ -262,9 +288,10 @@ test "JSON: round-trip simple values" {
 
 test "JSON: round-trip array" {
     var result = try evaluator.evalInline(testing.allocator,
+        \\JSON = import 'JSON'
         \\original = [1, 2, 3, 4, 5]
-        \\json = __json_encode original
-        \\(#ok, parsed) = __json_parse json
+        \\json = JSON.encode original
+        \\(#ok, parsed) = JSON.parse json
         \\parsed == original
     );
     defer result.deinit();
@@ -274,7 +301,8 @@ test "JSON: round-trip array" {
 
 test "JSON: parse mixed types in array" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__json_parse '[1, "hello", true, null]'
+        \\JSON = import 'JSON'
+        \\JSON.parse '[1, "hello", true, null]'
     );
     defer result.deinit();
 
@@ -286,7 +314,8 @@ test "JSON: parse mixed types in array" {
 
 test "JSON: parse string with unicode escapes" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__json_parse '"hello world"'
+        \\JSON = import 'JSON'
+        \\JSON.parse '"hello world"'
     );
     defer result.deinit();
 
@@ -296,7 +325,8 @@ test "JSON: parse string with unicode escapes" {
 
 test "JSON: encode crashes on function" {
     var result = evaluator.evalInline(testing.allocator,
-        \\__json_encode (x -> x + 1)
+        \\JSON = import 'JSON'
+        \\JSON.encode (x -> x + 1)
     ) catch |err| {
         try testing.expectEqual(error.UserCrash, err);
         return;
@@ -309,7 +339,8 @@ test "JSON: encode crashes on function" {
 
 test "YAML: encode crashes on function" {
     var result = evaluator.evalInline(testing.allocator,
-        \\__yaml_encode (x -> x + 1)
+        \\YAML = import 'YAML'
+        \\YAML.encode (x -> x + 1)
     ) catch |err| {
         try testing.expectEqual(error.UserCrash, err);
         return;
@@ -322,7 +353,8 @@ test "YAML: encode crashes on function" {
 
 test "JSON: encode crashes on function in array" {
     var result = evaluator.evalInline(testing.allocator,
-        \\__json_encode [1, (x -> x + 1), 3]
+        \\JSON = import 'JSON'
+        \\JSON.encode [1, (x -> x + 1), 3]
     ) catch |err| {
         try testing.expectEqual(error.UserCrash, err);
         return;
@@ -335,7 +367,8 @@ test "JSON: encode crashes on function in array" {
 
 test "YAML: encode crashes on function in object" {
     var result = evaluator.evalInline(testing.allocator,
-        \\__yaml_encode { foo: (x -> x + 1) }
+        \\YAML = import 'YAML'
+        \\YAML.encode { foo: (x -> x + 1) }
     ) catch |err| {
         try testing.expectEqual(error.UserCrash, err);
         return;

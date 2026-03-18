@@ -4,7 +4,8 @@ const testing = std.testing;
 
 test "YAML: parse simple string" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__yaml_parse "hello"
+        \\YAML = import 'YAML'
+        \\YAML.parse "hello"
     );
     defer result.deinit();
 
@@ -14,7 +15,8 @@ test "YAML: parse simple string" {
 
 test "YAML: parse integer" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__yaml_parse "42"
+        \\YAML = import 'YAML'
+        \\YAML.parse "42"
     );
     defer result.deinit();
 
@@ -24,7 +26,8 @@ test "YAML: parse integer" {
 
 test "YAML: parse boolean true" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__yaml_parse "true"
+        \\YAML = import 'YAML'
+        \\YAML.parse "true"
     );
     defer result.deinit();
 
@@ -34,7 +37,8 @@ test "YAML: parse boolean true" {
 
 test "YAML: parse boolean false" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__yaml_parse "false"
+        \\YAML = import 'YAML'
+        \\YAML.parse "false"
     );
     defer result.deinit();
 
@@ -44,7 +48,8 @@ test "YAML: parse boolean false" {
 
 test "YAML: parse null" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__yaml_parse "null"
+        \\YAML = import 'YAML'
+        \\YAML.parse "null"
     );
     defer result.deinit();
 
@@ -54,7 +59,8 @@ test "YAML: parse null" {
 
 test "YAML: parse flow array" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__yaml_parse "[1, 2, 3]"
+        \\YAML = import 'YAML'
+        \\YAML.parse "[1, 2, 3]"
     );
     defer result.deinit();
 
@@ -64,7 +70,8 @@ test "YAML: parse flow array" {
 
 test "YAML: parse block array" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__yaml_parse "- apple\n- banana\n- cherry"
+        \\YAML = import 'YAML'
+        \\YAML.parse "- apple\n- banana\n- cherry"
     );
     defer result.deinit();
 
@@ -75,7 +82,8 @@ test "YAML: parse block array" {
 
 test "YAML: parse simple object" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__yaml_parse "name: John\nage: 30"
+        \\YAML = import 'YAML'
+        \\YAML.parse "name: John\nage: 30"
     );
     defer result.deinit();
 
@@ -86,7 +94,8 @@ test "YAML: parse simple object" {
 
 test "YAML: parse flow object" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__yaml_parse "{name: Alice, age: 25}"
+        \\YAML = import 'YAML'
+        \\YAML.parse "{name: Alice, age: 25}"
     );
     defer result.deinit();
 
@@ -97,7 +106,8 @@ test "YAML: parse flow object" {
 
 test "YAML: encode string" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__yaml_encode "hello"
+        \\YAML = import 'YAML'
+        \\YAML.encode "hello"
     );
     defer result.deinit();
 
@@ -106,7 +116,8 @@ test "YAML: encode string" {
 
 test "YAML: encode integer" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__yaml_encode 42
+        \\YAML = import 'YAML'
+        \\YAML.encode 42
     );
     defer result.deinit();
 
@@ -115,7 +126,8 @@ test "YAML: encode integer" {
 
 test "YAML: encode boolean" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__yaml_encode true
+        \\YAML = import 'YAML'
+        \\YAML.encode true
     );
     defer result.deinit();
 
@@ -124,7 +136,8 @@ test "YAML: encode boolean" {
 
 test "YAML: encode null" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__yaml_encode null
+        \\YAML = import 'YAML'
+        \\YAML.encode null
     );
     defer result.deinit();
 
@@ -133,7 +146,8 @@ test "YAML: encode null" {
 
 test "YAML: encode array" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__yaml_encode [1, 2, 3]
+        \\YAML = import 'YAML'
+        \\YAML.encode [1, 2, 3]
     );
     defer result.deinit();
 
@@ -142,7 +156,8 @@ test "YAML: encode array" {
 
 test "YAML: encode object" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__yaml_encode { name: "John", age: 30 }
+        \\YAML = import 'YAML'
+        \\YAML.encode { name: "John", age: 30 }
     );
     defer result.deinit();
 
@@ -152,7 +167,8 @@ test "YAML: encode object" {
 
 test "YAML: handles special strings correctly" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__yaml_parse "value: test"
+        \\YAML = import 'YAML'
+        \\YAML.parse "value: test"
     );
     defer result.deinit();
 
@@ -162,9 +178,10 @@ test "YAML: handles special strings correctly" {
 
 test "YAML: round-trip simple values" {
     var result = try evaluator.evalInline(testing.allocator,
+        \\YAML = import 'YAML'
         \\value = { name: "Alice", age: 30 }
-        \\yaml = __yaml_encode value
-        \\(#ok, parsed) = __yaml_parse yaml
+        \\yaml = YAML.encode value
+        \\(#ok, parsed) = YAML.parse yaml
         \\parsed.name == value.name
     );
     defer result.deinit();
@@ -174,7 +191,8 @@ test "YAML: round-trip simple values" {
 
 test "YAML: parse string with spaces" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__yaml_parse "hello world"
+        \\YAML = import 'YAML'
+        \\YAML.parse "hello world"
     );
     defer result.deinit();
 
@@ -184,7 +202,8 @@ test "YAML: parse string with spaces" {
 
 test "YAML: parse empty string returns null" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__yaml_parse ""
+        \\YAML = import 'YAML'
+        \\YAML.parse ""
     );
     defer result.deinit();
 
@@ -197,7 +216,8 @@ test "YAML: parse empty string returns null" {
 
 test "YAML: parse flow objects with multiple fields" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__yaml_parse "{server: localhost, port: 8080}"
+        \\YAML = import 'YAML'
+        \\YAML.parse "{server: localhost, port: 8080}"
     );
     defer result.deinit();
 
@@ -208,9 +228,10 @@ test "YAML: parse flow objects with multiple fields" {
 
 test "YAML: encode and parse arrays preserve order" {
     var result = try evaluator.evalInline(testing.allocator,
+        \\YAML = import 'YAML'
         \\original = [1, 2, 3, 4, 5]
-        \\yaml = __yaml_encode original
-        \\(#ok, parsed) = __yaml_parse yaml
+        \\yaml = YAML.encode original
+        \\(#ok, parsed) = YAML.parse yaml
         \\parsed
     );
     defer result.deinit();
@@ -220,7 +241,8 @@ test "YAML: encode and parse arrays preserve order" {
 
 test "YAML: parse array with mixed simple types" {
     var result = try evaluator.evalInline(testing.allocator,
-        \\__yaml_parse "[1, hello, true, null]"
+        \\YAML = import 'YAML'
+        \\YAML.parse "[1, hello, true, null]"
     );
     defer result.deinit();
 
