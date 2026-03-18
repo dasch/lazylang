@@ -2,439 +2,467 @@ const std = @import("std");
 const eval = @import("evaluator");
 const testing = std.testing;
 
-// Helper to expect an error occurs
+const ErrorData = eval.ErrorData;
+
+// Helper to expect an error with a specific type
 fn expectError(source: []const u8, expected_error: anyerror) !void {
-    const result = eval.evalInline(testing.allocator, source);
-    try testing.expectError(expected_error, result);
+    var result = try eval.evalInlineWithContext(testing.allocator, source);
+    defer result.deinit();
+
+    if (result.err) |err| {
+        try testing.expectEqual(expected_error, err);
+    } else {
+        std.debug.print("\nExpected error {}, but evaluation succeeded with: {s}\n", .{ expected_error, result.output.?.text });
+        return error.TestExpectedError;
+    }
+}
+
+// Helper to expect an error and verify the error data content
+fn expectErrorWithData(source: []const u8, expected_error: anyerror, check: fn (ErrorData) anyerror!void) !void {
+    var result = try eval.evalInlineWithContext(testing.allocator, source);
+    defer result.deinit();
+
+    if (result.err) |err| {
+        try testing.expectEqual(expected_error, err);
+        try check(result.error_ctx.last_error_data);
+    } else {
+        std.debug.print("\nExpected error {}, but evaluation succeeded with: {s}\n", .{ expected_error, result.output.?.text });
+        return error.TestExpectedError;
+    }
 }
 
 // ============================================================================
 // TOKENIZER/PARSER ERROR TESTS
 // ============================================================================
 
-test "error message: unterminated string - basic" {
-    try expectError(\\"hello
-, error.UnterminatedString);
+test "error: unterminated string" {
+    try expectError(
+        \\"hello
+    , error.UnterminatedString);
 }
 
-test "error message: unterminated string - with newlines" {
+test "error: unterminated string with newlines" {
     try expectError(
         \\x = 10
         \\"hello
         \\y = 20
-        ,
-        error.UnterminatedString,
-    );
+    , error.UnterminatedString);
 }
 
-test "error message: unexpected character" {
+test "error: unexpected character" {
     try expectError("x = 5 @ 3", error.UnexpectedCharacter);
 }
 
-test "error message: unexpected token - missing operand" {
+test "error: missing operand" {
     try expectError("x = 5 +", error.ExpectedExpression);
 }
 
-test "error message: unexpected token - unexpected closing paren" {
+test "error: unexpected closing paren" {
     try expectError("x = 5 + )", error.ExpectedExpression);
 }
 
-test "error message: missing closing paren" {
+test "error: missing closing paren" {
     try expectError("x = (5 + 3", error.UnexpectedToken);
 }
 
-test "error message: missing closing bracket" {
+test "error: missing closing bracket" {
     try expectError("x = [1, 2, 3", error.UnexpectedToken);
 }
 
-test "error message: missing closing brace" {
+test "error: missing closing brace" {
     try expectError("obj = { x: 1, y: 2", error.UnexpectedToken);
 }
 
-test "error message: unexpected token after let" {
+test "error: unexpected token after let" {
     try expectError("let 123 = 5; x", error.UnexpectedToken);
 }
 
 // ============================================================================
-// IDENTIFIER/SCOPE ERROR TESTS
+// UNKNOWN IDENTIFIER - with content checks
 // ============================================================================
 
-test "error message: unknown identifier - simple" {
-    try expectError("unknownVar", error.UnknownIdentifier);
+test "error: unknown identifier reports the name" {
+    try expectErrorWithData("unknownVar", error.UnknownIdentifier, struct {
+        fn check(data: ErrorData) !void {
+            switch (data) {
+                .unknown_identifier => |id| {
+                    try testing.expectEqualStrings("unknownVar", id.name);
+                },
+                else => return error.TestUnexpectedResult,
+            }
+        }
+    }.check);
 }
 
-test "error message: unknown identifier - in expression" {
-    try expectError(
+test "error: unknown identifier in expression reports the name" {
+    try expectErrorWithData(
         \\x = 10
         \\y = unknownVar + x
         \\y
-        ,
-        error.UnknownIdentifier,
-    );
+    , error.UnknownIdentifier, struct {
+        fn check(data: ErrorData) !void {
+            switch (data) {
+                .unknown_identifier => |id| {
+                    try testing.expectEqualStrings("unknownVar", id.name);
+                },
+                else => return error.TestUnexpectedResult,
+            }
+        }
+    }.check);
 }
 
-test "error message: unknown identifier - nested scope" {
-    try expectError(
+test "error: unknown identifier in nested scope reports the name" {
+    try expectErrorWithData(
         \\f = x -> unknownNested + x
         \\f 5
-        ,
-        error.UnknownIdentifier,
-    );
+    , error.UnknownIdentifier, struct {
+        fn check(data: ErrorData) !void {
+            switch (data) {
+                .unknown_identifier => |id| {
+                    try testing.expectEqualStrings("unknownNested", id.name);
+                },
+                else => return error.TestUnexpectedResult,
+            }
+        }
+    }.check);
 }
 
-test "error message: unknown identifier - in object field" {
+test "error: unknown identifier in object field" {
     try expectError(
         \\obj = { x: unknownVar }
         \\obj.x
-        ,
-        error.UnknownIdentifier,
-    );
+    , error.UnknownIdentifier);
 }
 
-test "error message: unknown identifier - in array" {
+test "error: unknown identifier in array" {
     try expectError(
         \\arr = [1, 2, unknownVar, 4]
         \\arr
-        ,
-        error.UnknownIdentifier,
-    );
+    , error.UnknownIdentifier);
 }
 
 // ============================================================================
-// TYPE MISMATCH ERROR TESTS
+// TYPE MISMATCH - with content checks
 // ============================================================================
 
-test "error message: type mismatch - add number and string" {
-    try expectError("5 + \"hello\"", error.TypeMismatch);
+test "error: add number and string reports types" {
+    try expectErrorWithData("5 + \"hello\"", error.TypeMismatch, struct {
+        fn check(data: ErrorData) !void {
+            switch (data) {
+                .type_mismatch => |tm| {
+                    try testing.expectEqualStrings("integer", tm.expected);
+                    try testing.expectEqualStrings("string", tm.found);
+                },
+                else => return error.TestUnexpectedResult,
+            }
+        }
+    }.check);
 }
 
-test "error message: type mismatch - add number and boolean" {
+test "error: add number and boolean" {
     try expectError("5 + true", error.TypeMismatch);
 }
 
-test "error message: type mismatch - multiply string" {
-    try expectError("\"hello\" * 5", error.TypeMismatch);
+test "error: multiply string reports types" {
+    try expectErrorWithData("\"hello\" * 5", error.TypeMismatch, struct {
+        fn check(data: ErrorData) !void {
+            switch (data) {
+                .type_mismatch => |tm| {
+                    try testing.expectEqualStrings("integer", tm.expected);
+                    try testing.expectEqualStrings("string", tm.found);
+                },
+                else => return error.TestUnexpectedResult,
+            }
+        }
+    }.check);
 }
 
-test "error message: type mismatch - subtract incompatible" {
+test "error: subtract incompatible types" {
     try expectError("10 - \"five\"", error.TypeMismatch);
 }
 
-// Division operator not supported yet
-// test "error message: type mismatch - divide by string" {
-//     try expectError("10 / \"two\"", error.TypeMismatch);
-// }
-
-test "error message: type mismatch - comparison of incompatible types" {
+test "error: comparison of incompatible types" {
     try expectError("5 < \"hello\"", error.TypeMismatch);
 }
 
-test "error message: type mismatch - logical and with non-boolean" {
+test "error: logical and with non-boolean" {
     try expectError("true && 5", error.TypeMismatch);
 }
 
-test "error message: type mismatch - logical or with non-boolean" {
+test "error: logical or with non-boolean" {
     try expectError("false || \"yes\"", error.TypeMismatch);
 }
 
-test "error message: type mismatch - not operation on non-boolean" {
+test "error: not on non-boolean" {
     try expectError("!5", error.TypeMismatch);
 }
 
-test "error message: type mismatch - negate string" {
+test "error: negate string" {
     try expectError("-\"hello\"", error.ExpectedExpression);
 }
 
 // ============================================================================
-// FUNCTION APPLICATION ERROR TESTS
+// FUNCTION APPLICATION ERRORS
 // ============================================================================
 
-test "error message: not a function - integer" {
+test "error: not a function - integer" {
     try expectError(
         \\x = 42
         \\x 10
-        ,
-        error.ExpectedFunction,
-    );
+    , error.ExpectedFunction);
 }
 
-test "error message: not a function - string" {
+test "error: not a function - string" {
     try expectError("\"hello\" \"world\"", error.ExpectedFunction);
 }
 
-test "error message: not a function - array" {
+test "error: not a function - array" {
     try expectError(
         \\arr = [1, 2, 3]
         \\arr 1
-        ,
-        error.ExpectedFunction,
-    );
+    , error.ExpectedFunction);
 }
 
-test "error message: not a function - object" {
+test "error: not a function - object" {
     try expectError(
         \\obj = { x: 5 }
         \\obj 10
-        ,
-        error.ExpectedFunction,
-    );
+    , error.ExpectedFunction);
 }
 
 // ============================================================================
-// PATTERN MATCHING ERROR TESTS
+// FIELD ACCESS ERRORS - with content checks
 // ============================================================================
 
-test "error message: pattern mismatch - tuple length" {
-    try expectError(
-        \\f = (x, y, z) -> x + y + z
-        \\f (1, 2)
-        ,
-        error.TypeMismatch,
-    );
-}
-
-test "error message: pattern mismatch - tuple value" {
-    try expectError("when (1, 2) matches (1, 3) then 0", error.TypeMismatch);
-}
-
-test "error message: pattern mismatch - array length" {
-    try expectError(
-        \\[x, y, z] = [1, 2]
-        \\x
-        ,
-        error.TypeMismatch,
-    );
-}
-
-test "error message: pattern mismatch - array value" {
-    try expectError(
-        \\[1, 2, 3] = [1, 3, 3]
-        \\0
-        ,
-        error.TypeMismatch,
-    );
-}
-
-test "error message: pattern mismatch - object missing field" {
-    try expectError(
-        \\{ x, y } = { x: 1 }
-        \\x
-        ,
-        error.TypeMismatch,
-    );
-}
-
-test "error message: pattern mismatch - object field value" {
-    try expectError(
-        \\{ x: 1, y } = { x: 2, y: 3 }
-        \\y
-        ,
-        error.TypeMismatch,
-    );
-}
-
-test "error message: pattern mismatch - wrong type for array" {
-    try expectError(
-        \\[x, y] = 42
-        \\x
-        ,
-        error.TypeMismatch,
-    );
-}
-
-test "error message: pattern mismatch - wrong type for object" {
-    try expectError(
-        \\{ x, y } = [1, 2]
-        \\x
-        ,
-        error.TypeMismatch,
-    );
-}
-
-test "error message: pattern mismatch - wrong type for tuple" {
-    try expectError(
-        \\(x, y) = [1, 2]
-        \\x
-        ,
-        error.TypeMismatch,
-    );
-}
-
-test "error message: pattern mismatch - when matches no match" {
-    try expectError(
-        \\when 42 matches
-        \\  [x, y] then x + y
-        \\  { x } then x
-        ,
-        error.TypeMismatch,
-    );
-}
-
-test "error message: pattern mismatch - symbol mismatch" {
-    try expectError("when #error matches #ok then 0", error.TypeMismatch);
-}
-
-test "error message: pattern mismatch - boolean mismatch" {
-    try expectError("when false matches true then 0", error.TypeMismatch);
-}
-
-test "error message: pattern mismatch - integer mismatch" {
-    try expectError("when 2 matches 1 then 0", error.TypeMismatch);
-}
-
-test "error message: pattern mismatch - string mismatch" {
-    try expectError("when \"world\" matches \"hello\" then 0", error.TypeMismatch);
-}
-
-// ============================================================================
-// FIELD ACCESS ERROR TESTS
-// ============================================================================
-
-test "error message: unknown field - simple" {
-    try expectError(
+test "error: unknown field reports field name and available fields" {
+    try expectErrorWithData(
         \\obj = { x: 1 }
         \\obj.y
-        ,
-        error.UnknownField,
-    );
+    , error.UnknownField, struct {
+        fn check(data: ErrorData) !void {
+            switch (data) {
+                .unknown_field => |uf| {
+                    try testing.expectEqualStrings("y", uf.field_name);
+                    try testing.expect(uf.available_fields.len > 0);
+                    try testing.expectEqualStrings("x", uf.available_fields[0]);
+                },
+                else => return error.TestUnexpectedResult,
+            }
+        }
+    }.check);
 }
 
-test "error message: unknown field - multiple available fields" {
+test "error: unknown field with multiple available fields" {
     try expectError(
         \\obj = { name: "Alice", age: 30, city: "NYC" }
         \\obj.unknownField
-        ,
-        error.UnknownField,
-    );
+    , error.UnknownField);
 }
 
-test "error message: unknown field - empty object" {
-    try expectError(
+test "error: unknown field on empty object" {
+    try expectErrorWithData(
         \\obj = {}
         \\obj.x
-        ,
-        error.UnknownField,
-    );
+    , error.UnknownField, struct {
+        fn check(data: ErrorData) !void {
+            switch (data) {
+                .unknown_field => |uf| {
+                    try testing.expectEqualStrings("x", uf.field_name);
+                    try testing.expect(uf.available_fields.len == 0);
+                },
+                else => return error.TestUnexpectedResult,
+            }
+        }
+    }.check);
 }
 
-test "error message: unknown field - nested" {
+test "error: unknown field nested" {
     try expectError(
         \\obj = { inner: { x: 1 } }
         \\obj.inner.y
-        ,
-        error.UnknownField,
-    );
+    , error.UnknownField);
 }
 
-test "error message: field access on non-object - string" {
+test "error: field access on non-object" {
     try expectError(
         \\f = x -> x.field
         \\f "hello"
-        ,
-        error.TypeMismatch,
-    );
+    , error.TypeMismatch);
 }
 
-test "error message: field access on non-object - integer" {
+test "error: field access on integer" {
     try expectError(
         \\f = x -> x.value
         \\f 42
-        ,
-        error.TypeMismatch,
-    );
+    , error.TypeMismatch);
 }
 
-test "error message: field access on non-object - boolean" {
+test "error: field access on boolean" {
     try expectError(
         \\f = x -> x.status
         \\f true
-        ,
-        error.TypeMismatch,
-    );
+    , error.TypeMismatch);
 }
 
 // ============================================================================
-// MODULE/IMPORT ERROR TESTS
+// MODULE/IMPORT ERRORS - with content checks
 // ============================================================================
 
-test "error message: module not found" {
-    try expectError("import 'NonExistentModule'", error.ModuleNotFound);
+test "error: module not found reports module name" {
+    try expectErrorWithData("import 'NonExistentModule'", error.ModuleNotFound, struct {
+        fn check(data: ErrorData) !void {
+            switch (data) {
+                .module_not_found => |mf| {
+                    try testing.expectEqualStrings("NonExistentModule", mf.module_name);
+                },
+                else => return error.TestUnexpectedResult,
+            }
+        }
+    }.check);
 }
 
-test "error message: module not found - relative path" {
+test "error: module not found relative path" {
     try expectError("import './does_not_exist'", error.ModuleNotFound);
 }
 
 // ============================================================================
-// CYCLIC REFERENCE ERROR TESTS
+// PATTERN MATCHING ERRORS
 // ============================================================================
 
-test "error message: cyclic reference - simple" {
+test "error: pattern mismatch - tuple length" {
+    try expectError(
+        \\f = (x, y, z) -> x + y + z
+        \\f (1, 2)
+    , error.TypeMismatch);
+}
+
+test "error: pattern mismatch - tuple value" {
+    try expectError("when (1, 2) matches (1, 3) then 0", error.TypeMismatch);
+}
+
+test "error: pattern mismatch - array length" {
+    try expectError(
+        \\[x, y, z] = [1, 2]
+        \\x
+    , error.TypeMismatch);
+}
+
+test "error: pattern mismatch - array value" {
+    try expectError(
+        \\[1, 2, 3] = [1, 3, 3]
+        \\0
+    , error.TypeMismatch);
+}
+
+test "error: pattern mismatch - object missing field" {
+    try expectError(
+        \\{ x, y } = { x: 1 }
+        \\x
+    , error.TypeMismatch);
+}
+
+test "error: pattern mismatch - object field value" {
+    try expectError(
+        \\{ x: 1, y } = { x: 2, y: 3 }
+        \\y
+    , error.TypeMismatch);
+}
+
+test "error: pattern mismatch - wrong type for array" {
+    try expectError(
+        \\[x, y] = 42
+        \\x
+    , error.TypeMismatch);
+}
+
+test "error: pattern mismatch - wrong type for object" {
+    try expectError(
+        \\{ x, y } = [1, 2]
+        \\x
+    , error.TypeMismatch);
+}
+
+test "error: pattern mismatch - wrong type for tuple" {
+    try expectError(
+        \\(x, y) = [1, 2]
+        \\x
+    , error.TypeMismatch);
+}
+
+test "error: pattern mismatch - when matches no match" {
+    try expectError(
+        \\when 42 matches
+        \\  [x, y] then x + y
+        \\  { x } then x
+    , error.TypeMismatch);
+}
+
+test "error: pattern mismatch - symbol" {
+    try expectError("when #error matches #ok then 0", error.TypeMismatch);
+}
+
+test "error: pattern mismatch - boolean" {
+    try expectError("when false matches true then 0", error.TypeMismatch);
+}
+
+test "error: pattern mismatch - integer" {
+    try expectError("when 2 matches 1 then 0", error.TypeMismatch);
+}
+
+test "error: pattern mismatch - string" {
+    try expectError(
+        \\when "world" matches "hello" then 0
+    , error.TypeMismatch);
+}
+
+// ============================================================================
+// CYCLIC REFERENCE ERRORS
+// ============================================================================
+
+test "error: cyclic reference - simple" {
     try expectError(
         \\obj = { x: obj.x }
         \\obj.x
-        ,
-        error.CyclicReference,
-    );
+    , error.CyclicReference);
 }
 
-test "error message: cyclic reference - indirect" {
+test "error: cyclic reference - indirect" {
     try expectError(
         \\obj = { x: obj.y, y: obj.x }
         \\obj.x
-        ,
-        error.CyclicReference,
-    );
+    , error.CyclicReference);
 }
 
 // ============================================================================
-// BUILTIN FUNCTION ERROR TESTS
+// BUILTIN FUNCTION ERRORS
 // ============================================================================
 
-test "error message: wrong number of arguments" {
-    // Note: Function application is left-associative, so this becomes:
-    // (String.length "hello") "world", which tries to call a non-function
+test "error: wrong number of arguments to builtin" {
     try expectError(
         \\String = import 'String'
         \\String.length "hello" "world"
-        ,
-        error.ExpectedFunction,
-    );
+    , error.ExpectedFunction);
 }
 
-test "error message: type mismatch in builtin - array length on non-array" {
+test "error: wrong argument type to Array.length" {
     try expectError(
         \\Array = import 'Array'
         \\Array.length 5
-        ,
-        error.TypeMismatch,
-    );
+    , error.TypeMismatch);
 }
 
-test "error message: type mismatch in builtin - string upper on non-string" {
+test "error: wrong argument type to String.toUpperCase" {
     try expectError(
         \\String = import 'String'
         \\String.toUpperCase 42
-        ,
-        error.TypeMismatch,
-    );
+    , error.TypeMismatch);
 }
-
-// Note: Array.get returns a Result type (#ok or #outOfBounds), not an error
-// test "error message: invalid argument - negative array index" {
-//     try expectError(
-//         \\Array = import 'Array'
-//         \\Array.get (-1) [1, 2, 3]
-//         ,
-//         error.InvalidArgument,
-//     );
-// }
 
 // ============================================================================
 // COMPLEX/NESTED ERROR TESTS
 // ============================================================================
 
-test "error message: nested unknown identifier in function" {
+test "error: nested unknown identifier in function" {
     try expectError(
         \\f = x -> (
         \\  inner = x + 2;
@@ -442,36 +470,28 @@ test "error message: nested unknown identifier in function" {
         \\  result
         \\)
         \\f 5
-        ,
-        error.UnknownIdentifier,
-    );
+    , error.UnknownIdentifier);
 }
 
-test "error message: type mismatch in nested function call" {
+test "error: type mismatch in nested function call" {
     try expectError(
         \\double = x -> x * 2
         \\result = double "text"
         \\result
-        ,
-        error.TypeMismatch,
-    );
+    , error.TypeMismatch);
 }
 
-test "error message: unknown field in array comprehension" {
+test "error: unknown field in array comprehension" {
     try expectError(
         \\objects = [{ x: 1 }, { x: 2 }]
         \\[obj.y for obj in objects]
-        ,
-        error.UnknownField,
-    );
+    , error.UnknownField);
 }
 
-test "error message: type mismatch in object extend" {
+test "error: type mismatch in object extend" {
     try expectError(
         \\base = { x: 1 }
         \\extended = "not an object" { y: 2 }
         \\extended
-        ,
-        error.TypeMismatch,
-    );
+    , error.TypeMismatch);
 }
