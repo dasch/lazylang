@@ -194,6 +194,49 @@ test "all conditional object fields filtered out" {
     , "{}");
 }
 
+// self references
+
+test "self references sibling field" {
+    try expectEvaluates(
+        \\obj = { x: 1, y: self.x + 1 }
+        \\obj.y
+    , "2");
+}
+
+test "self in extended object sees base field" {
+    // TODO: In the future, self should refer to the final extended object (Jsonnet semantics).
+    // Currently self refers to the object as defined, so base's self.x is 1, not 2.
+    try expectEvaluates(
+        \\base = { x: 1, y: self.x + 10 }
+        \\ext = base { x: 2 }
+        \\ext.y
+    , "11");
+}
+
+test "self with multiple derived fields" {
+    try expectEvaluates(
+        \\config = {
+        \\  host: "localhost"
+        \\  port: 8080
+        \\  url: "http://" + self.host
+        \\}
+        \\config.url
+    , "\"http://localhost\"");
+}
+
+test "self in extended object uses defining object" {
+    // TODO: In the future, self should refer to the final extended object.
+    // Currently self.host resolves to "localhost" (from the base definition).
+    try expectEvaluates(
+        \\base = {
+        \\  host: "localhost"
+        \\  url: "http://" + self.host
+        \\}
+        \\prod = base { host: "prod.example.com" }
+        \\prod.url
+    , "\"http://localhost\"");
+}
+
 test "object extension can be chained" {
     try expectEvaluates(
         \\base = { a: 1 }

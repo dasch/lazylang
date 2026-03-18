@@ -787,7 +787,17 @@ pub fn force(arena: std.mem.Allocator, value: Value) EvalError!Value {
                 },
                 .unevaluated => {
                     thunk.state = .evaluating;
-                    const result = try evaluateExpression(arena, thunk.expr, thunk.env, thunk.current_dir, thunk.ctx);
+                    // If this thunk has a self reference, bind `self` in the environment
+                    const eval_env = if (thunk.self_value) |self_val| blk: {
+                        const self_env = try arena.create(Environment);
+                        self_env.* = .{
+                            .name = "self",
+                            .value = self_val.*,
+                            .parent = thunk.env,
+                        };
+                        break :blk self_env;
+                    } else thunk.env;
+                    const result = try evaluateExpression(arena, thunk.expr, eval_env, thunk.current_dir, thunk.ctx);
                     thunk.state = .{ .evaluated = result };
                     return result;
                 },
@@ -1694,6 +1704,10 @@ pub fn evaluateExpression(
             break :blk Value{ .range = .{ .start = start_int, .end = end_int, .inclusive = range.inclusive } };
         },
         .object => |object| blk: {
+            // Allocate a mutable cell for `self` — thunks will read from it when forced
+            const self_cell = try arena.create(Value);
+            self_cell.* = .null_value; // placeholder until object is constructed
+
             // First pass: evaluate dynamic keys and count total fields
             var fields_list = std.ArrayList(ObjectFieldValue){};
             defer fields_list.deinit(arena);
@@ -1730,6 +1744,7 @@ pub fn evaluateExpression(
                             .ctx = ctx,
                             .state = .unevaluated,
                             .field_key_location = field.key_location,
+                            .self_value = self_cell,
                         };
                         try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch });
                     },
@@ -1753,6 +1768,7 @@ pub fn evaluateExpression(
                                     .ctx = ctx,
                                     .state = .unevaluated,
                                     .field_key_location = field.key_location,
+                                    .self_value = self_cell,
                                 };
                                 try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch });
                             },
@@ -1774,6 +1790,7 @@ pub fn evaluateExpression(
                                                 .ctx = ctx,
                                                 .state = .unevaluated,
                                                 .field_key_location = field.key_location,
+                                                .self_value = self_cell,
                                             };
                                             try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch });
                                         },
@@ -1788,7 +1805,10 @@ pub fn evaluateExpression(
             }
 
             const fields = try fields_list.toOwnedSlice(arena);
-            break :blk Value{ .object = .{ .fields = fields, .module_doc = object.module_doc } };
+            const obj_value = Value{ .object = .{ .fields = fields, .module_doc = object.module_doc } };
+            // Fill in the self cell so thunks can access `self`
+            self_cell.* = obj_value;
+            break :blk obj_value;
         },
         .object_extend => |extend| blk: {
             // Evaluate the base expression

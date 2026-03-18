@@ -82,6 +82,7 @@ pub const Thunk = struct {
     ctx: *const EvalContext,
     state: ThunkState,
     field_key_location: ?error_reporter.SourceLocation, // For object field thunks, to show cyclic reference span
+    self_value: ?*Value = null, // Mutable cell pointing to the containing object (for `self` references)
 };
 
 /// Value is the runtime representation of all Lazylang values.
