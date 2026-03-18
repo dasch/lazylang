@@ -2290,11 +2290,15 @@ fn importModule(
             value_mod.setUserCrashMessage(msg);
             return error.UserCrash;
         }
-        // Mark this module as being imported
-        if (ctx.allocator.dupe(u8, module_file.path)) |path_copy| {
-            stack.put(path_copy, {}) catch {};
-        } else |_| {}
+        // Mark this module as being imported; defer cleanup so it runs on all paths (including errors)
+        const path_copy = try ctx.allocator.dupe(u8, module_file.path);
+        try stack.put(path_copy, {});
     }
+    defer if (ctx.import_stack) |stack| {
+        if (stack.fetchRemove(module_file.path)) |entry| {
+            ctx.allocator.free(entry.key);
+        }
+    };
 
     const contents = try module_file.file.readToEndAlloc(arena, std.math.maxInt(usize));
 
@@ -2385,17 +2389,11 @@ fn importModule(
         }
     }
 
-    // Cache the result and remove from import stack
+    // Cache the result (import stack cleanup handled by defer above)
     if (ctx.module_cache) |cache| {
-        if (ctx.allocator.dupe(u8, module_file.path)) |path_copy| {
-            cache.put(path_copy, result) catch {};
-        } else |_| {}
-    }
-    if (ctx.import_stack) |stack| {
-        // Remove from import stack — we need to find and free the key we added
-        if (stack.fetchRemove(module_file.path)) |entry| {
-            ctx.allocator.free(entry.key);
-        }
+        const cache_key = try ctx.allocator.dupe(u8, module_file.path);
+        errdefer ctx.allocator.free(cache_key);
+        try cache.put(cache_key, result);
     }
 
     return result;
