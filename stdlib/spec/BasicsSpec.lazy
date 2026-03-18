@@ -39,14 +39,6 @@ describe #Basics [
       mustEq false (isNull 0)
   ]
 
-  describe #isSymbol [
-    it "returns true for symbols" do
-      mustEq true (isSymbol #ok)
-
-    it "returns false for strings" do
-      mustEq false (isSymbol "ok")
-  ]
-
   describe #isString [
     it "returns true for strings" do
       mustEq true (isString "hello")
@@ -118,6 +110,6 @@ describe #Basics [
       mustEq "hello" (toString "hello")
 
     it "converts a symbol to a string" do
-      mustEq "#ok" (toString #ok)
+      mustEq "ok" (toString #ok)
   ]
 ]

@@ -9,7 +9,7 @@ test "JSON: parse simple string" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "hello") != null);
 }
 
@@ -20,7 +20,7 @@ test "JSON: parse integer" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "42") != null);
 }
 
@@ -31,7 +31,7 @@ test "JSON: parse negative integer" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "-123") != null);
 }
 
@@ -42,7 +42,7 @@ test "JSON: parse boolean true" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "true") != null);
 }
 
@@ -53,7 +53,7 @@ test "JSON: parse boolean false" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "false") != null);
 }
 
@@ -64,7 +64,7 @@ test "JSON: parse null" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "null") != null);
 }
 
@@ -75,7 +75,7 @@ test "JSON: parse array" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "[1, 2, 3]") != null);
 }
 
@@ -86,7 +86,7 @@ test "JSON: parse nested array" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "[1, 2]") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "[3, 4]") != null);
 }
@@ -98,7 +98,7 @@ test "JSON: parse object" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "name") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "John") != null);
 }
@@ -110,7 +110,7 @@ test "JSON: parse nested object" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "user") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "Alice") != null);
 }
@@ -122,7 +122,7 @@ test "JSON: parse empty array" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "[]") != null);
 }
 
@@ -133,7 +133,7 @@ test "JSON: parse empty object" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "{}") != null);
 }
 
@@ -144,7 +144,7 @@ test "JSON: parse with whitespace" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "42") != null);
 }
 
@@ -155,7 +155,7 @@ test "JSON: parse invalid JSON returns error" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#error") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"error\"") != null);
 }
 
 test "JSON: parse empty string returns null" {
@@ -165,7 +165,7 @@ test "JSON: parse empty string returns null" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "null") != null);
 }
 
@@ -306,7 +306,7 @@ test "JSON: parse mixed types in array" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "1") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "hello") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "true") != null);
@@ -319,7 +319,7 @@ test "JSON: parse string with unicode escapes" {
     );
     defer result.deinit();
 
-    try testing.expect(std.mem.indexOf(u8, result.text, "#ok") != null);
+    try testing.expect(std.mem.indexOf(u8, result.text, "\"ok\"") != null);
     try testing.expect(std.mem.indexOf(u8, result.text, "hello world") != null);
 }
 

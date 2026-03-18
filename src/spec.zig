@@ -86,18 +86,9 @@ fn buildDescribePath(allocator: std.mem.Allocator, describe_stack: []const []con
 
     for (describe_stack, 0..) |desc, i| {
         if (i > 0) {
-            // Use "." between consecutive symbols, " " otherwise
-            const prev_is_symbol = describe_stack[i - 1].len > 0 and describe_stack[i - 1][0] == '#';
-            const curr_is_symbol = desc.len > 0 and desc[0] == '#';
-            const separator = if (prev_is_symbol and curr_is_symbol) "." else " ";
-            try path.appendSlice(allocator, separator);
+            try path.appendSlice(allocator, " ");
         }
-        // Strip # prefix from symbols
-        const desc_name = if (desc.len > 0 and desc[0] == '#')
-            desc[1..]
-        else
-            desc;
-        try path.appendSlice(allocator, desc_name);
+        try path.appendSlice(allocator, desc);
     }
 
     try path.appendSlice(allocator, " ");
@@ -145,18 +136,9 @@ fn recordFailedSpec(ctx: anytype, test_description: []const u8) !void {
 
     for (ctx.current_describe_stack.items, 0..) |desc, i| {
         if (i > 0) {
-            // Use "." between consecutive symbols, " " otherwise
-            const prev_is_symbol = ctx.current_describe_stack.items[i - 1].len > 0 and ctx.current_describe_stack.items[i - 1][0] == '#';
-            const curr_is_symbol = desc.len > 0 and desc[0] == '#';
-            const separator = if (prev_is_symbol and curr_is_symbol) "." else " ";
-            try describe_path.appendSlice(ctx.allocator, separator);
+            try describe_path.appendSlice(ctx.allocator, " ");
         }
-        // Strip # prefix from symbols
-        const desc_name = if (desc.len > 0 and desc[0] == '#')
-            desc[1..]
-        else
-            desc;
-        try describe_path.appendSlice(ctx.allocator, desc_name);
+        try describe_path.appendSlice(ctx.allocator, desc);
     }
 
     // Add trailing space
@@ -185,18 +167,9 @@ fn recordSkippedSpec(ctx: anytype, test_description: []const u8) !void {
 
     for (ctx.current_describe_stack.items, 0..) |desc, i| {
         if (i > 0) {
-            // Use "." between consecutive symbols, " " otherwise
-            const prev_is_symbol = ctx.current_describe_stack.items[i - 1].len > 0 and ctx.current_describe_stack.items[i - 1][0] == '#';
-            const curr_is_symbol = desc.len > 0 and desc[0] == '#';
-            const separator = if (prev_is_symbol and curr_is_symbol) "." else " ";
-            try describe_path.appendSlice(ctx.allocator, separator);
+            try describe_path.appendSlice(ctx.allocator, " ");
         }
-        // Strip # prefix from symbols
-        const desc_name = if (desc.len > 0 and desc[0] == '#')
-            desc[1..]
-        else
-            desc;
-        try describe_path.appendSlice(ctx.allocator, desc_name);
+        try describe_path.appendSlice(ctx.allocator, desc);
     }
 
     // Add trailing space
@@ -403,9 +376,7 @@ fn runTestItem(ctx: anytype, item: eval_module.Value) anyerror!void {
 }
 
 fn runDescribe(ctx: anytype, desc: eval_module.ObjectValue) anyerror!void {
-    // Get description (can be string or symbol)
     var description: ?[]const u8 = null;
-    var description_is_symbol = false;
     var children: ?eval_module.ArrayValue = null;
 
     for (desc.fields) |field| {
@@ -414,11 +385,6 @@ fn runDescribe(ctx: anytype, desc: eval_module.ObjectValue) anyerror!void {
             switch (forced_value) {
                 .string => |s| {
                     description = s;
-                    description_is_symbol = false;
-                },
-                .symbol => |s| {
-                    description = s;
-                    description_is_symbol = true;
                 },
                 else => {},
             }
@@ -461,20 +427,9 @@ fn runDescribe(ctx: anytype, desc: eval_module.ObjectValue) anyerror!void {
 
         try ctx.writeIndent();
 
-        // Format description based on type
-        if (description_is_symbol) {
-            // Symbols are formatted like code (blue), strip the # prefix
-            const symbol_name = if (description.?.len > 0 and description.?[0] == '#')
-                description.?[1..]
-            else
-                description.?;
-            try ctx.writer.print("{s}{s}{s}{s}\n", .{ Color.bold, Color.blue, symbol_name, Color.reset });
-        } else {
-            // Strings use the full markdown-light formatting (white/no color) with bold
-            const formatted_desc = try formatDescription(ctx.allocator, description.?, Color.blue, Color.bold);
-            defer ctx.allocator.free(formatted_desc);
-            try ctx.writer.print("{s}{s}{s}\n", .{ Color.bold, formatted_desc, Color.reset });
-        }
+        const formatted_desc = try formatDescription(ctx.allocator, description.?, Color.blue, Color.bold);
+        defer ctx.allocator.free(formatted_desc);
+        try ctx.writer.print("{s}{s}{s}\n", .{ Color.bold, formatted_desc, Color.reset });
     }
 
     if (should_run_children) {

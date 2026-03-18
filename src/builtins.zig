@@ -57,12 +57,12 @@ pub fn arrayGet(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalErr
     };
 
     if (index < 0 or index >= array.elements.len) {
-        return eval.Value{ .symbol = "#outOfBounds" };
+        return eval.Value{ .string = "outOfBounds" };
     }
 
     // Return (#ok, value)
     const result_elements = try arena.alloc(eval.Value, 2);
-    result_elements[0] = eval.Value{ .symbol = "#ok" };
+    result_elements[0] = eval.Value{ .string = "ok" };
     result_elements[1] = array.elements[@intCast(index)];
     return eval.Value{ .tuple = .{ .elements = result_elements } };
 }
@@ -407,10 +407,6 @@ fn valuesEqual(arena: std.mem.Allocator, a: eval.Value, b: eval.Value) bool {
         },
         .null_value => switch (b_forced) {
             .null_value => true,
-            else => false,
-        },
-        .symbol => |av| switch (b_forced) {
-            .symbol => |bv| std.mem.eql(u8, av, bv),
             else => false,
         },
         .string => |av| switch (b_forced) {
@@ -969,13 +965,13 @@ pub fn objectGet(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalEr
             const forced_value = try eval.force(arena, field.value);
             // Return (#ok, value)
             const result_elements = try arena.alloc(eval.Value, 2);
-            result_elements[0] = eval.Value{ .symbol = "#ok" };
+            result_elements[0] = eval.Value{ .string = "ok" };
             result_elements[1] = forced_value;
             return eval.Value{ .tuple = .{ .elements = result_elements } };
         }
     }
 
-    return eval.Value{ .symbol = "#noSuchKey" };
+    return eval.Value{ .string = "noSuchKey" };
 }
 
 pub fn mathPow(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
@@ -1122,7 +1118,6 @@ pub fn toString(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalErr
         },
         .boolean => |b| if (b) "true" else "false",
         .null_value => "null",
-        .symbol => |s| s,
         else => return error.TypeMismatch,
     };
 
@@ -1171,14 +1166,14 @@ pub fn yamlParse(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalEr
 
         const msg = try arena.dupe(u8, error_msg);
         const result_elements = try arena.alloc(eval.Value, 2);
-        result_elements[0] = eval.Value{ .symbol = "#error" };
+        result_elements[0] = eval.Value{ .string = "error" };
         result_elements[1] = eval.Value{ .string = msg };
         return eval.Value{ .tuple = .{ .elements = result_elements } };
     };
 
     // Return (#ok, value)
     const result_elements = try arena.alloc(eval.Value, 2);
-    result_elements[0] = eval.Value{ .symbol = "#ok" };
+    result_elements[0] = eval.Value{ .string = "ok" };
     result_elements[1] = result;
     return eval.Value{ .tuple = .{ .elements = result_elements } };
 }
@@ -1225,14 +1220,14 @@ pub fn jsonParse(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalEr
 
         const msg = try arena.dupe(u8, error_msg);
         const result_elements = try arena.alloc(eval.Value, 2);
-        result_elements[0] = eval.Value{ .symbol = "#error" };
+        result_elements[0] = eval.Value{ .string = "error" };
         result_elements[1] = eval.Value{ .string = msg };
         return eval.Value{ .tuple = .{ .elements = result_elements } };
     };
 
     // Return (#ok, value)
     const result_elements = try arena.alloc(eval.Value, 2);
-    result_elements[0] = eval.Value{ .symbol = "#ok" };
+    result_elements[0] = eval.Value{ .string = "ok" };
     result_elements[1] = result;
     return eval.Value{ .tuple = .{ .elements = result_elements } };
 }
@@ -1579,13 +1574,6 @@ pub fn isNull(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError
     _ = arena;
     if (args.len != 1) return error.WrongNumberOfArguments;
     return eval.Value{ .boolean = args[0] == .null_value };
-}
-
-/// Check if a value is a symbol
-pub fn isSymbol(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
-    _ = arena;
-    if (args.len != 1) return error.WrongNumberOfArguments;
-    return eval.Value{ .boolean = args[0] == .symbol };
 }
 
 /// Check if a value is a string

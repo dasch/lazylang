@@ -6,7 +6,7 @@
 /// Use this module when you need to parse JSON data at runtime or handle potentially invalid JSON.
 ///
 /// **Supported:** All JSON types (null, boolean, number, string, array, object)
-/// **Encoding:** Symbols as strings, tuples as arrays, proper escaping
+/// **Encoding:** Tuples as arrays, proper escaping
 /// **Not supported:** Floats (converted to integers), NaN/Infinity
 ///
 /// Uses Zig's standard library JSON parser for robust JSON 1.0 compliance.
@@ -77,7 +77,6 @@
   /// **Encoding details:**
   /// - Objects encoded with keys in insertion order
   /// - Strings properly escaped (quotes, backslashes, control characters)
-  /// - Symbols encoded as strings without the `#` prefix
   /// - Tuples encoded as arrays
   /// - Control characters use `\uXXXX` escape sequences
   /// - Compact format (no extra whitespace)
