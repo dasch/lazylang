@@ -30,7 +30,7 @@
   /// isInteger 3.14  //=> false
   /// isInteger "hello"  //=> false
   /// ```
-  isInteger: value -> __is_integer value
+  isInteger: value -> Builtins.is_integer value
 
   /// Checks if a value is a float (floating-point number).
   ///
@@ -45,7 +45,7 @@
   /// isFloat 42  //=> false
   /// isFloat "hello"  //=> false
   /// ```
-  isFloat: value -> __is_float value
+  isFloat: value -> Builtins.is_float value
 
   /// Checks if a value is a boolean.
   ///
@@ -60,7 +60,7 @@
   /// isBoolean false  //=> true
   /// isBoolean 1  //=> false
   /// ```
-  isBoolean: value -> __is_boolean value
+  isBoolean: value -> Builtins.is_boolean value
 
   /// Checks if a value is null.
   ///
@@ -75,7 +75,7 @@
   /// isNull 0  //=> false
   /// isNull ""  //=> false
   /// ```
-  isNull: value -> __is_null value
+  isNull: value -> Builtins.is_null value
 
   /// Checks if a value is a symbol.
   ///
@@ -90,7 +90,7 @@
   /// isSymbol "ok"  //=> false
   /// isSymbol 42  //=> false
   /// ```
-  isSymbol: value -> __is_symbol value
+  isSymbol: value -> Builtins.is_symbol value
 
   /// Checks if a value is a string.
   ///
@@ -105,7 +105,7 @@
   /// isString 42  //=> false
   /// isString [1, 2, 3]  //=> false
   /// ```
-  isString: value -> __is_string value
+  isString: value -> Builtins.is_string value
 
   /// Checks if a value is an array.
   ///
@@ -120,7 +120,7 @@
   /// isArray (1, 2, 3)  //=> false
   /// isArray "hello"  //=> false
   /// ```
-  isArray: value -> __is_array value
+  isArray: value -> Builtins.is_array value
 
   /// Checks if a value is a tuple.
   ///
@@ -135,7 +135,7 @@
   /// isTuple [1, 2, 3]  //=> false
   /// isTuple "hello"  //=> false
   /// ```
-  isTuple: value -> __is_tuple value
+  isTuple: value -> Builtins.is_tuple value
 
   /// Checks if a value is an object.
   ///
@@ -150,7 +150,7 @@
   /// isObject [1, 2, 3]  //=> false
   /// isObject "hello"  //=> false
   /// ```
-  isObject: value -> __is_object value
+  isObject: value -> Builtins.is_object value
 
   /// Checks if a value is a function (either a Lazylang function or native function).
   ///
@@ -165,7 +165,7 @@
   /// isFunction 42  //=> false
   /// isFunction "hello"  //=> false
   /// ```
-  isFunction: value -> __is_function value
+  isFunction: value -> Builtins.is_function value
 
   /// Terminates program execution with a custom error message.
   ///
@@ -183,7 +183,7 @@
   ///   else
   ///     crash "Input must be a string"
   /// ```
-  crash: crash
+  crash: Builtins.crash
 
   /// Converts a value to its string representation.
   ///
@@ -200,5 +200,5 @@
   /// toString #ok  //=> "#ok"
   /// "port: " + toString 8080  //=> "port: 8080"
   /// ```
-  toString: value -> __to_string value
+  toString: value -> Builtins.to_string value
 }

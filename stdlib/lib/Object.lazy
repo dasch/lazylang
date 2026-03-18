@@ -30,7 +30,7 @@ Tuple = import "Tuple"
   /// ```
   /// Object.keys { name: "John", age: 30 }  //=> ["name", "age"]
   /// ```
-  keys: obj -> __object_keys obj
+  keys: obj -> Builtins.object_keys obj
 
   /// Returns an array of all values in an object.
   ///
@@ -41,7 +41,7 @@ Tuple = import "Tuple"
   /// ```
   /// Object.values { name: "John", age: 30 }  //=> ["John", 30]
   /// ```
-  values: obj -> __object_values obj
+  values: obj -> Builtins.object_values obj
 
   /// Retrieves the value associated with a key in an object.
   /// Returns `(#ok, value)` if the key exists, or `#noSuchKey` if the key is not found.
@@ -59,7 +59,7 @@ Tuple = import "Tuple"
   /// Object.get "name" { name: "John", age: 30 }  //=> (#ok, "John")
   /// Object.get "email" { name: "John", age: 30 }  //=> #noSuchKey
   /// ```
-  get: key -> obj -> __object_get (obj, key)
+  get: key -> obj -> Builtins.object_get (obj, key)
 
   /// Merges two objects together. Same as the `&` operator.
   /// Fields from the second object override fields from the first.
@@ -123,8 +123,8 @@ Tuple = import "Tuple"
   ///   //=> { x: (null, 1) }
   /// ```
   zip: obj1 -> obj2 ->
-    keys1 = __object_keys obj1;
-    keys2 = __object_keys obj2;
-    allKeys = __array_uniq [k for ks in [keys1, keys2] for k in ks];
-    { [k]: Tuple.mapBoth (Result.orDefault null) (__object_get (obj1, k), __object_get (obj2, k)) for k in allKeys }
+    keys1 = Builtins.object_keys obj1;
+    keys2 = Builtins.object_keys obj2;
+    allKeys = Builtins.array_uniq [k for ks in [keys1, keys2] for k in ks];
+    { [k]: Tuple.mapBoth (Result.orDefault null) (Builtins.object_get (obj1, k), Builtins.object_get (obj2, k)) for k in allKeys }
 }

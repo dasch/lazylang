@@ -2437,32 +2437,29 @@ pub fn createStdlibEnvironment(
         env = new_env;
     }
 
-    // Strip __-prefixed internal builtins from the user-visible environment.
-    // Stdlib closures already captured these in their defining environments,
-    // so they still work — but user code can no longer reference them directly.
-    env = try stripInternalBindings(arena, env);
+    // Strip the Builtins binding from the user-visible environment.
+    // Stdlib closures already captured Builtins in their defining environments,
+    // so they still work — but user code cannot access Builtins directly.
+    env = try stripBinding(arena, env, "Builtins");
 
     return env;
 }
 
-/// Rebuild an environment chain, skipping bindings whose names start with "__".
-/// Returns a new chain where internal builtins are not directly accessible.
-fn stripInternalBindings(arena: std.mem.Allocator, env: ?*Environment) !?*Environment {
+/// Rebuild an environment chain, skipping a specific named binding.
+fn stripBinding(arena: std.mem.Allocator, env: ?*Environment, name_to_strip: []const u8) !?*Environment {
     if (env == null) return null;
 
-    // Collect all bindings into a list (reversed, since the chain is LIFO)
     var bindings = std.ArrayList(struct { name: []const u8, value: Value }){};
     defer bindings.deinit(arena);
 
     var current = env;
     while (current) |node| {
-        if (!std.mem.startsWith(u8, node.name, "__")) {
+        if (!std.mem.eql(u8, node.name, name_to_strip)) {
             try bindings.append(arena, .{ .name = node.name, .value = node.value });
         }
         current = node.parent;
     }
 
-    // Rebuild the chain in reverse order (so the first binding is outermost)
     var new_env: ?*Environment = null;
     var i = bindings.items.len;
     while (i > 0) {

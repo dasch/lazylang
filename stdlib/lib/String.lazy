@@ -28,7 +28,7 @@
   /// ```
   /// String.length "hello"  //=> 5
   /// ```
-  length: str -> __string_length str
+  length: str -> Builtins.string_length str
 
   /// Appends one string to another.
   ///
@@ -40,7 +40,7 @@
   /// ```
   /// String.append "Hello, " "world!"  //=> "Hello, world!"
   /// ```
-  append: prefix -> str -> __string_concat (prefix, str)
+  append: prefix -> str -> Builtins.string_concat (prefix, str)
 
   /// Concatenates an array of strings into a single string.
   /// Returns an empty string if the array is empty.
@@ -54,7 +54,7 @@
   /// String.concat ["a", "b", "c"]  //=> "abc"
   /// String.concat []  //=> ""
   /// ```
-  concat: strs -> __string_concat_all strs
+  concat: strs -> Builtins.string_concat_all strs
 
   /// Splits a string into an array of substrings using a delimiter.
   ///
@@ -67,7 +67,7 @@
   /// String.split "," "apple,banana,cherry"  //=> ["apple", "banana", "cherry"]
   /// String.split " " "hello world"  //=> ["hello", "world"]
   /// ```
-  split: delimiter -> str -> __string_split (str, delimiter)
+  split: delimiter -> str -> Builtins.string_split (str, delimiter)
 
   /// Converts a string to uppercase.
   ///
@@ -78,7 +78,7 @@
   /// ```
   /// String.toUpperCase "hello"  //=> "HELLO"
   /// ```
-  toUpperCase: str -> __string_to_upper str
+  toUpperCase: str -> Builtins.string_to_upper str
 
   /// Converts a string to lowercase.
   ///
@@ -89,7 +89,7 @@
   /// ```
   /// String.toLowerCase "HELLO"  //=> "hello"
   /// ```
-  toLowerCase: str -> __string_to_lower str
+  toLowerCase: str -> Builtins.string_to_lower str
 
   /// Converts a string into an array of individual characters.
   ///
@@ -100,7 +100,7 @@
   /// ```
   /// String.chars "hello"  //=> ["h", "e", "l", "l", "o"]
   /// ```
-  chars: str -> __string_chars str
+  chars: str -> Builtins.string_chars str
 
   /// Checks if a string is empty.
   ///
@@ -112,7 +112,7 @@
   /// String.isEmpty ""  //=> true
   /// String.isEmpty "hello"  //=> false
   /// ```
-  isEmpty: str -> __string_length str == 0
+  isEmpty: str -> Builtins.string_length str == 0
 
   /// Removes whitespace from both ends of a string.
   ///
@@ -123,7 +123,7 @@
   /// ```
   /// String.trim "  hello  "  //=> "hello"
   /// ```
-  trim: str -> __string_trim str
+  trim: str -> Builtins.string_trim str
 
   /// Checks if a string starts with a given prefix.
   ///
@@ -136,7 +136,7 @@
   /// String.startsWith "hello" "hello world"  //=> true
   /// String.startsWith "world" "hello world"  //=> false
   /// ```
-  startsWith: prefix -> str -> __string_starts_with (str, prefix)
+  startsWith: prefix -> str -> Builtins.string_starts_with (str, prefix)
 
   /// Checks if a string ends with a given suffix.
   ///
@@ -149,7 +149,7 @@
   /// String.endsWith "world" "hello world"  //=> true
   /// String.endsWith "hello" "hello world"  //=> false
   /// ```
-  endsWith: suffix -> str -> __string_ends_with (str, suffix)
+  endsWith: suffix -> str -> Builtins.string_ends_with (str, suffix)
 
   /// Checks if a string contains a given substring.
   ///
@@ -162,7 +162,7 @@
   /// String.contains "lo wo" "hello world"  //=> true
   /// String.contains "xyz" "hello world"  //=> false
   /// ```
-  contains: substring -> str -> __string_contains (str, substring)
+  contains: substring -> str -> Builtins.string_contains (str, substring)
 
   /// Repeats a string n times.
   ///
@@ -175,7 +175,7 @@
   /// String.repeat 3 "ha"  //=> "hahaha"
   /// String.repeat 0 "x"  //=> ""
   /// ```
-  repeat: count -> str -> __string_repeat (count, str)
+  repeat: count -> str -> Builtins.string_repeat (count, str)
 
   /// Replaces all occurrences of a substring with another string.
   ///
@@ -189,7 +189,7 @@
   /// String.replace "world" "Lazylang" "hello world"  //=> "hello Lazylang"
   /// String.replace "a" "o" "banana"  //=> "bonono"
   /// ```
-  replace: from -> to -> str -> __string_replace (from, to, str)
+  replace: from -> to -> str -> Builtins.string_replace (from, to, str)
 
   /// Reverses a string.
   ///
@@ -204,9 +204,9 @@
   /// ```
   reverse: str ->
     str
-    \ __string_chars
-    \ __array_reverse
-    \ __string_concat_all
+    \ Builtins.string_chars
+    \ Builtins.array_reverse
+    \ Builtins.string_concat_all
 
   /// Joins an array of strings with a separator.
   ///
@@ -219,7 +219,7 @@
   /// String.join ", " ["a", "b", "c"]  //=> "a, b, c"
   /// String.join "" ["hello", "world"]  //=> "helloworld"
   /// ```
-  join: separator -> arr -> __string_join (separator, arr)
+  join: separator -> arr -> Builtins.string_join (separator, arr)
 
   /// Extracts a substring from start (inclusive) to end (exclusive).
   /// Supports negative indices (counting from the end).
@@ -234,7 +234,7 @@
   /// String.slice 0 5 "hello world"  //=> "hello"
   /// String.slice 6 11 "hello world"  //=> "world"
   /// ```
-  slice: start -> end -> str -> __string_slice (start, end, str)
+  slice: start -> end -> str -> Builtins.string_slice (start, end, str)
 
   /// Keeps the first n characters of a string.
   ///
@@ -246,7 +246,7 @@
   /// ```
   /// String.left 5 "hello world"  //=> "hello"
   /// ```
-  left: n -> str -> __string_slice (0, n, str)
+  left: n -> str -> Builtins.string_slice (0, n, str)
 
   /// Keeps the last n characters of a string.
   ///
@@ -259,8 +259,8 @@
   /// String.right 5 "hello world"  //=> "world"
   /// ```
   right: n -> str ->
-    len = __string_length str
-    __string_slice (len - n, len, str)
+    len = Builtins.string_length str
+    Builtins.string_slice (len - n, len, str)
 
   /// Drops the first n characters of a string.
   ///
@@ -273,8 +273,8 @@
   /// String.dropLeft 6 "hello world"  //=> "world"
   /// ```
   dropLeft: n -> str ->
-    len = __string_length str
-    __string_slice (n, len, str)
+    len = Builtins.string_length str
+    Builtins.string_slice (n, len, str)
 
   /// Drops the last n characters of a string.
   ///
@@ -287,6 +287,6 @@
   /// String.dropRight 6 "hello world"  //=> "hello"
   /// ```
   dropRight: n -> str ->
-    len = __string_length str
-    __string_slice (0, len - n, str)
+    len = Builtins.string_length str
+    Builtins.string_slice (0, len - n, str)
 }

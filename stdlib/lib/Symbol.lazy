@@ -11,7 +11,7 @@
   /// // => "hello"
   /// ```
   toString: sym ->
-    str = __symbol_to_string sym
+    str = Builtins.symbol_to_string sym
     String.dropLeft 1 str
 }
 where String = import "String"

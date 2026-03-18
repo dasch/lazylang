@@ -29,7 +29,7 @@
   /// ```
   /// Math.max 5 10  //=> 10
   /// ```
-  max: a -> b -> __math_max (a, b)
+  max: a -> b -> Builtins.math_max (a, b)
 
   /// Returns the minimum of two numbers.
   ///
@@ -41,7 +41,7 @@
   /// ```
   /// Math.min 5 10  //=> 5
   /// ```
-  min: a -> b -> __math_min (a, b)
+  min: a -> b -> Builtins.math_min (a, b)
 
   /// Returns the absolute value of a number.
   ///
@@ -52,7 +52,7 @@
   /// ```
   /// Math.abs 10  //=> 10
   /// ```
-  abs: n -> __math_abs n
+  abs: n -> Builtins.math_abs n
 
   /// Returns the result of raising a base to an exponent.
   ///
@@ -65,7 +65,7 @@
   /// Math.pow 2 3  //=> 8
   /// Math.pow 5 2  //=> 25
   /// ```
-  pow: base -> exponent -> __math_pow (base, exponent)
+  pow: base -> exponent -> Builtins.math_pow (base, exponent)
 
   /// Returns the square root of a number.
   ///
@@ -77,7 +77,7 @@
   /// Math.sqrt 9  //=> 3
   /// Math.sqrt 16  //=> 4
   /// ```
-  sqrt: n -> __math_sqrt n
+  sqrt: n -> Builtins.math_sqrt n
 
   /// Returns the modulo (Euclidean division remainder).
   /// Always returns a non-negative result with the sign of the divisor.
@@ -92,7 +92,7 @@
   /// Math.mod 10 5   //=> 0
   /// Math.mod -7 3   //=> 2
   /// ```
-  mod: dividend -> divisor -> __math_mod (dividend, divisor)
+  mod: dividend -> divisor -> Builtins.math_mod (dividend, divisor)
 
   /// Returns the remainder of integer division.
   /// Result has the same sign as the dividend.
@@ -107,7 +107,7 @@
   /// Math.rem 10 5   //=> 0
   /// Math.rem -7 3   //=> -1
   /// ```
-  rem: dividend -> divisor -> __math_rem (dividend, divisor)
+  rem: dividend -> divisor -> Builtins.math_rem (dividend, divisor)
 
   /// Returns the floor of a number (rounds down to nearest integer).
   ///
@@ -118,7 +118,7 @@
   /// ```
   /// Math.floor 3  //=> 3
   /// ```
-  floor: n -> __math_floor n
+  floor: n -> Builtins.math_floor n
 
   /// Returns the ceiling of a number (rounds up to nearest integer).
   ///
@@ -129,7 +129,7 @@
   /// ```
   /// Math.ceil 3  //=> 3
   /// ```
-  ceil: n -> __math_ceil n
+  ceil: n -> Builtins.math_ceil n
 
   /// Returns the rounded value of a number.
   ///
@@ -140,7 +140,7 @@
   /// ```
   /// Math.round 3  //=> 3
   /// ```
-  round: n -> __math_round n
+  round: n -> Builtins.math_round n
 
   /// Returns the natural logarithm (base e) of a number.
   ///
@@ -151,7 +151,7 @@
   /// ```
   /// Math.log 1  //=> 0
   /// ```
-  log: n -> __math_log n
+  log: n -> Builtins.math_log n
 
   /// Returns e raised to the power of n.
   ///
@@ -162,5 +162,5 @@
   /// ```
   /// Math.exp 0  //=> 1
   /// ```
-  exp: n -> __math_exp n
+  exp: n -> Builtins.math_exp n
 }

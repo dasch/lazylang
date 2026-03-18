@@ -44,7 +44,7 @@
   ///
   /// **Note:** For static JSON files, prefer using `import "file.json"` which
   /// provides compile-time validation and better error messages.
-  parse: jsonStr -> __json_parse jsonStr
+  parse: jsonStr -> Builtins.json_parse jsonStr
 
   /// Encodes a Lazylang value into a JSON string.
   ///
@@ -81,5 +81,5 @@
   /// - Tuples encoded as arrays
   /// - Control characters use `\uXXXX` escape sequences
   /// - Compact format (no extra whitespace)
-  encode: value -> __json_encode value
+  encode: value -> Builtins.json_encode value
 }

@@ -37,7 +37,7 @@
   ///   (#ok, config) then config.port
   ///   (#error, _) then 3000
   /// ```
-  parse: yamlStr -> __yaml_parse yamlStr
+  parse: yamlStr -> Builtins.yaml_parse yamlStr
 
   /// Encodes a Lazylang value into a YAML string.
   ///
@@ -70,5 +70,5 @@
   /// - Simple arrays (≤5 elements, no nested collections) use flow style: `[1, 2, 3]`
   /// - Complex arrays use block style with `-` prefix
   /// - Strings containing special characters (`:`, `#`, etc.) are quoted
-  encode: value -> __yaml_encode value
+  encode: value -> Builtins.yaml_encode value
 }

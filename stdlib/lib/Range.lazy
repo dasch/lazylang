@@ -47,7 +47,7 @@ Tuple = import "Tuple"
   /// Range.inclusive 0 0      // Range: 0
   /// Range.inclusive 5 3      // Empty range (start > end)
   /// ```
-  inclusive: start -> end -> __range_inclusive (start, end)
+  inclusive: start -> end -> Builtins.range_inclusive (start, end)
 
   /// Creates an exclusive range from start to end.
   /// The end value is NOT included in the range.
@@ -65,7 +65,7 @@ Tuple = import "Tuple"
   /// Range.exclusive 0 1      // Range: 0
   /// Range.exclusive 5 5      // Empty range (start >= end)
   /// ```
-  exclusive: start -> end -> __range_exclusive (start, end)
+  exclusive: start -> end -> Builtins.range_exclusive (start, end)
 
   /// Converts a range to an array.
   ///
@@ -82,7 +82,7 @@ Tuple = import "Tuple"
   /// Range.toArray (1..5)  //=> [1, 2, 3, 4, 5]
   /// Range.toArray (1...5)  //=> [1, 2, 3, 4]
   /// ```
-  toArray: range -> __range_to_array range
+  toArray: range -> Builtins.range_to_array range
 
   /// Checks if a value is within a range.
   ///
@@ -103,7 +103,7 @@ Tuple = import "Tuple"
   /// Range.covers (1...5) 5  //=> false
   /// Range.covers (1...5) 4  //=> true
   /// ```
-  covers: range -> x -> __range_covers (range, x)
+  covers: range -> x -> Builtins.range_covers (range, x)
 
   /// Combines two ranges into an array of tuples, pairing elements at the same position.
   /// If the ranges have different lengths, the shorter range's remaining positions
@@ -128,13 +128,13 @@ Tuple = import "Tuple"
   ///   //=> [(1, 10), (2, 11), (null, 12), (null, 13), (null, 14), (null, 15)]
   /// ```
   zip: range1 -> range2 ->
-    arr1 = __range_to_array range1;
-    arr2 = __range_to_array range2;
-    len1 = __array_length arr1;
-    len2 = __array_length arr2;
+    arr1 = Builtins.range_to_array range1;
+    arr2 = Builtins.range_to_array range2;
+    len1 = Builtins.array_length arr1;
+    len2 = Builtins.array_length arr2;
     maxLen = if len1 > len2 then len1 else len2;
     [
-      Tuple.mapBoth (Result.orDefault null) (__array_get (arr1, i), __array_get (arr2, i))
+      Tuple.mapBoth (Result.orDefault null) (Builtins.array_get (arr1, i), Builtins.array_get (arr2, i))
       for i in 0...maxLen
     ]
 }

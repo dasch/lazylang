@@ -500,23 +500,15 @@ test "error: type mismatch in object extend" {
 // INTERNAL BUILTIN ACCESS RESTRICTION
 // ============================================================================
 
-test "error: __-prefixed builtins are not accessible from user code" {
-    try expectError("__array_length [1, 2, 3]", error.UnknownIdentifier);
+test "error: Builtins module is not accessible from user code" {
+    try expectError("Builtins.array_length [1, 2, 3]", error.UnknownIdentifier);
 }
 
-test "error: __-prefixed string builtins are not accessible" {
-    try expectError(
-        \\__string_length "hello"
-    , error.UnknownIdentifier);
-}
-
-test "stdlib functions that use internals still work" {
-    // Array.length uses __array_length internally but should still work
+test "stdlib functions that use Builtins internally still work" {
     var result = try eval.evalInlineWithContext(testing.allocator,
         \\Array = import 'Array'
         \\Array.length [1, 2, 3]
     );
     defer result.deinit();
-    // Should succeed (no error)
     try testing.expect(result.err == null);
 }
