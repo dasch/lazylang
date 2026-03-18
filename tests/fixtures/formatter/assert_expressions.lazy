@@ -1,0 +1,4 @@
+// assert x > 0: "must be positive"
+// x
+assert x>0 : "must be positive"
+x

@@ -1,0 +1,4 @@
+// [head, ...tail] = xs
+// head
+[head, ...tail] = xs
+head

@@ -1,0 +1,2 @@
+// { x: 1, y: 2 if enabled, z: 3 unless debug }
+{ x: 1, y: 2 if enabled, z: 3 unless debug }
