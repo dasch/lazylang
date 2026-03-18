@@ -2514,7 +2514,10 @@ fn formatPatternValue(allocator: std.mem.Allocator, pattern: *Pattern) ![]u8 {
         .float => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
         .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
         .null_literal => try allocator.dupe(u8, "null"),
-        .symbol => |s| try std.fmt.allocPrint(allocator, "{s}", .{s}),
+        .symbol => |s| blk: {
+            const name = if (s.len > 0 and s[0] == '#') s[1..] else s;
+            break :blk try std.fmt.allocPrint(allocator, "\"{s}\"", .{name});
+        },
         .string_literal => |s| try std.fmt.allocPrint(allocator, "\"{s}\"", .{s}),
         .tuple => |t| try std.fmt.allocPrint(allocator, "tuple with {d} elements", .{t.elements.len}),
         .array => |a| if (a.rest) |_|

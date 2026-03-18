@@ -98,3 +98,24 @@ test "string matches symbol pattern" {
         "1",
     );
 }
+
+test "symbol equals equivalent string" {
+    try expectEvaluates("#ok == \"ok\"", "true");
+}
+
+test "symbol does not equal different string" {
+    try expectEvaluates("#ok == \"error\"", "false");
+}
+
+test "isString returns true for symbol" {
+    try expectEvaluates("isString #ok", "true");
+}
+
+test "object indexing with symbol key" {
+    try expectEvaluates(
+        \\obj = { name: "Alice" }
+        \\obj[#name]
+    ,
+        "\"Alice\"",
+    );
+}
