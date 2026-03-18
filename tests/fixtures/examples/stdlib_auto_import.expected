@@ -1,0 +1,11 @@
+{
+  doubled: [2, 4, 6, 8, 10],
+  sum: 30,
+  uppercased: "HELLO WORLD",
+  words: ["hello", "world"],
+  maxValue: 100,
+  minValue: 42,
+  keys: ["name", "age", "city"],
+  rounded: 3,
+  customArray: "shadowed!"
+}

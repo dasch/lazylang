@@ -1,0 +1,11 @@
+{
+  parsed: {
+    int: (#ok, 42),
+    array: (#ok, [1, 2, 3])
+  },
+  encoded: { int: "42", config: "
+name: MyApp
+version: 1.0.0
+" },
+  port: 8080
+}

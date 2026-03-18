@@ -1,0 +1,5 @@
+{
+  fib_10: 55,
+  factorial_5: 120,
+  countdown_5: [5, 4, 3, 2, 1]
+}

@@ -1,0 +1,20 @@
+{
+  pi: 3.14159,
+  e: 2.71828,
+  sum: 6,
+  difference: 7.3,
+  product: 10,
+  mixed_sum: 8.14,
+  mixed_product: 7.5,
+  rounded: 4,
+  floored: 3,
+  ceiled: 4,
+  absolute: 5.5,
+  square_root: 4,
+  power: 8,
+  modulo: 1.5,
+  remainder: 1.5,
+  less_than: true,
+  greater_than: true,
+  equal: true
+}
