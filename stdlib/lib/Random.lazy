@@ -154,4 +154,28 @@ Tuple = import "Tuple"
   ) ([], seed) genArray
 
   (Tuple.fromArray valuesArray, finalSeed)
+
+  /// Generates a list of N random values using a given generator.
+  ///
+  /// **Parameters:**
+  /// - `n`: The number of values to generate
+  /// - `gen`: A generator function (seed -> (value, next_seed))
+  /// - `seed`: The current seed value
+  ///
+  /// **Returns:**
+  /// A tuple `(values_array, next_seed)`
+  ///
+  /// **Example:**
+  /// ```
+  /// Random.list 3 Random.int 42
+  ///   //=> ([1234, 5678, 9012], 3456)
+  /// ```
+  list: n -> gen -> seed ->
+    helper = remaining -> acc -> s ->
+      if remaining <= 0 then
+        (acc, s)
+      else
+        (value, nextSeed) = gen s
+        helper (remaining - 1) [...acc, value] nextSeed
+    helper n [] seed
 }

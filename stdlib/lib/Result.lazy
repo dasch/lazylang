@@ -103,4 +103,21 @@
     when result matches
       (#error, error) then f error
       otherwise result
+
+  /// Applies a function to the value inside a success result.
+  /// If the result is an error, returns it unchanged.
+  ///
+  /// **Parameters:**
+  /// - `f`: Function to apply to the success value
+  /// - `result`: The result to transform
+  ///
+  /// **Example:**
+  /// ```
+  /// Result.map (x -> x * 2) (#ok, 21)      //=> (#ok, 42)
+  /// Result.map (x -> x * 2) (#error, "bad") //=> (#error, "bad")
+  /// ```
+  map: f -> result ->
+    when result matches
+      (#ok, value) then (#ok, f value)
+      otherwise result
 }

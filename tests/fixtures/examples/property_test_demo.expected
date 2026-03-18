@@ -1,0 +1,21 @@
+{
+  type: "describe",
+  description: "property-based tests",
+  children: [
+    {
+      type: "it",
+      description: "value is non-negative",
+      test: { type: "pass" }
+    },
+    {
+      type: "it",
+      description: "value is within upper bound",
+      test: { type: "pass" }
+    },
+    {
+      type: "it",
+      description: "modulo result is always less than divisor",
+      test: { type: "pass" }
+    }
+  ]
+}

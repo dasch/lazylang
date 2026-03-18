@@ -2,9 +2,6 @@ const std = @import("std");
 const evaluator = @import("evaluator");
 
 const skip_examples = [_][]const u8{
-    // These examples have known issues (missing stdlib functions)
-    "property_test_demo.lazy",
-    "random_demo.lazy",
     // Returns a function, not useful to golden-file
     "hello.lazy",
 };
