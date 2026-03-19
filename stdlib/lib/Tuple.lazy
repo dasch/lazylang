@@ -47,7 +47,7 @@
   /// Returns the first element of a tuple.
   ///
   /// **Parameter:**
-  /// - `tuple`: A tuple with at least one element
+  /// - `tuple`: A 2-tuple `(a, b)`
   ///
   /// **Returns:**
   /// The first element
@@ -55,14 +55,13 @@
   /// **Example:**
   /// ```
   /// Tuple.first (1, 2)  //=> 1
-  /// Tuple.first (10, 20, 30)  //=> 10
   /// ```
   first: (a, b) -> a
 
   /// Returns the second element of a tuple.
   ///
   /// **Parameter:**
-  /// - `tuple`: A tuple with at least two elements
+  /// - `tuple`: A 2-tuple `(a, b)`
   ///
   /// **Returns:**
   /// The second element
@@ -70,7 +69,6 @@
   /// **Example:**
   /// ```
   /// Tuple.second (1, 2)  //=> 2
-  /// Tuple.second (10, 20, 30)  //=> 20
   /// ```
   second: (a, b) -> b
 

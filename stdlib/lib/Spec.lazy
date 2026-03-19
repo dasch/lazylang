@@ -1,3 +1,8 @@
+Array = import "Array"
+Object = import "Object"
+Random = import "Random"
+Result = import "Result"
+
 /// A testing framework for writing and organizing tests in Lazylang.
 ///
 /// This module provides a BDD-style testing DSL with:
@@ -53,12 +58,6 @@
 ///     must (Math.abs n >= 0)
 /// ]
 /// ```
-/// ---
-Array = import "Array"
-Object = import "Object"
-Random = import "Random"
-Result = import "Result"
-
 {
   /// Explicitly marks a test as passing.
   /// Useful for tests that verify side effects or when you want to document expected behavior.

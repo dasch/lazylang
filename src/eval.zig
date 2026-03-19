@@ -118,6 +118,7 @@ pub const TuplePattern = ast.TuplePattern;
 pub const ArrayPattern = ast.ArrayPattern;
 pub const ObjectPattern = ast.ObjectPattern;
 pub const ObjectPatternField = ast.ObjectPatternField;
+pub const findTopLevelObject = ast.findTopLevelObject;
 
 // Re-export module resolver functions
 pub const collectLazyPaths = module_resolver.collectLazyPaths;

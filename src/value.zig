@@ -59,6 +59,7 @@ pub const FunctionValue = struct {
     param: *Pattern,
     body: *Expression,
     env: ?*Environment,
+    doc: ?[]const u8 = null,
 };
 
 /// NativeFn is a Zig function that implements a builtin.
@@ -126,6 +127,7 @@ pub const ObjectFieldValue = struct {
     key: []const u8,
     value: Value,
     is_patch: bool, // true if field should be deep-merged (written as `field { ... }` without colon)
+    doc: ?[]const u8 = null,
 };
 
 /// ObjectValue represents a collection of key-value pairs.

@@ -1,3 +1,6 @@
+Result = import "Result"
+Tuple = import "Tuple"
+
 /// Provides utilities for working with arrays in Lazylang.
 ///
 /// This module includes functions for common array operations such as:
@@ -17,10 +20,6 @@
 /// // Reduce to a single value
 /// Array.fold (acc -> x -> acc + x) 0 [1, 2, 3]  //=> 6
 /// ```
-/// ---
-Result = import "Result"
-Tuple = import "Tuple"
-
 {
   /// Returns the number of elements in an array.
   ///
@@ -238,7 +237,7 @@ Tuple = import "Tuple"
   ///
   /// **Example:**
   /// ```
-  /// Array.sortBy .age [{name: "Alice", age: 30}, {name: "Bob", age: 25}] \
+  /// Array.sortBy .age [{name: "Alice", age: 30}, {name: "Bob", age: 25}]
   ///   //=> [{name: "Bob", age: 25}, {name: "Alice", age: 30}]
   /// ```
   sortBy: keyFn ->
@@ -313,14 +312,7 @@ Tuple = import "Tuple"
   ///
   /// **Example:**
   /// ```
-  /// Array.groupBy .type [ \
-  ///   {type: "fruit", name: "apple"}, \
-  ///   {type: "fruit", name: "banana"}, \
-  ///   {type: "vegetable", name: "carrot"} \
-  /// ] //=> { \
-  ///   fruit: [{type: "fruit", name: "apple"}, {type: "fruit", name: "banana"}], \
-  ///   vegetable: [{type: "vegetable", name: "carrot"}] \
-  /// }
+  /// Array.groupBy (x -> x) ["a", "b", "a"]  //=> { a: ["a", "a"], b: ["b"] }
   /// ```
   groupBy: keyFn ->
     arr ->
@@ -340,13 +332,13 @@ Tuple = import "Tuple"
   ///
   /// **Example:**
   /// ```
-  /// Array.zip ["a", "b", "c"] [1, 2] \
+  /// Array.zip ["a", "b", "c"] [1, 2]
   ///   //=> [("a", 1), ("b", 2), ("c", null)]
   ///
-  /// Array.zip [1, 2] [3, 4, 5] \
+  /// Array.zip [1, 2] [3, 4, 5]
   ///   //=> [(1, 3), (2, 4), (null, 5)]
   ///
-  /// Array.zip [] [1, 2] \
+  /// Array.zip [] [1, 2]
   ///   //=> [(null, 1), (null, 2)]
   /// ```
   zip: arr1 ->

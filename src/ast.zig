@@ -336,3 +336,15 @@ pub const ObjectPatternField = struct {
     key: []const u8,
     pattern: *Pattern, // Either identifier for extraction or literal for matching
 };
+
+/// Follow through let bindings and where expressions to find the top-level object.
+/// This is needed because module files with imports wrap the object in let bindings.
+pub fn findTopLevelObject(expr: *const Expression) ?*const ObjectLiteral {
+    return switch (expr.data) {
+        .object => |*obj| obj,
+        .let => |let_expr| findTopLevelObject(let_expr.body),
+        .where_expr => |where_expr| findTopLevelObject(where_expr.expr),
+        .assert_expr => |assert_expr| findTopLevelObject(assert_expr.body),
+        else => null,
+    };
+}

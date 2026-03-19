@@ -294,95 +294,62 @@ fn extractParamNames(pattern: *const evaluator.Pattern, names: *std.ArrayList([]
     }
 }
 
-fn buildSignature(allocator: std.mem.Allocator, field_name: []const u8, value: *const evaluator.Expression) ![]const u8 {
+/// Build a signature string from a field name and its runtime value.
+/// For functions, extracts parameter names by following the curried lambda chain
+/// in the AST body. For thunks, inspects the unevaluated expression directly.
+fn buildSignatureFromValue(allocator: std.mem.Allocator, field_name: []const u8, value: evaluator.Value) ![]const u8 {
     var signature = std.ArrayList(u8){};
     defer signature.deinit(allocator);
 
     try signature.appendSlice(allocator, field_name);
     try signature.appendSlice(allocator, ": ");
 
-    // Extract parameter names if it's a lambda
-    var current_expr = value;
-    while (current_expr.data == .lambda) {
-        const lambda = current_expr.data.lambda;
+    // Find the starting expression to extract lambda params from
+    const start_expr: ?*const evaluator.Expression = switch (value) {
+        .thunk => |thunk| thunk.expr,
+        .function => |func| blk: {
+            // For already-evaluated functions, extract the first param then follow the body
+            try appendParamNames(allocator, &signature, func.param);
+            break :blk func.body;
+        },
+        else => null,
+    };
 
-        var param_names = std.ArrayList([]const u8){};
-        defer param_names.deinit(allocator);
-        try extractParamNames(lambda.param, &param_names, allocator);
-
-        for (param_names.items) |param_name| {
-            try signature.appendSlice(allocator, param_name);
-            try signature.appendSlice(allocator, " → ");
+    // Follow the lambda chain in the AST to extract curried parameter names
+    if (start_expr) |expr| {
+        var current_expr = expr;
+        while (current_expr.data == .lambda) {
+            const lambda = current_expr.data.lambda;
+            try appendParamNames(allocator, &signature, lambda.param);
+            current_expr = lambda.body;
         }
-
-        current_expr = lambda.body;
     }
 
     return signature.toOwnedSlice(allocator);
 }
 
-fn extractDocs(expr: *const evaluator.Expression, items: *std.ArrayListUnmanaged(DocItem), allocator: std.mem.Allocator) !void {
-    switch (expr.data) {
-        .let => |let_expr| {
-            if (let_expr.doc) |doc| {
-                // Extract the name from the pattern
-                const name = switch (let_expr.pattern.data) {
-                    .identifier => |ident| ident,
-                    else => "unknown",
-                };
-                const signature = try buildSignature(allocator, name, let_expr.value);
-                try items.append(allocator, .{
-                    .name = try allocator.dupe(u8, name),
-                    .signature = signature,
-                    .doc = try allocator.dupe(u8, doc),
-                    .kind = .variable,
-                });
-            }
-            try extractDocs(let_expr.body, items, allocator);
-        },
-        .where_expr => |where_expr| {
-            // Extract docs from where bindings
-            for (where_expr.bindings) |binding| {
-                if (binding.doc) |doc| {
-                    const name = switch (binding.pattern.data) {
-                        .identifier => |ident| ident,
-                        else => "unknown",
-                    };
-                    const signature = try buildSignature(allocator, name, binding.value);
-                    try items.append(allocator, .{
-                        .name = try allocator.dupe(u8, name),
-                        .signature = signature,
-                        .doc = try allocator.dupe(u8, doc),
-                        .kind = .variable,
-                    });
-                }
-            }
-            // Recursively extract from the main expression
-            try extractDocs(where_expr.expr, items, allocator);
-        },
-        .object => |obj| {
-            for (obj.fields) |field| {
-                // Only extract documentation from static keys
-                const static_key = switch (field.key) {
-                    .static => |k| k,
-                    .dynamic => continue, // Skip dynamic keys for documentation
-                };
+fn appendParamNames(allocator: std.mem.Allocator, signature: *std.ArrayList(u8), pattern: *const evaluator.Pattern) !void {
+    var param_names = std.ArrayList([]const u8){};
+    defer param_names.deinit(allocator);
+    try extractParamNames(pattern, &param_names, allocator);
+    for (param_names.items) |param_name| {
+        try signature.appendSlice(allocator, param_name);
+        try signature.appendSlice(allocator, " → ");
+    }
+}
 
-                if (field.doc) |doc| {
-                    const signature = try buildSignature(allocator, static_key, field.value);
-                    try items.append(allocator, .{
-                        .name = try allocator.dupe(u8, static_key),
-                        .signature = signature,
-                        .doc = try allocator.dupe(u8, doc),
-                        .kind = .field,
-                    });
-                } else {
-                    // Also check if the field value is documented (for nested objects)
-                    try extractDocs(field.value, items, allocator);
-                }
-            }
-        },
-        else => {},
+/// Extract documentation items from a runtime object value.
+fn extractDocsFromValue(obj: evaluator.ObjectValue, items: *std.ArrayListUnmanaged(DocItem), allocator: std.mem.Allocator) !void {
+    for (obj.fields) |field| {
+        if (field.doc) |doc| {
+            const signature = try buildSignatureFromValue(allocator, field.key, field.value);
+            try items.append(allocator, .{
+                .name = try allocator.dupe(u8, field.key),
+                .signature = signature,
+                .doc = try allocator.dupe(u8, doc),
+                .kind = .field,
+            });
+        }
     }
 }
 
@@ -1149,32 +1116,43 @@ pub fn extractModuleInfo(
     allocator: std.mem.Allocator,
     input_path: []const u8,
 ) !ModuleInfo {
-    // Parse the file to extract documentation
+    // Read the file and evaluate it. We keep the source alive in the eval arena
+    // because AST pattern names reference the source string.
     const source = try std.fs.cwd().readFileAlloc(allocator, input_path, 100 * 1024 * 1024);
     defer allocator.free(source);
 
-    var arena_allocator = std.heap.ArenaAllocator.init(allocator);
-    defer arena_allocator.deinit();
-    const arena = arena_allocator.allocator();
+    const directory = std.fs.path.dirname(input_path);
+    var result = try evaluator.evalInlineWithValueAndDir(allocator, source, directory);
+    defer result.deinit();
 
-    var parser = try evaluator.Parser.init(arena, source);
-    const expression = try parser.parse();
+    if (result.err) |err| return err;
 
-    // Extract documentation from the expression
-    var doc_items = std.ArrayListUnmanaged(DocItem){};
-    try extractDocs(expression, &doc_items, allocator);
-
-    // Extract module-level documentation if available
-    const module_doc: ?[]const u8 = switch (expression.data) {
-        .object => |obj| if (obj.module_doc) |doc| try allocator.dupe(u8, doc) else null,
-        else => null,
-    };
-
+    const value = result.value;
     const module_name = try allocator.dupe(u8, std.fs.path.stem(input_path));
 
-    return ModuleInfo{
-        .name = module_name,
-        .items = try doc_items.toOwnedSlice(allocator),
-        .module_doc = module_doc,
-    };
+    // The module should evaluate to an object
+    switch (value) {
+        .object => |obj| {
+            var doc_items = std.ArrayListUnmanaged(DocItem){};
+            try extractDocsFromValue(obj, &doc_items, allocator);
+
+            const module_doc: ?[]const u8 = if (obj.module_doc) |doc|
+                try allocator.dupe(u8, doc)
+            else
+                null;
+
+            return ModuleInfo{
+                .name = module_name,
+                .items = try doc_items.toOwnedSlice(allocator),
+                .module_doc = module_doc,
+            };
+        },
+        else => {
+            return ModuleInfo{
+                .name = module_name,
+                .items = &.{},
+                .module_doc = null,
+            };
+        },
+    }
 }

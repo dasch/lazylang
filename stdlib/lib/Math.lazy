@@ -70,7 +70,7 @@
   /// ```
   /// Math.mod 7 3    //=> 1
   /// Math.mod 10 5   //=> 0
-  /// Math.mod -7 3   //=> 2
+  /// Math.mod (0 - 7) 3   //=> 2
   /// ```
   mod: dividend -> divisor -> Builtins.math_mod (dividend, divisor)
 
@@ -85,7 +85,7 @@
   /// ```
   /// Math.rem 7 3    //=> 1
   /// Math.rem 10 5   //=> 0
-  /// Math.rem -7 3   //=> -1
+  /// Math.rem (0 - 7) 3   //=> -1
   /// ```
   rem: dividend -> divisor -> Builtins.math_rem (dividend, divisor)
 
