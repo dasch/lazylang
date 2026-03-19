@@ -347,4 +347,56 @@ Tuple = import "Tuple"
       len2 = Builtins.array_length arr2
       maxLen = if len1 > len2 then len1 else len2
       [Tuple.mapBoth (Result.orDefault null) (Builtins.array_get (arr1, i), Builtins.array_get (arr2, i)) for i in 0...maxLen]
+
+  /// Finds the first element in an array that satisfies a predicate.
+  /// Returns `(#ok, value)` if found, or `#notFound` if no element matches.
+  ///
+  /// **Parameters:**
+  /// - `pred`: Predicate function to test each element
+  /// - `arr`: The array to search
+  ///
+  /// **Example:**
+  /// ```
+  /// Array.find (x -> x > 2) [1, 2, 3, 4]  //=> (#ok, 3)
+  /// Array.find (x -> x > 10) [1, 2, 3]  //=> #notFound
+  /// ```
+  find: pred ->
+    arr ->
+      findHelper = p ->
+        xs ->
+          idx ->
+            if idx >= Builtins.array_length xs then
+              #notFound
+            else
+              when Builtins.array_get (xs, idx) matches
+                (#ok, x) then if p x then (#ok, x) else findHelper p xs (idx + 1)
+                otherwise #notFound
+
+      findHelper pred arr 0
+
+  /// Returns the index of the first occurrence of a value in an array.
+  /// Returns `(#ok, index)` if found, or `#notFound` if the value is not in the array.
+  ///
+  /// **Parameters:**
+  /// - `value`: The value to search for
+  /// - `arr`: The array to search
+  ///
+  /// **Example:**
+  /// ```
+  /// Array.indexOf 20 [10, 20, 30]  //=> (#ok, 1)
+  /// Array.indexOf 99 [10, 20, 30]  //=> #notFound
+  /// ```
+  indexOf: value ->
+    arr ->
+      indexOfHelper = v ->
+        xs ->
+          idx ->
+            if idx >= Builtins.array_length xs then
+              #notFound
+            else
+              when Builtins.array_get (xs, idx) matches
+                (#ok, x) then if x == v then (#ok, idx) else indexOfHelper v xs (idx + 1)
+                otherwise #notFound
+
+      indexOfHelper value arr 0
 }
