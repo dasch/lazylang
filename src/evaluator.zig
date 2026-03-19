@@ -547,6 +547,12 @@ pub fn matchPattern(
                     }
                 }
                 if (!found) {
+                    if (pattern_field.default) |default_expr| {
+                        // Use default value when field is missing
+                        const default_value = try evaluateExpression(arena, default_expr, current_env, null, ctx);
+                        current_env = try matchPattern(arena, pattern_field.pattern, default_value, current_env, ctx);
+                        continue;
+                    }
                     if (ctx.error_ctx) |err_ctx| {
                         err_ctx.setErrorLocation(
                             pattern.location.line,

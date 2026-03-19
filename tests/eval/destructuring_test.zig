@@ -44,3 +44,19 @@ test "evaluates function with array destructuring parameter" {
 test "evaluates function with nested destructuring parameter" {
     try expectEvaluates("f = (a, (b, c)) -> a + b + c; f (1, (2, 3))", "6");
 }
+
+test "evaluates object destructuring with default value" {
+    try expectEvaluates("{ x = 10 } = {}; x", "10");
+}
+
+test "evaluates object destructuring with default value overridden" {
+    try expectEvaluates("{ x = 10 } = { x: 42 }; x", "42");
+}
+
+test "evaluates object destructuring with default and non-default fields" {
+    try expectEvaluates("{ x = 10, y } = { y: 20 }; x + y", "30");
+}
+
+test "evaluates function with object destructuring default parameter" {
+    try expectEvaluates("f = { port = 8080 } -> port; f {}", "8080");
+}

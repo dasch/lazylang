@@ -1717,7 +1717,7 @@ pub const Parser = struct {
             const field_name = self.current.lexeme;
             try self.advance();
 
-            // Check if there's a colon (field with pattern) or not (field extraction)
+            // Check if there's a colon (field with pattern), equals (default value), or neither (field extraction)
             if (self.current.kind == .colon) {
                 // Parse field pattern: { key: pattern }
                 try self.advance();
@@ -1725,6 +1725,16 @@ pub const Parser = struct {
                 try fields.append(self.arena, .{
                     .key = field_name,
                     .pattern = field_pattern,
+                });
+            } else if (self.current.kind == .equals) {
+                // Field with default value: { key = expr }
+                try self.advance();
+                const default_expr = try self.parseBinary(0);
+                const field_pattern = try self.createPattern(.{ .identifier = field_name }, field_token);
+                try fields.append(self.arena, .{
+                    .key = field_name,
+                    .pattern = field_pattern,
+                    .default = default_expr,
                 });
             } else {
                 // Field extraction: { key } is short for { key: key }

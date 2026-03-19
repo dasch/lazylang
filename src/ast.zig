@@ -337,6 +337,7 @@ pub const ObjectPattern = struct {
 pub const ObjectPatternField = struct {
     key: []const u8,
     pattern: *Pattern, // Either identifier for extraction or literal for matching
+    default: ?*Expression = null, // Default value when field is missing
 };
 
 /// Follow through let bindings and where expressions to find the top-level object.
