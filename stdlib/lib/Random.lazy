@@ -1,3 +1,8 @@
+Array = import "Array"
+Bitwise = import "Bitwise"
+Math = import "Math"
+Tuple = import "Tuple"
+
 /// Provides utilities for pseudo-random number generation in Lazylang.
 ///
 /// This module implements a simple xorshift32 PRNG for generating random values.
@@ -17,12 +22,6 @@
 /// // Generate a random boolean
 /// (flag, s4) = Random.bool s3
 /// ```
-/// ---
-Array = import "Array"
-Bitwise = import "Bitwise"
-Math = import "Math"
-Tuple = import "Tuple"
-
 {
   /// Creates a seed value for the random number generator.
   /// Ensures the seed is never zero (which would break xorshift).

@@ -1,3 +1,6 @@
+Result = import "Result"
+Tuple = import "Tuple"
+
 /// Provides utilities for working with arrays in Lazylang.
 ///
 /// This module includes functions for common array operations such as:
@@ -17,10 +20,6 @@
 /// // Reduce to a single value
 /// Array.fold (acc -> x -> acc + x) 0 [1, 2, 3]  //=> 6
 /// ```
-/// ---
-Result = import "Result"
-Tuple = import "Tuple"
-
 {
   /// Returns the number of elements in an array.
   ///
