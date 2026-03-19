@@ -663,7 +663,21 @@ fn mergeObjects(arena: std.mem.Allocator, base: ObjectValue, extension: ObjectVa
 
     // Prefer extension's module_doc if it exists, otherwise use base's
     const module_doc = extension.module_doc orelse base.module_doc;
-    return Value{ .object = .{ .fields = try result_fields.toOwnedSlice(arena), .module_doc = module_doc } };
+    const fields = try result_fields.toOwnedSlice(arena);
+
+    // Late-binding self: create a new self_value cell for the merged object
+    // and update all thunks to point to it, so self references see the
+    // final (extended) object, not the original base.
+    const self_cell = try arena.create(Value);
+    self_cell.* = .null_value; // placeholder
+    for (fields) |*field| {
+        if (field.value == .thunk) {
+            field.value.thunk.self_value = self_cell;
+        }
+    }
+    const result = Value{ .object = .{ .fields = fields, .module_doc = module_doc } };
+    self_cell.* = result;
+    return result;
 }
 
 /// Find field access locations in an expression for a given field name

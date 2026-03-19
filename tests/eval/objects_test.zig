@@ -203,14 +203,12 @@ test "self references sibling field" {
     , "2");
 }
 
-test "self in extended object sees base field" {
-    // TODO: In the future, self should refer to the final extended object (Jsonnet semantics).
-    // Currently self refers to the object as defined, so base's self.x is 1, not 2.
+test "self in extended object sees overridden field" {
     try expectEvaluates(
         \\base = { x: 1, y: self.x + 10 }
         \\ext = base { x: 2 }
         \\ext.y
-    , "11");
+    , "12");
 }
 
 test "self with multiple derived fields" {
@@ -224,9 +222,7 @@ test "self with multiple derived fields" {
     , "\"http://localhost\"");
 }
 
-test "self in extended object uses defining object" {
-    // TODO: In the future, self should refer to the final extended object.
-    // Currently self.host resolves to "localhost" (from the base definition).
+test "self in extended object derives from overridden values" {
     try expectEvaluates(
         \\base = {
         \\  host: "localhost"
@@ -234,7 +230,7 @@ test "self in extended object uses defining object" {
         \\}
         \\prod = base { host: "prod.example.com" }
         \\prod.url
-    , "\"http://localhost\"");
+    , "\"http://prod.example.com\"");
 }
 
 test "object extension can be chained" {
