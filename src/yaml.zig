@@ -512,6 +512,7 @@ fn encodeValue(value: eval.Value, buf: *std.ArrayList(u8), indent: usize, arena:
 
             try buf.append(arena, '\n');
             for (obj.fields) |field| {
+                if (field.is_hidden) continue;
                 try buf.appendNTimes(arena, ' ', indent);
                 try buf.appendSlice(arena, field.key);
                 try buf.appendSlice(arena, ": ");

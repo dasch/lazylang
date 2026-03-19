@@ -182,8 +182,11 @@ fn encodeValue(value: eval.Value, buf: *std.ArrayList(u8), indent: usize, arena:
             }
 
             try buf.append(arena, '{');
-            for (obj.fields, 0..) |field, i| {
-                if (i > 0) try buf.appendSlice(arena, ", ");
+            var first_field = true;
+            for (obj.fields) |field| {
+                if (field.is_hidden) continue;
+                if (!first_field) try buf.appendSlice(arena, ", ");
+                first_field = false;
 
                 // Encode key
                 try buf.append(arena, '"');

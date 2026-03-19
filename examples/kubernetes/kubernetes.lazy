@@ -1,0 +1,15 @@
+{ Deployment, HorizontalPodAutoscaler, Service } where
+    Deployment = {
+      apiVersion: "apps/v1"
+      kind: "Deployment"
+    }
+
+    HorizontalPodAutoscaler = {
+      apiVersion: "autoscaling/v2"
+      kind: "HorizontalPodAutoscaler"
+    }
+
+    Service = {
+      apiVersion: "v1"
+      kind: "Service"
+    }

@@ -284,3 +284,45 @@ test "hidden field not in output after extension" {
         \\ext
     , "{ x: 1, y: 2 }");
 }
+
+// Late-binding self: purity and chaining
+
+test "base object not mutated by extension" {
+    try expectEvaluates(
+        \\base = { host: "localhost", url: "http://" + self.host }
+        \\prod = base { host: "prod.example.com" }
+        \\(base.url, prod.url)
+    , "(\"http://localhost\", \"http://prod.example.com\")");
+}
+
+test "chained extensions with late-binding self" {
+    try expectEvaluates(
+        \\base = { x: 1, y: self.x + 10 }
+        \\mid = base { x: 2 }
+        \\top = mid { x: 3 }
+        \\(base.y, mid.y, top.y)
+    , "(11, 12, 13)");
+}
+
+test "self sees fields added by extension" {
+    try expectEvaluates(
+        \\base = { greeting: "Hello, " + self.name }
+        \\extended = base { name: "Alice" }
+        \\extended.greeting
+    , "\"Hello, Alice\"");
+}
+
+test "hidden field with late-binding self through extension" {
+    try expectEvaluates(
+        \\base = { _port:: 8080, url: ":" + toString self._port }
+        \\prod = base { _port:: 443 }
+        \\(base.url, prod.url)
+    , "(\":8080\", \":443\")");
+}
+
+test "hidden field excluded from JSON eval output" {
+    // Hidden fields should not appear in eval --json output either
+    try expectEvaluates(
+        \\{ x: 1, _secret:: 42 }
+    , "{ x: 1 }");
+}
