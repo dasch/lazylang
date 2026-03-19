@@ -1,0 +1,8 @@
+// x = obj1 & obj2
+x = obj1&obj2
+
+// y = a + b * c
+y = a+b*c
+
+// z = 5 \ double \ addOne
+z = 5\double\addOne

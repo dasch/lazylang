@@ -1,0 +1,5 @@
+// skip = pred -> arr -> [x for x in arr when !(pred x)]
+skip = pred -> arr -> [x for x in arr when ! (pred x)]
+
+// negate = x -> 0 - x
+negate = x -> - x
