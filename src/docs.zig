@@ -321,6 +321,17 @@ fn buildSignature(allocator: std.mem.Allocator, field_name: []const u8, value: *
     return signature.toOwnedSlice(allocator);
 }
 
+/// Follow through let bindings and where expressions to find the top-level object.
+/// This is needed because module files with imports wrap the object in let bindings.
+fn findTopLevelObject(expr: *const evaluator.Expression) ?*const evaluator.ObjectLiteral {
+    return switch (expr.data) {
+        .object => |*obj| obj,
+        .let => |let_expr| findTopLevelObject(let_expr.body),
+        .where_expr => |where_expr| findTopLevelObject(where_expr.expr),
+        else => null,
+    };
+}
+
 fn extractDocs(expr: *const evaluator.Expression, items: *std.ArrayListUnmanaged(DocItem), allocator: std.mem.Allocator) !void {
     switch (expr.data) {
         .let => |let_expr| {
@@ -1164,11 +1175,12 @@ pub fn extractModuleInfo(
     var doc_items = std.ArrayListUnmanaged(DocItem){};
     try extractDocs(expression, &doc_items, allocator);
 
-    // Extract module-level documentation if available
-    const module_doc: ?[]const u8 = switch (expression.data) {
-        .object => |obj| if (obj.module_doc) |doc| try allocator.dupe(u8, doc) else null,
-        else => null,
-    };
+    // Extract module-level documentation by finding the top-level object
+    // (which may be nested inside let bindings for import statements)
+    const module_doc: ?[]const u8 = if (findTopLevelObject(expression)) |obj|
+        (if (obj.module_doc) |doc| try allocator.dupe(u8, doc) else null)
+    else
+        null;
 
     const module_name = try allocator.dupe(u8, std.fs.path.stem(input_path));
 

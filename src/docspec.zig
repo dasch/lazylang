@@ -50,6 +50,16 @@ const DocSpecResult = struct {
     error_message: ?[]const u8, // Only populated on error
 };
 
+/// Follow through let bindings and where expressions to find the top-level object.
+fn findTopLevelObject(expr: *const evaluator.Expression) ?*const evaluator.ObjectLiteral {
+    return switch (expr.data) {
+        .object => |*obj| obj,
+        .let => |let_expr| findTopLevelObject(let_expr.body),
+        .where_expr => |where_expr| findTopLevelObject(where_expr.expr),
+        else => null,
+    };
+}
+
 /// Extract docspecs from a documentation comment
 fn extractDocSpecs(
     allocator: std.mem.Allocator,
@@ -153,30 +163,27 @@ pub fn extractModuleDocSpecs(
     var all_specs = std.ArrayListUnmanaged(DocSpec){};
     errdefer all_specs.deinit(allocator);
 
-    // Extract module-level docspecs
-    switch (expression.data) {
-        .object => |obj| {
-            if (obj.module_doc) |module_doc| {
-                var module_specs = try extractDocSpecs(allocator, module_doc, module_name, null, 1, input_path);
-                defer module_specs.deinit(allocator);
-                try all_specs.appendSlice(allocator, module_specs.items);
-            }
+    // Find the top-level object (may be nested inside let bindings for imports)
+    const obj = findTopLevelObject(expression) orelse return all_specs;
 
-            // Extract function-level docspecs
-            for (obj.fields) |field| {
-                const static_key = switch (field.key) {
-                    .static => |k| k,
-                    .dynamic => continue,
-                };
+    if (obj.module_doc) |module_doc_text| {
+        var module_specs = try extractDocSpecs(allocator, module_doc_text, module_name, null, 1, input_path);
+        defer module_specs.deinit(allocator);
+        try all_specs.appendSlice(allocator, module_specs.items);
+    }
 
-                if (field.doc) |doc| {
-                    var func_specs = try extractDocSpecs(allocator, doc, module_name, static_key, 1, input_path);
-                    defer func_specs.deinit(allocator);
-                    try all_specs.appendSlice(allocator, func_specs.items);
-                }
-            }
-        },
-        else => {},
+    // Extract function-level docspecs
+    for (obj.fields) |field| {
+        const static_key = switch (field.key) {
+            .static => |k| k,
+            .dynamic => continue,
+        };
+
+        if (field.doc) |doc| {
+            var func_specs = try extractDocSpecs(allocator, doc, module_name, static_key, 1, input_path);
+            defer func_specs.deinit(allocator);
+            try all_specs.appendSlice(allocator, func_specs.items);
+        }
     }
 
     return all_specs;

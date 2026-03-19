@@ -1,3 +1,4 @@
+// /// Module doc comment
 // {
 //   /// Field doc comment
 //   x: 1
@@ -9,6 +10,3 @@
   x: 1
   y: 2
 }
-
-
-

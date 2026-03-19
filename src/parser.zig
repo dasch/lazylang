@@ -1119,10 +1119,9 @@ pub const Parser = struct {
     }
 
     fn parseObject(self: *Parser) ParseError!*Expression {
-        // Consume module-level doc comments (up to --- separator)
-        // Due to parser lookahead, the tokenizer has accumulated both module docs
-        // and first field docs. We split at the --- separator.
-        const module_doc = self.tokenizer.consumeModuleLevelDocComments();
+        // Module-level doc comments are attached to the `{` token itself.
+        // Place `///` comments directly before `{` to document a module.
+        const module_doc = self.current.doc_comments;
 
         const brace_token = self.current; // Capture opening brace for location
         try self.expect(.l_brace);
