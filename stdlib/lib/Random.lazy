@@ -31,8 +31,8 @@ Tuple = import "Tuple"
   ///
   /// **Example:**
   /// ```
-  /// Random.seed 42  //=> 42
-  /// Random.seed 0   //=> 1
+  /// Random = import "Random"; Random.seed 42  //=> 42
+  /// Random = import "Random"; Random.seed 0   //=> 1
   /// ```
   seed: value -> if value == 0 then 1 else value
 
@@ -47,7 +47,7 @@ Tuple = import "Tuple"
   ///
   /// **Example:**
   /// ```
-  /// Random.next 42  //=> <new seed value>
+  /// Random.next 42
   /// ```
   next: seed ->
     x1 = Bitwise.xor seed (Bitwise.shl seed 13)
@@ -64,7 +64,7 @@ Tuple = import "Tuple"
   ///
   /// **Example:**
   /// ```
-  /// Random.int 42  //=> (1234567, 9876543)
+  /// Random.int 42
   /// ```
   int: seed ->
     nextFn = s ->
@@ -87,7 +87,7 @@ Tuple = import "Tuple"
   ///
   /// **Example:**
   /// ```
-  /// Random.intRange 1 100 42  //=> (57, 9876543)
+  /// Random.intRange 1 100 42
   /// ```
   intRange: min ->
     max ->
@@ -114,7 +114,7 @@ Tuple = import "Tuple"
   ///
   /// **Example:**
   /// ```
-  /// Random.bool 42  //=> (true, 9876543)
+  /// Random.bool 42
   /// ```
   bool: seed ->
     nextFn = s ->
@@ -139,11 +139,9 @@ Tuple = import "Tuple"
   /// ```
   /// // Generate a tuple of (int, bool)
   /// Random.tuple (Random.int, Random.bool) 42
-  ///   //=> ((1234, true), 567)
   ///
   /// // Generate a tuple of (int, int, string)
   /// Random.tuple (Random.int, Random.intRange 0 100, Random.bool) 42
-  ///   //=> ((1234, 45, true), 890)
   /// ```
   tuple: generators ->
     seed ->
@@ -172,7 +170,6 @@ Tuple = import "Tuple"
   /// **Example:**
   /// ```
   /// Random.list 3 Random.int 42
-  ///   //=> ([1234, 5678, 9012], 3456)
   /// ```
   list: n ->
     gen ->
