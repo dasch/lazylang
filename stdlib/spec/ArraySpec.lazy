@@ -217,4 +217,32 @@ describe #Array [
     it "returns `(#ok, value)` for a *single* element array" do
       mustEq (#ok, 42) (Array.last [42])
   ]
+
+  describe #find [
+    it "returns `(#ok, value)` for the *first* matching element" do
+      mustEq (#ok, 3) (Array.find (x -> x > 2) [1, 2, 3, 4])
+
+    it "returns `#notFound` when no element matches" do
+      mustEq #notFound (Array.find (x -> x > 10) [1, 2, 3])
+
+    it "returns `#notFound` for an *empty* array" do
+      mustEq #notFound (Array.find (x -> x > 0) [])
+
+    it "finds the *first* match, not any other" do
+      mustEq (#ok, 2) (Array.find (x -> x > 1) [1, 2, 3, 4])
+  ]
+
+  describe #indexOf [
+    it "returns `(#ok, index)` for the *first* occurrence" do
+      mustEq (#ok, 1) (Array.indexOf 20 [10, 20, 30])
+
+    it "returns `#notFound` when the value is not in the array" do
+      mustEq #notFound (Array.indexOf 99 [10, 20, 30])
+
+    it "returns `#notFound` for an *empty* array" do
+      mustEq #notFound (Array.indexOf 1 [])
+
+    it "returns the index of the *first* occurrence when duplicates exist" do
+      mustEq (#ok, 0) (Array.indexOf 1 [1, 2, 1, 3])
+  ]
 ]

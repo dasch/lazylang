@@ -85,6 +85,8 @@ const builtin_entries = [_]BuiltinEntry{
 
     // Conversion
     .{ .name = "to_string", .function = builtins.toString },
+    .{ .name = "to_integer", .function = builtins.toInteger },
+    .{ .name = "to_float", .function = builtins.toFloat },
 
     // YAML
     .{ .name = "yaml_parse", .function = builtins.yamlParse },
