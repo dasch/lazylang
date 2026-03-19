@@ -150,6 +150,7 @@ pub const Let = struct {
     value: *Expression,
     body: *Expression,
     doc: ?[]const u8, // Combined documentation comments
+    blank_line_before_body: bool = false, // Source had a blank line before the body
 };
 
 pub const WhereBinding = struct {

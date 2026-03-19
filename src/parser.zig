@@ -204,8 +204,14 @@ pub const Parser = struct {
                 return try self.makeExpression(.{ .let = .{ .pattern = pattern, .value = value, .body = value, .doc = doc } }, start_token);
             }
 
+            // Detect blank line before body: if the body token's line is 2+ lines
+            // after the value expression ends, there's a blank line between them
+            const value_line = value.location.line;
+            const body_start_line = self.current.line;
+            const has_blank = body_start_line > value_line + 1;
+
             const body = try self.parseLambda();
-            return try self.makeExpression(.{ .let = .{ .pattern = pattern, .value = value, .body = body, .doc = doc } }, start_token);
+            return try self.makeExpression(.{ .let = .{ .pattern = pattern, .value = value, .body = body, .doc = doc, .blank_line_before_body = has_blank } }, start_token);
         }
 
         // Check for lambda: pattern -> expression

@@ -268,9 +268,11 @@ Result = import "Result"
                   ...acc
                   value
                 ]
+
         testValues = generateValues trials baseSeed []
         stopOnFailure = result ->
           value -> if result.type == "fail" then result else testFn value
+
         runTest = Array.fold stopOnFailure { type: "pass" } testValues
         {
           type: "it"
@@ -310,9 +312,11 @@ Result = import "Result"
                     ...acc
                     value
                   ]
+
           testValues = generateValues trials baseSeed []
           stopOnFailure = result ->
             value -> if result.type == "fail" then result else testFn value
+
           runTest = Array.fold stopOnFailure { type: "pass" } testValues
           {
             type: "it"

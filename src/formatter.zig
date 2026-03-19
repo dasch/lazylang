@@ -816,7 +816,9 @@ fn formatLet(w: *Writer, let_expr: ast.Let) FormatterError!void {
 
     // Body — skip if body is same as value (EOF let binding)
     if (let_expr.body != let_expr.value) {
-        try w.preserveBlankLine(let_expr.body.location.line);
+        if (let_expr.blank_line_before_body) {
+            try w.newline();
+        }
         try w.newline();
         try w.emitCommentsBefore(let_expr.body.location.line);
         try formatExpr(w, let_expr.body, false);

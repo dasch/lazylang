@@ -72,6 +72,7 @@ Tuple = import "Tuple"
       x1 = Bitwise.xor s (Bitwise.shl s 13)
       x2 = Bitwise.xor x1 (Bitwise.shr x1 17)
       Bitwise.xor x2 (Bitwise.shl x2 5)
+
     s1 = nextFn seed
     (s1, nextFn s1)
 
@@ -97,6 +98,7 @@ Tuple = import "Tuple"
           x1 = Bitwise.xor s (Bitwise.shl s 13)
           x2 = Bitwise.xor x1 (Bitwise.shr x1 17)
           Bitwise.xor x2 (Bitwise.shl x2 5)
+
         s1 = nextFn seed
         value = s1
         nextSeed = nextFn s1
@@ -122,6 +124,7 @@ Tuple = import "Tuple"
       x1 = Bitwise.xor s (Bitwise.shl s 13)
       x2 = Bitwise.xor x1 (Bitwise.shr x1 17)
       Bitwise.xor x2 (Bitwise.shl x2 5)
+
     s1 = nextFn seed
     (s1 >= 0, nextFn s1)
 
@@ -158,6 +161,7 @@ Tuple = import "Tuple"
               ...accValues
               value
             ], newSeed)) ([], seed) genArray
+
       (Tuple.fromArray valuesArray, finalSeed)
 
   /// Generates a list of N random values using a given generator.
@@ -189,5 +193,6 @@ Tuple = import "Tuple"
                   ...acc
                   value
                 ] nextSeed
+
         helper n [] seed
 }

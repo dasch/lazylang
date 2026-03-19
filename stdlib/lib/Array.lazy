@@ -127,6 +127,7 @@ Tuple = import "Tuple"
                   when Builtins.array_get (xs, idx) matches
                     (#ok, x) then foldHelper f (f acc x) xs (idx + 1)
                     otherwise acc
+
         foldHelper fn init arr 0
 
   /// Reverses an array.
@@ -246,6 +247,7 @@ Tuple = import "Tuple"
   sortBy: keyFn ->
     arr ->
       pairs = [{ key: keyFn x, value: x } for x in arr]
+
       sorted = Builtins.array_sort [p.key for p in pairs]
       [p.value for sortedKey in sorted for p in pairs when p.key == sortedKey]
 
