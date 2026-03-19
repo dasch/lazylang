@@ -111,4 +111,29 @@ describe #Basics [
     it "converts a symbol to a string" do
       mustEq "ok" (toString #ok)
   ]
+
+  describe #toInteger [
+    it "converts a string to an integer" do
+      mustEq 42 (toInteger "42")
+
+    it "converts a negative string to an integer" do
+      mustEq (0 - 5) (toInteger "-5")
+
+    it "converts a float to an integer (truncates)" do
+      mustEq 3 (toInteger 3.14)
+
+    it "returns an integer unchanged" do
+      mustEq 42 (toInteger 42)
+  ]
+
+  describe #toFloat [
+    it "converts a string to a float" do
+      mustEq 3.14 (toFloat "3.14")
+
+    it "converts an integer to a float" do
+      mustEq 42.0 (toFloat 42)
+
+    it "returns a float unchanged" do
+      mustEq 3.14 (toFloat 3.14)
+  ]
 ]

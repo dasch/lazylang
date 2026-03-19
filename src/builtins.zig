@@ -1124,6 +1124,28 @@ pub fn toString(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalErr
     return eval.Value{ .string = result };
 }
 
+pub fn toInteger(_: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    return switch (args[0]) {
+        .integer => args[0],
+        .float => |f| eval.Value{ .integer = @intFromFloat(f) },
+        .string => |s| eval.Value{ .integer = std.fmt.parseInt(i64, s, 10) catch return error.InvalidArgument },
+        else => error.TypeMismatch,
+    };
+}
+
+pub fn toFloat(_: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+
+    return switch (args[0]) {
+        .float => args[0],
+        .integer => |i| eval.Value{ .float = @floatFromInt(i) },
+        .string => |s| eval.Value{ .float = std.fmt.parseFloat(f64, s) catch return error.InvalidArgument },
+        else => error.TypeMismatch,
+    };
+}
+
 // Utility to create a curried native function wrapper
 // This allows native functions to be partially applied like regular functions
 pub fn curry2(comptime impl: fn (std.mem.Allocator, eval.Value, eval.Value) eval.EvalError!eval.Value) eval.NativeFn {

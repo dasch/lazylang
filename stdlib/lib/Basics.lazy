@@ -168,4 +168,36 @@
   /// "port: " + toString 8080  //=> "port: 8080"
   /// ```
   toString: value -> Builtins.to_string value
+
+  /// Converts a value to an integer.
+  ///
+  /// Supports strings, floats, and integers.
+  /// Integers are returned unchanged. Floats are truncated.
+  ///
+  /// **Parameter:**
+  /// - `value`: The value to convert
+  ///
+  /// **Example:**
+  /// ```
+  /// toInteger "42"  //=> 42
+  /// toInteger 3.14  //=> 3
+  /// toInteger 42  //=> 42
+  /// ```
+  toInteger: value -> Builtins.to_integer value
+
+  /// Converts a value to a float.
+  ///
+  /// Supports strings, integers, and floats.
+  /// Floats are returned unchanged.
+  ///
+  /// **Parameter:**
+  /// - `value`: The value to convert
+  ///
+  /// **Example:**
+  /// ```
+  /// toFloat "3.14"  //=> 3.14
+  /// toFloat 42  //=> 42.0
+  /// toFloat 3.14  //=> 3.14
+  /// ```
+  toFloat: value -> Builtins.to_float value
 }
