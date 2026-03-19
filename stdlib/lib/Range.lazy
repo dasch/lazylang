@@ -1,3 +1,6 @@
+Result = import "Result"
+Tuple = import "Tuple"
+
 /// Provides utilities for working with integer ranges in Lazylang.
 ///
 /// Ranges represent sequences of integers without materializing them into arrays.
@@ -27,9 +30,6 @@
 /// // Using in for loops
 /// [x * 2 for x in 1..5]  //=> [2, 4, 6, 8, 10]
 /// ```
-Result = import "Result"
-Tuple = import "Tuple"
-
 {
   /// Creates an inclusive range from start to end.
   /// The end value is included in the range.
