@@ -1,7 +1,7 @@
 //! Docs command handler for Lazylang CLI.
 //!
-//! This module implements the 'docs' subcommand which generates HTML
-//! documentation from doc comments in Lazylang modules.
+//! Generates a single self-contained HTML documentation page from doc
+//! comments in Lazylang modules.
 //!
 //! Usage:
 //!   lazylang docs                    - Generate docs from lib/ directory
@@ -36,7 +36,6 @@ pub fn runDocs(
             continue;
         }
 
-        // Positional argument - treat as input path
         if (input_path != null) {
             try stderr.print("error: unexpected argument '{s}'\n", .{arg});
             return .{ .exit_code = 1 };
@@ -44,12 +43,10 @@ pub fn runDocs(
         input_path = arg;
     }
 
-    // Default to "lib" directory if no input path specified
     if (input_path == null) {
         input_path = "lib";
     }
 
-    // Create output directory if it doesn't exist
     std.fs.cwd().makePath(output_dir) catch |err| switch (err) {
         error.PathAlreadyExists => {},
         else => return err,
@@ -70,7 +67,6 @@ pub fn runDocs(
         modules_list.deinit(allocator);
     }
 
-    // Check if input is a directory or file
     const stat = std.fs.cwd().statFile(input_path.?) catch |err| switch (err) {
         error.FileNotFound => {
             try stderr.print("error: path not found: {s}\n", .{input_path.?});
@@ -80,31 +76,29 @@ pub fn runDocs(
     };
 
     if (stat.kind == .directory) {
-        // Collect all modules from directory
         try docs.collectModulesFromDirectory(allocator, input_path.?, &modules_list, stdout);
     } else {
-        // Collect single module
         try stdout.print("Extracting docs from {s}...\n", .{input_path.?});
         const module_info = try docs.extractModuleInfo(allocator, input_path.?);
         try modules_list.append(allocator, module_info);
     }
 
-    // Generate root index.html
-    try stdout.print("Generating root index.html...\n", .{});
-    try docs.generateRootIndexHtml(allocator, output_dir);
+    // Sort modules alphabetically
+    std.sort.insertion(docs.ModuleInfo, modules_list.items, {}, struct {
+        fn lessThan(_: void, a: docs.ModuleInfo, b: docs.ModuleInfo) bool {
+            return std.mem.lessThan(u8, a.name, b.name);
+        }
+    }.lessThan);
 
-    // Generate stdlib/index.html
-    try stdout.print("Generating stdlib/index.html...\n", .{});
-    try docs.generateStdlibIndexHtml(allocator, modules_list.items, output_dir);
+    // Generate single self-contained HTML file
+    const html_filename = try std.fmt.allocPrint(allocator, "{s}/index.html", .{output_dir});
+    defer allocator.free(html_filename);
 
-    // Generate HTML for each module
-    for (modules_list.items) |module| {
-        try stdout.print("Generating HTML for {s}...\n", .{module.name});
-        try docs.generateModuleHtml(allocator, module, modules_list.items, output_dir);
-    }
+    var html_file = try std.fs.cwd().createFile(html_filename, .{});
+    defer html_file.close();
 
-    try stdout.print("Documentation generated in {s}/\n", .{output_dir});
-    try stdout.print("  - Root: {s}/index.html\n", .{output_dir});
-    try stdout.print("  - Standard Library: {s}/stdlib/index.html\n", .{output_dir});
+    try docs.writeSinglePageDocs(html_file, modules_list.items, allocator);
+
+    try stdout.print("Documentation generated: {s}\n", .{html_filename});
     return .{ .exit_code = 0 };
 }
