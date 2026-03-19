@@ -24,6 +24,7 @@ const Comment = struct {
     text: []const u8,
     line: usize,
     is_doc: bool,
+    is_inline: bool, // true if comment appears after code on the same line
     blank_line_before: bool,
 };
 
@@ -109,7 +110,7 @@ const Writer = struct {
         while (self.next_comment < self.comments.len) {
             const comment = self.comments[self.next_comment];
             if (comment.line >= before_line) break;
-            if (comment.is_doc) {
+            if (comment.is_doc or comment.is_inline) {
                 self.next_comment += 1;
                 continue;
             }
@@ -118,6 +119,21 @@ const Writer = struct {
             }
             try self.write(comment.text);
             try self.newline();
+            self.next_comment += 1;
+        }
+    }
+
+    /// Emit any inline comment on the given source line
+    fn emitInlineComment(self: *Writer, on_line: usize) !void {
+        while (self.next_comment < self.comments.len) {
+            const comment = self.comments[self.next_comment];
+            if (comment.line > on_line) break;
+            if (comment.line == on_line and comment.is_inline) {
+                try self.write(" ");
+                try self.write(comment.text);
+                self.next_comment += 1;
+                return;
+            }
             self.next_comment += 1;
         }
     }
@@ -157,6 +173,39 @@ fn endsWith2Newlines(s: []const u8) bool {
     return s.len >= 2 and s[s.len - 1] == '\n' and s[s.len - 2] == '\n';
 }
 
+/// Find an inline comment in a line (code followed by //)
+/// Returns the comment text (including //) or null if no inline comment
+fn findInlineComment(line: []const u8) ?[]const u8 {
+    var i: usize = 0;
+    var in_string = false;
+    var string_char: u8 = 0;
+    while (i < line.len) {
+        if (in_string) {
+            if (line[i] == '\\') {
+                i += 2; // skip escape
+                continue;
+            }
+            if (line[i] == string_char) {
+                in_string = false;
+            }
+            i += 1;
+            continue;
+        }
+        if (line[i] == '"' or line[i] == '\'') {
+            in_string = true;
+            string_char = line[i];
+            i += 1;
+            continue;
+        }
+        if (i + 1 < line.len and line[i] == '/' and line[i + 1] == '/') {
+            // Found comment — return trimmed
+            return std.mem.trimLeft(u8, line[i..], " \t");
+        }
+        i += 1;
+    }
+    return null;
+}
+
 fn extractComments(allocator: std.mem.Allocator, source: []const u8) ![]Comment {
     var comments = std.ArrayList(Comment){};
     var line_num: usize = 1;
@@ -167,12 +216,16 @@ fn extractComments(allocator: std.mem.Allocator, source: []const u8) ![]Comment 
         if (trimmed.len == 0) {
             prev_was_blank = true;
         } else if (std.mem.startsWith(u8, trimmed, "///")) {
-            try comments.append(allocator, .{ .text = trimmed, .line = line_num, .is_doc = true, .blank_line_before = prev_was_blank });
+            try comments.append(allocator, .{ .text = trimmed, .line = line_num, .is_doc = true, .is_inline = false, .blank_line_before = prev_was_blank });
             prev_was_blank = false;
         } else if (std.mem.startsWith(u8, trimmed, "//")) {
-            try comments.append(allocator, .{ .text = trimmed, .line = line_num, .is_doc = false, .blank_line_before = prev_was_blank });
+            try comments.append(allocator, .{ .text = trimmed, .line = line_num, .is_doc = false, .is_inline = false, .blank_line_before = prev_was_blank });
             prev_was_blank = false;
         } else {
+            // Check for inline comment: code followed by //
+            if (findInlineComment(line)) |comment_text| {
+                try comments.append(allocator, .{ .text = comment_text, .line = line_num, .is_doc = false, .is_inline = true, .blank_line_before = false });
+            }
             prev_was_blank = false;
         }
         line_num += 1;
@@ -814,6 +867,9 @@ fn formatLet(w: *Writer, let_expr: ast.Let) FormatterError!void {
         w.indent -= 1;
     }
 
+    // Emit any inline comment on the value's line
+    try w.emitInlineComment(let_expr.value.location.line);
+
     // Body — skip if body is same as value (EOF let binding)
     if (let_expr.body != let_expr.value) {
         if (let_expr.blank_line_before_body) {
@@ -1100,6 +1156,9 @@ fn formatObjectField(w: *Writer, field: ast.ObjectField) FormatterError!void {
             try formatExpr(w, cond, false);
         },
     }
+
+    // Emit any inline comment on the field value's line
+    try w.emitInlineComment(field.value.location.line);
 }
 
 // ============================================================================

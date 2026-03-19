@@ -71,13 +71,6 @@ Result = import "Result"
   /// ```
   pass: { type: "pass" }
 
-  // Generate all trial test values
-
-  // Stop on first failure, otherwise continue testing
-
-  // Generate all trial test values
-
-  // Stop on first failure, otherwise continue testing
   /// Explicitly marks a test as failing with a custom message or details.
   /// Useful for tests that should fail under certain conditions or for documenting known issues.
   ///

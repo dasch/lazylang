@@ -37,7 +37,6 @@ Tuple = import "Tuple"
   /// ```
   seed: value -> if value == 0 then 1 else value
 
-  // Fold over generators, threading the seed through each one
   /// Generates the next seed value using xorshift32 algorithm.
   ///
   /// **Parameter:**
