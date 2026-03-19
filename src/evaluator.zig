@@ -1788,7 +1788,7 @@ pub fn evaluateExpression(
                                     .field_key_location = field.key_location,
                                     .self_value = self_cell,
                                 };
-                                try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch });
+                                try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch, .doc = field.doc });
                             },
                             .array => |arr| {
                                 // Array of keys: create multiple fields with same value
@@ -1810,7 +1810,7 @@ pub fn evaluateExpression(
                                                 .field_key_location = field.key_location,
                                                 .self_value = self_cell,
                                             };
-                                            try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch });
+                                            try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch, .doc = field.doc });
                                         },
                                         else => return error.TypeMismatch,
                                     }
