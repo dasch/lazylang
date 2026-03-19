@@ -57,7 +57,7 @@ pub fn writeSinglePageDocs(file: anytype, modules: []const ModuleInfo, allocator
         \\  --sidebar-w: 260px;
         \\}
         \\*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-        \\html { scroll-behavior: smooth; scroll-padding-top: 24px; }
+        \\html { scroll-padding-top: 24px; }
         \\body {
         \\  font-family: var(--font-body);
         \\  line-height: 1.7;
@@ -688,10 +688,25 @@ pub fn writeSinglePageDocs(file: anytype, modules: []const ModuleInfo, allocator
         \\function navigateTo(id) {
         \\  const el = document.getElementById(id);
         \\  if (!el) return;
-        \\  el.scrollIntoView({behavior:'smooth', block:'start'});
+        \\  fastScrollTo(el);
         \\  el.classList.add('highlight');
         \\  setTimeout(() => el.classList.remove('highlight'), 1500);
         \\  history.replaceState(null, '', '#' + id);
+        \\}
+        \\function fastScrollTo(el) {
+        \\  const start = window.scrollY;
+        \\  const end = el.getBoundingClientRect().top + start - 24;
+        \\  const dist = end - start;
+        \\  const duration = Math.min(100, Math.abs(dist) * 0.08);
+        \\  if (duration < 16) { window.scrollTo(0, end); return; }
+        \\  const t0 = performance.now();
+        \\  function step(now) {
+        \\    const p = Math.min((now - t0) / duration, 1);
+        \\    const ease = p < 0.5 ? 2*p*p : 1 - Math.pow(-2*p+2, 2)/2;
+        \\    window.scrollTo(0, start + dist * ease);
+        \\    if (p < 1) requestAnimationFrame(step);
+        \\  }
+        \\  requestAnimationFrame(step);
         \\}
         \\
         \\function copyAnchor(id) {
@@ -738,10 +753,19 @@ pub fn writeSinglePageDocs(file: anytype, modules: []const ModuleInfo, allocator
         \\window.addEventListener('scroll', updateSidebar, {passive: true});
         \\updateSidebar();
         \\
+        \\// Intercept sidebar link clicks for fast scroll
+        \\document.querySelector('.sidebar-nav').addEventListener('click', e => {
+        \\  const a = e.target.closest('a[href^="#"]');
+        \\  if (!a) return;
+        \\  e.preventDefault();
+        \\  const id = a.getAttribute('href').slice(1);
+        \\  navigateTo(id);
+        \\});
+        \\
         \\// ── Handle initial hash ──
         \\if (location.hash) {
         \\  const el = document.getElementById(location.hash.slice(1));
-        \\  if (el) { setTimeout(() => { el.scrollIntoView({block:'start'}); el.classList.add('highlight'); setTimeout(() => el.classList.remove('highlight'), 1500); }, 100); }
+        \\  if (el) { setTimeout(() => { fastScrollTo(el); el.classList.add('highlight'); setTimeout(() => el.classList.remove('highlight'), 1500); }, 50); }
         \\}
         \\</script>
         \\</body>
