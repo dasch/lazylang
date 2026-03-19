@@ -26,7 +26,7 @@ describe #Array [
 
   describe #empty [
     it "returns an empty array" do
-      mustEq [] (Array.empty)
+      mustEq [] Array.empty
   ]
 
   describe #isEmpty [
@@ -92,7 +92,7 @@ describe #Array [
       first = when Array.get 0 result matches
         (#ok, val) then val
         otherwise null
-      mustEq 25 (first.age)
+      mustEq 25 first.age
   ]
 
   describe #uniq [
@@ -150,7 +150,7 @@ describe #Array [
         { category: "vegetable", name: "carrot" }
       ]
       result = Array.groupBy (x -> x.category) arr
-      mustEq (2, 1) (Array.length (result.fruit), Array.length (result.vegetable))
+      mustEq (2, 1) (Array.length result.fruit, Array.length result.vegetable)
 
     it "handles empty array" do
       result = Array.groupBy (x -> x) []

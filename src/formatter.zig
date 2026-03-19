@@ -914,7 +914,7 @@ fn formatApplication(w: *Writer, app: ast.Application) FormatterError!void {
     const in_chain = app.function.data == .application;
     const needs_parens = switch (app.argument.data) {
         .application, .binary, .lambda, .let, .if_expr, .when_matches, .where_expr, .assert_expr, .unary, .object_extend, .range => true,
-        .field_access => true, // f Module.field parses as (f Module).field without parens
+        // field_access: dot binds tighter than application, so f Module.field is fine
         .object => in_chain, // f a { x: 1 } is object extension without parens
         else => false,
     };
@@ -1202,8 +1202,7 @@ fn binaryOpStr(op: ast.BinaryOp) []const u8 {
 fn needsParens(expr: *const ast.Expression, parent_op: ast.BinaryOp) bool {
     return switch (expr.data) {
         .binary => |inner| opPrecedence(inner.op) < opPrecedence(parent_op),
-        // Lambdas in pipeline need parens: `x \ (a -> a + 1)` not `x \ a -> a + 1`
-        .lambda => parent_op == .pipeline,
+        // Lambdas in pipeline: parser now handles \ terminating lambda body, no parens needed
         else => false,
     };
 }

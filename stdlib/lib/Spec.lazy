@@ -298,7 +298,7 @@ Result = import "Result"
         testFn ->
           trials = Object.get "trials" options \ Result.orDefault 100
           baseSeed =
-            Object.get "seed" options \ Result.map (Random.seed) \ Result.orDefault (Random.seed 42)
+            Object.get "seed" options \ Result.map Random.seed \ Result.orDefault (Random.seed 42)
           generateValues = n ->
             seed ->
               acc ->

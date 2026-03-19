@@ -387,13 +387,22 @@ pub const Parser = struct {
             try self.advance();
 
             // For pipeline operator, allow lambdas on the right side
-            // Check if the right side is a lambda pattern
-            const right = if (op_token.kind == .backslash and self.isLambdaPattern())
+            // Lambda body stops at the next pipeline operator (\) so chained pipelines work:
+            //   x \ a -> a * 2 \ b -> b + 1
+            // parses as (x \ (a -> a * 2)) \ (b -> b + 1)
+            // For pipeline operator, allow lambdas on the right side
+            const is_pipeline_lambda = op_token.kind == .backslash and
+                ((self.current.kind == .identifier and self.lookahead.kind == .arrow) or self.isLambdaPattern());
+
+            const right = if (is_pipeline_lambda)
                 blk: {
-                    const lambda_start = self.current; // Capture start for lambda location
+                    const lambda_start = self.current;
                     const param = try self.parsePattern();
                     try self.expect(.arrow);
-                    const body = try self.parseLambda();
+                    // Parse body at precedence above pipeline (2 > 1) so \ terminates it.
+                    // This allows arithmetic, comparisons, etc. in the body but stops at \.
+                    // For complex multi-line bodies, use `do` syntax.
+                    const body = try self.parseBinary(2);
                     const lambda_node = try self.allocateExpression();
                     lambda_node.* = .{
                         .data = .{ .lambda = .{ .param = param, .body = body } },
@@ -484,8 +493,74 @@ pub const Parser = struct {
         return self.parseApplication();
     }
 
-    fn parseApplication(self: *Parser) ParseError!*Expression {
+    /// Parse a primary expression followed by any postfix operators (.field, .{proj}, [index])
+    fn parsePostfix(self: *Parser) ParseError!*Expression {
         var expr = try self.parsePrimary();
+
+        // Consume postfix chains: .field, .{projection}, [index]
+        while (true) {
+            if (self.current.kind == .dot and !self.current.preceded_by_whitespace) {
+                try self.advance();
+                // Field projection: .{ field1, field2 }
+                if (self.current.kind == .l_brace) {
+                    try self.advance();
+                    var field_list = std.ArrayList([]const u8){};
+                    defer field_list.deinit(self.arena);
+                    while (self.current.kind != .r_brace) {
+                        if (self.current.kind != .identifier) {
+                            self.recordError();
+                            return error.UnexpectedToken;
+                        }
+                        try field_list.append(self.arena, self.current.lexeme);
+                        try self.advance();
+                        if (self.current.kind == .comma) try self.advance();
+                    }
+                    try self.expect(.r_brace);
+                    const node = try self.allocateExpression();
+                    node.* = .{
+                        .data = .{ .field_projection = .{ .object = expr, .fields = try field_list.toOwnedSlice(self.arena) } },
+                        .location = expr.location,
+                    };
+                    expr = node;
+                } else if (self.current.kind == .identifier) {
+                    // Field access: expr.field
+                    const field_name = self.current.lexeme;
+                    const field_token = self.current;
+                    try self.advance();
+                    const node = try self.allocateExpression();
+                    node.* = .{
+                        .data = .{ .field_access = .{
+                            .object = expr,
+                            .field = field_name,
+                            .field_location = .{ .line = field_token.line, .column = field_token.column, .offset = field_token.offset, .length = field_token.lexeme.len },
+                        } },
+                        .location = expr.location,
+                    };
+                    expr = node;
+                } else {
+                    break;
+                }
+            } else if (self.current.kind == .l_bracket and !self.current.preceded_by_whitespace) {
+                // Index: expr[index]
+                try self.advance();
+                const index_expr = try self.parseLambda();
+                try self.expect(.r_bracket);
+                const node = try self.allocateExpression();
+                node.* = .{
+                    .data = .{ .index = .{ .object = expr, .index = index_expr } },
+                    .location = expr.location,
+                };
+                expr = node;
+            } else {
+                break;
+            }
+        }
+
+        return expr;
+    }
+
+    fn parseApplication(self: *Parser) ParseError!*Expression {
+        var expr = try self.parsePostfix();
         var just_applied = false; // Track if we just parsed a function application
 
         while (true) {
@@ -522,7 +597,7 @@ pub const Parser = struct {
                     {
                         break;
                     }
-                    const argument = try self.parsePrimary();
+                    const argument = try self.parsePostfix();
                     const node = try self.allocateExpression();
                     node.* = .{
                         .data = .{ .application = .{ .function = expr, .argument = argument } },
@@ -532,13 +607,9 @@ pub const Parser = struct {
                     just_applied = true;
                 },
                 .dot => {
-                    // Disambiguate between field access chains and field accessor arguments using whitespace:
-                    // - `obj.field` (no space before dot) = field access chain
-                    // - `map .field people` (space before dot) = field accessor as argument
-                    const dot_preceded_by_space = self.current.preceded_by_whitespace;
-
-                    if (dot_preceded_by_space and self.lookahead.kind == .identifier) {
-                        // Parse as field accessor function argument
+                    // Space before dot = field accessor as function argument: `map .field people`
+                    // No space before dot is handled by parsePostfix (tight binding)
+                    if (self.current.preceded_by_whitespace and self.lookahead.kind == .identifier) {
                         const argument = try self.parsePrimary();
                         const node = try self.allocateExpression();
                         node.* = .{
@@ -549,67 +620,7 @@ pub const Parser = struct {
                         just_applied = true;
                         continue;
                     }
-
-                    // Otherwise, handle field access and field projection
-                    try self.advance();
-
-                    // Check for field projection: .{ field1, field2 }
-                    if (self.current.kind == .l_brace) {
-                        try self.advance();
-                        var field_list = std.ArrayList([]const u8){};
-                        defer field_list.deinit(self.arena);
-
-                        while (self.current.kind != .r_brace) {
-                            if (self.current.kind != .identifier) {
-                                self.recordError();
-                                return error.UnexpectedToken;
-                            }
-                            try field_list.append(self.arena, self.current.lexeme);
-                            try self.advance();
-
-                            if (self.current.kind == .comma) {
-                                try self.advance();
-                            }
-                        }
-
-                        try self.expect(.r_brace);
-
-                        const node = try self.allocateExpression();
-                        node.* = .{
-                            .data = .{ .field_projection = .{
-                                .object = expr,
-                                .fields = try field_list.toOwnedSlice(self.arena),
-                            } },
-                            .location = expr.location,
-                        };
-                        expr = node;
-                        just_applied = false;
-                    } else if (self.current.kind == .identifier) {
-                        // Regular field access: expr.field
-                        const field_name = self.current.lexeme;
-                        const field_token = self.current;
-                        try self.advance();
-
-                        const node = try self.allocateExpression();
-                        node.* = .{
-                            .data = .{ .field_access = .{
-                                .object = expr,
-                                .field = field_name,
-                                .field_location = .{
-                                    .line = field_token.line,
-                                    .column = field_token.column,
-                                    .offset = field_token.offset,
-                                    .length = field_token.lexeme.len,
-                                },
-                            } },
-                            .location = expr.location,
-                        };
-                        expr = node;
-                        just_applied = false;
-                    } else {
-                        self.recordError();
-                        return error.UnexpectedToken;
-                    }
+                    break; // Non-space dots should have been consumed by parsePostfix
                 },
                 .l_brace => {
                     // Object extension: expr { fields }
