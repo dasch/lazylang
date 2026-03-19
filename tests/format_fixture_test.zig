@@ -412,10 +412,7 @@ test "stdlib: all files are properly formatted" {
 // ============================================================================
 
 test "regression: all formatter fixtures produce correct output" {
-    const skip_files = [_][]const u8{
-        // TODO: Re-enable when doc comment blank line handling is fixed
-        "doc_comments.lazy",
-    };
+    const skip_files = [_][]const u8{};
 
     var dir = std.fs.cwd().openDir("tests/fixtures/formatter", .{ .iterate = true }) catch |err| {
         std.debug.print("Failed to open fixtures directory: {}\n", .{err});
@@ -460,9 +457,7 @@ test "regression: all formatter fixtures produce correct output" {
 // ============================================================================
 
 test "formatter: formatting is idempotent on all fixtures" {
-    const skip_files = [_][]const u8{
-        "doc_comments.lazy",
-    };
+    const skip_files = [_][]const u8{};
 
     var dir = std.fs.cwd().openDir("tests/fixtures/formatter", .{ .iterate = true }) catch |err| {
         std.debug.print("Failed to open fixtures directory: {}\n", .{err});
