@@ -399,10 +399,9 @@ pub const Parser = struct {
                     const lambda_start = self.current;
                     const param = try self.parsePattern();
                     try self.expect(.arrow);
-                    // Parse body at precedence above pipeline (2 > 1) so \ terminates it.
-                    // This allows arithmetic, comparisons, etc. in the body but stops at \.
-                    // For complex multi-line bodies, use `do` syntax.
-                    const body = try self.parseBinary(2);
+                    // Parse body at precedence above pipeline so \ terminates it.
+                    // Pipeline is precedence 2, so we use 3.
+                    const body = try self.parseBinary(3);
                     const lambda_node = try self.allocateExpression();
                     lambda_node.* = .{
                         .data = .{ .lambda = .{ .param = param, .body = body } },
