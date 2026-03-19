@@ -336,22 +336,16 @@ pub const Parser = struct {
 
     fn isPatternBinding(self: *Parser) bool {
         // Simple heuristic: if we see an opening delimiter, count depth and look for '='
-        // Save parser state before lookahead
-        const saved_index = self.tokenizer.index;
-        const saved_last_newline = self.tokenizer.last_whitespace_had_newline;
+        // Save complete parser state before lookahead (must save all tokenizer fields
+        // including line/column/line_start to avoid corrupting source locations)
+        const saved_tokenizer = self.tokenizer;
         const saved_current = self.current;
         const saved_lookahead = self.lookahead;
-        // Save doc comments length - we'll truncate back to this after lookahead
-        const saved_doc_comments_len = self.tokenizer.pending_doc_comments.items.len;
 
         defer {
-            // Restore parser state
-            self.tokenizer.index = saved_index;
-            self.tokenizer.last_whitespace_had_newline = saved_last_newline;
+            self.tokenizer = saved_tokenizer;
             self.current = saved_current;
             self.lookahead = saved_lookahead;
-            // Discard any doc comments accumulated during lookahead
-            self.tokenizer.pending_doc_comments.items.len = saved_doc_comments_len;
         }
 
         var depth: usize = 0;
