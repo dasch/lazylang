@@ -274,19 +274,25 @@ pub fn reportError(
             if (err_ctx) |ctx| {
                 switch (ctx.last_error_data) {
                     .unknown_field => |data| {
+                        // Build the "on ..." part of the message
+                        const on_what = if (data.access_chain) |chain|
+                            try std.fmt.allocPrint(arena_allocator, "`{s}`", .{chain})
+                        else
+                            try std.fmt.allocPrint(arena_allocator, "this object", .{});
+
                         // Build message based on available fields
                         const message = if (data.available_fields.len == 0)
-                            try std.fmt.allocPrint(arena_allocator, "Field `{s}` is not defined on this object.", .{data.field_name})
+                            try std.fmt.allocPrint(arena_allocator, "Field `{s}` is not defined on {s}.", .{ data.field_name, on_what })
                         else if (data.available_fields.len == 1)
-                            try std.fmt.allocPrint(arena_allocator, "Field `{s}` is not defined on this object. The only available field is `{s}`.", .{ data.field_name, data.available_fields[0] })
+                            try std.fmt.allocPrint(arena_allocator, "Field `{s}` is not defined on {s}. The only available field is `{s}`.", .{ data.field_name, on_what, data.available_fields[0] })
                         else if (data.available_fields.len == 2)
-                            try std.fmt.allocPrint(arena_allocator, "Field `{s}` is not defined on this object. Available fields are: `{s}`, `{s}`", .{ data.field_name, data.available_fields[0], data.available_fields[1] })
+                            try std.fmt.allocPrint(arena_allocator, "Field `{s}` is not defined on {s}. Available fields are: `{s}`, `{s}`", .{ data.field_name, on_what, data.available_fields[0], data.available_fields[1] })
                         else if (data.available_fields.len == 3)
-                            try std.fmt.allocPrint(arena_allocator, "Field `{s}` is not defined on this object. Available fields are: `{s}`, `{s}`, `{s}`", .{ data.field_name, data.available_fields[0], data.available_fields[1], data.available_fields[2] })
+                            try std.fmt.allocPrint(arena_allocator, "Field `{s}` is not defined on {s}. Available fields are: `{s}`, `{s}`, `{s}`", .{ data.field_name, on_what, data.available_fields[0], data.available_fields[1], data.available_fields[2] })
                         else if (data.available_fields.len == 4)
-                            try std.fmt.allocPrint(arena_allocator, "Field `{s}` is not defined on this object. Available fields are: `{s}`, `{s}`, `{s}`, `{s}`", .{ data.field_name, data.available_fields[0], data.available_fields[1], data.available_fields[2], data.available_fields[3] })
+                            try std.fmt.allocPrint(arena_allocator, "Field `{s}` is not defined on {s}. Available fields are: `{s}`, `{s}`, `{s}`, `{s}`", .{ data.field_name, on_what, data.available_fields[0], data.available_fields[1], data.available_fields[2], data.available_fields[3] })
                         else
-                            try std.fmt.allocPrint(arena_allocator, "Field `{s}` is not defined on this object. Available fields are: `{s}`, `{s}`, `{s}`, `{s}`, `{s}`", .{ data.field_name, data.available_fields[0], data.available_fields[1], data.available_fields[2], data.available_fields[3], data.available_fields[4] });
+                            try std.fmt.allocPrint(arena_allocator, "Field `{s}` is not defined on {s}. Available fields are: `{s}`, `{s}`, `{s}`, `{s}`, `{s}`", .{ data.field_name, on_what, data.available_fields[0], data.available_fields[1], data.available_fields[2], data.available_fields[3], data.available_fields[4] });
 
                         break :blk error_reporter.ErrorInfo{
                             .title = "Unknown field",

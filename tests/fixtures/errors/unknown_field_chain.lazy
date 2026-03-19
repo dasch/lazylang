@@ -1,0 +1,13 @@
+// error: Unknown field
+//   --> tests/fixtures/errors/unknown_field_chain.lazy:14:24
+//    |
+// 14 | result = config.server.database.port
+//    |                        ^-------
+//
+// Field `database` is not defined on `config.server`. Available fields are: `host`, `port`
+//
+// help: Check the field name for typos.
+
+config = { server: { host: "localhost", port: 8080 } }
+result = config.server.database.port
+result

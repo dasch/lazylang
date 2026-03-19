@@ -58,6 +58,7 @@ pub const ErrorData = union(enum) {
     unknown_field: struct {
         field_name: []const u8,
         available_fields: []const []const u8,
+        access_chain: ?[]const u8 = null,
     },
     type_mismatch: struct {
         expected: []const u8,
@@ -294,6 +295,9 @@ pub const ErrorContext = struct {
                     self.allocator.free(field);
                 }
                 self.allocator.free(old_data.available_fields);
+                if (old_data.access_chain) |chain| {
+                    self.allocator.free(chain);
+                }
             },
             .unknown_identifier => |old_data| {
                 self.allocator.free(old_data.name);

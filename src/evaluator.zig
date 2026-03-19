@@ -1955,7 +1955,7 @@ pub fn evaluateExpression(
         .field_access => |field_access| blk: {
             const object_value = try evaluateExpression(arena, field_access.object, env, current_dir, ctx);
             const forced = try force(arena, object_value);
-            break :blk try accessField(arena, forced, field_access.field, field_access.field_location, ctx);
+            break :blk try accessField(arena, forced, field_access.field, field_access.field_location, field_access.object, ctx);
         },
         .index => |index| blk: {
             const object_value = try evaluateExpression(arena, index.object, env, current_dir, ctx);
@@ -2105,7 +2105,7 @@ pub fn evaluateExpression(
             // Create new object with only the specified fields
             const new_fields = try arena.alloc(ObjectFieldValue, field_projection.fields.len);
             for (field_projection.fields, 0..) |field_name, i| {
-                const field_value = try accessField(arena, object_value, field_name, expr.location, ctx);
+                const field_value = try accessField(arena, object_value, field_name, expr.location, null, ctx);
                 new_fields[i] = .{
                     .key = try arena.dupe(u8, field_name),
                     .value = field_value,
@@ -2118,7 +2118,7 @@ pub fn evaluateExpression(
     };
 }
 
-fn accessField(arena: std.mem.Allocator, object_value: Value, field_name: []const u8, location: SourceLocation, ctx: *const EvalContext) EvalError!Value {
+fn accessField(arena: std.mem.Allocator, object_value: Value, field_name: []const u8, location: SourceLocation, object_expr: ?*Expression, ctx: *const EvalContext) EvalError!Value {
     const object = switch (object_value) {
         .object => |obj| obj,
         else => {
@@ -2159,15 +2159,72 @@ fn accessField(arena: std.mem.Allocator, object_value: Value, field_name: []cons
             available[i] = try err_ctx.allocator.dupe(u8, field.key);
         }
 
+        // Build access chain from the AST expression (e.g., "config.server")
+        const access_chain = if (object_expr) |expr| buildAccessChain(err_ctx.allocator, expr) else null;
+
         err_ctx.setErrorData(.{
             .unknown_field = .{
                 .field_name = field_name_copy,
                 .available_fields = available,
+                .access_chain = access_chain,
             },
         });
     }
 
     return error.UnknownField;
+}
+
+/// Build a dotted access chain string from an expression tree.
+/// For example, if the expression is `config.server`, returns "config.server".
+fn buildAccessChain(allocator: std.mem.Allocator, expr: *Expression) ?[]const u8 {
+    // Collect field names by walking the chain
+    var parts: [16][]const u8 = undefined;
+    var count: usize = 0;
+    var current = expr;
+
+    while (true) {
+        switch (current.data) {
+            .field_access => |fa| {
+                if (count >= parts.len) return null;
+                parts[count] = fa.field;
+                count += 1;
+                current = fa.object;
+            },
+            .identifier => |ident| {
+                if (count >= parts.len) return null;
+                parts[count] = ident;
+                count += 1;
+                break;
+            },
+            else => break,
+        }
+    }
+
+    if (count == 0) return null;
+
+    // Calculate total length
+    var total_len: usize = 0;
+    var i: usize = count;
+    while (i > 0) {
+        i -= 1;
+        total_len += parts[i].len;
+        if (i > 0) total_len += 1; // for '.'
+    }
+
+    const result = allocator.alloc(u8, total_len) catch return null;
+    var pos: usize = 0;
+    i = count;
+    while (i > 0) {
+        i -= 1;
+        @memcpy(result[pos .. pos + parts[i].len], parts[i]);
+        pos += parts[i].len;
+        if (i > 0) {
+            result[pos] = '.';
+            pos += 1;
+        }
+    }
+
+    return result;
 }
 
 fn evaluateArrayComprehension(
