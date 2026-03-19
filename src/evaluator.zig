@@ -625,16 +625,16 @@ fn mergeObjects(arena: std.mem.Allocator, base: ObjectValue, extension: ObjectVa
                     if (base_forced == .object and ext_forced == .object) {
                         const merged = try mergeObjects(arena, base_forced.object, ext_forced.object);
                         const key_copy = try arena.dupe(u8, ext_field.key);
-                        try result_fields.append(arena, .{ .key = key_copy, .value = merged, .is_patch = false, .doc = ext_field.doc orelse base_field.doc });
+                        try result_fields.append(arena, .{ .key = key_copy, .value = merged, .is_patch = false, .is_hidden = ext_field.is_hidden or base_field.is_hidden, .doc = ext_field.doc orelse base_field.doc });
                     } else {
                         // Not both objects, just use extension value
                         const key_copy = try arena.dupe(u8, ext_field.key);
-                        try result_fields.append(arena, .{ .key = key_copy, .value = ext_field.value, .is_patch = ext_field.is_patch, .doc = ext_field.doc orelse base_field.doc });
+                        try result_fields.append(arena, .{ .key = key_copy, .value = ext_field.value, .is_patch = ext_field.is_patch, .is_hidden = ext_field.is_hidden or base_field.is_hidden, .doc = ext_field.doc orelse base_field.doc });
                     }
                 } else {
                     // Shallow replace: use the extension value
                     const key_copy = try arena.dupe(u8, ext_field.key);
-                    try result_fields.append(arena, .{ .key = key_copy, .value = ext_field.value, .is_patch = ext_field.is_patch, .doc = ext_field.doc orelse base_field.doc });
+                    try result_fields.append(arena, .{ .key = key_copy, .value = ext_field.value, .is_patch = ext_field.is_patch, .is_hidden = ext_field.is_hidden or base_field.is_hidden, .doc = ext_field.doc orelse base_field.doc });
                 }
                 break;
             }
@@ -642,7 +642,7 @@ fn mergeObjects(arena: std.mem.Allocator, base: ObjectValue, extension: ObjectVa
         if (!found_override) {
             // No override, keep the base field
             const key_copy = try arena.dupe(u8, base_field.key);
-            try result_fields.append(arena, .{ .key = key_copy, .value = base_field.value, .is_patch = base_field.is_patch, .doc = base_field.doc });
+            try result_fields.append(arena, .{ .key = key_copy, .value = base_field.value, .is_patch = base_field.is_patch, .is_hidden = base_field.is_hidden, .doc = base_field.doc });
         }
     }
 
@@ -657,7 +657,7 @@ fn mergeObjects(arena: std.mem.Allocator, base: ObjectValue, extension: ObjectVa
         }
         if (!found_in_base) {
             const key_copy = try arena.dupe(u8, ext_field.key);
-            try result_fields.append(arena, .{ .key = key_copy, .value = ext_field.value, .is_patch = ext_field.is_patch, .doc = ext_field.doc });
+            try result_fields.append(arena, .{ .key = key_copy, .value = ext_field.value, .is_patch = ext_field.is_patch, .is_hidden = ext_field.is_hidden, .doc = ext_field.doc });
         }
     }
 
@@ -1778,7 +1778,7 @@ pub fn evaluateExpression(
                             .field_key_location = field.key_location,
                             .self_value = self_cell,
                         };
-                        try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch, .doc = field.doc });
+                        try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch, .is_hidden = field.is_hidden, .doc = field.doc });
                     },
                     .dynamic => |key_expr| {
                         // Evaluate the key expression
@@ -1802,7 +1802,7 @@ pub fn evaluateExpression(
                                     .field_key_location = field.key_location,
                                     .self_value = self_cell,
                                 };
-                                try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch, .doc = field.doc });
+                                try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch, .is_hidden = field.is_hidden, .doc = field.doc });
                             },
                             .array => |arr| {
                                 // Array of keys: create multiple fields with same value
@@ -1824,7 +1824,7 @@ pub fn evaluateExpression(
                                                 .field_key_location = field.key_location,
                                                 .self_value = self_cell,
                                             };
-                                            try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch, .doc = field.doc });
+                                            try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch, .is_hidden = field.is_hidden, .doc = field.doc });
                                         },
                                         else => return error.TypeMismatch,
                                     }
@@ -1859,7 +1859,7 @@ pub fn evaluateExpression(
                             .dynamic => return error.TypeMismatch, // Dynamic keys not supported in object_extend
                         };
                         const key_copy = try arena.dupe(u8, static_key);
-                        try fields_list.append(arena, .{ .key = key_copy, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx), .is_patch = field.is_patch });
+                        try fields_list.append(arena, .{ .key = key_copy, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx), .is_patch = field.is_patch, .is_hidden = field.is_hidden });
                     }
                     const obj_arg = Value{ .object = .{ .fields = try fields_list.toOwnedSlice(arena), .module_doc = null } };
                     const bound_env = try matchPattern(arena, function_ptr.param, obj_arg, function_ptr.env, ctx);
@@ -1876,7 +1876,7 @@ pub fn evaluateExpression(
                             .dynamic => return error.TypeMismatch, // Dynamic keys not supported in object_extend
                         };
                         const key_copy = try arena.dupe(u8, static_key);
-                        try fields_list.append(arena, .{ .key = key_copy, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx), .is_patch = field.is_patch });
+                        try fields_list.append(arena, .{ .key = key_copy, .value = try evaluateExpression(arena, field.value, env, current_dir, ctx), .is_patch = field.is_patch, .is_hidden = field.is_hidden });
                     }
                     const obj_arg = Value{ .object = .{ .fields = try fields_list.toOwnedSlice(arena), .module_doc = null } };
                     const args = [_]Value{obj_arg};
@@ -1912,11 +1912,11 @@ pub fn evaluateExpression(
                                 try extension_fields.append(arena, .{ .key = key_copy, .value = merged, .is_patch = false, .doc = field.doc });
                             } else {
                                 // Field doesn't exist in base, just add it
-                                try extension_fields.append(arena, .{ .key = key_copy, .value = value, .is_patch = field.is_patch, .doc = field.doc });
+                                try extension_fields.append(arena, .{ .key = key_copy, .value = value, .is_patch = field.is_patch, .is_hidden = field.is_hidden, .doc = field.doc });
                             }
                         } else {
                             // Overwrite: just use the new value
-                            try extension_fields.append(arena, .{ .key = key_copy, .value = value, .is_patch = field.is_patch, .doc = field.doc });
+                            try extension_fields.append(arena, .{ .key = key_copy, .value = value, .is_patch = field.is_patch, .is_hidden = field.is_hidden, .doc = field.doc });
                         }
                     }
 

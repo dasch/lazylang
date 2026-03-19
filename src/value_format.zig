@@ -22,6 +22,8 @@ const eval = @import("eval.zig");
 
 // Import types and functions from eval
 const Value = eval.Value;
+const ObjectValue = eval.ObjectValue;
+const ObjectFieldValue = eval.ObjectFieldValue;
 const EvalError = eval.EvalError;
 const force = eval.force;
 const getValueTypeName = eval.getValueTypeName;
@@ -137,9 +139,11 @@ fn formatValueAsJsonImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator,
             errdefer builder.deinit(allocator);
 
             try builder.append(allocator, '{');
-            for (obj.fields, 0..) |field, i| {
-                if (i != 0) try builder.appendSlice(allocator, ",");
-                // Escape key for JSON
+            var first_json = true;
+            for (obj.fields) |field| {
+                if (field.is_hidden) continue;
+                if (!first_json) try builder.appendSlice(allocator, ",");
+                first_json = false;
                 try builder.append(allocator, '"');
                 try jsonEscapeString(&builder, allocator, field.key);
                 try builder.appendSlice(allocator, "\":");
@@ -579,7 +583,15 @@ fn formatValuePrettyImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator,
 
             break :blk try builder.toOwnedSlice(allocator);
         },
-        .object => |obj| blk: {
+        .object => |orig_obj| blk: {
+            // Filter out hidden fields for output
+            var visible = std.ArrayList(ObjectFieldValue){};
+            defer visible.deinit(allocator);
+            for (orig_obj.fields) |field| {
+                if (!field.is_hidden) try visible.append(allocator, field);
+            }
+            const obj = ObjectValue{ .fields = visible.items, .module_doc = orig_obj.module_doc };
+
             var builder = std.ArrayList(u8){};
             errdefer builder.deinit(allocator);
 

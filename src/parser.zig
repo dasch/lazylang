@@ -109,6 +109,7 @@ pub const Parser = struct {
             .r_brace => "'}'",
             .comma => "','",
             .colon => "':'",
+            .colon_colon => "'::'",
             .semicolon => "';'",
             .equals => "'='",
             .arrow => "'->'",
@@ -1345,10 +1346,13 @@ pub const Parser = struct {
 
             // Check for three forms:
             // 1. Long form with colon: `field: value` (is_patch = false)
-            // 2. Patch form: `field { ... }` (is_patch = true)
-            // 3. Short form: `field` (is_patch = false, expands to `field: field`)
+            // 2. Hidden form with double colon: `field:: value` (is_hidden = true)
+            // 3. Patch form: `field { ... }` (is_patch = true)
+            // 4. Short form: `field` (is_patch = false, expands to `field: field`)
             var is_patch = false;
-            const value_expr = if (self.current.kind == .colon) blk: {
+            var is_hidden = false;
+            const value_expr = if (self.current.kind == .colon or self.current.kind == .colon_colon) blk: {
+                is_hidden = self.current.kind == .colon_colon;
                 try self.advance();
                 break :blk try self.parseLambda();
             } else if (self.current.kind == .l_brace and !self.current.preceded_by_newline) blk: {
@@ -1367,6 +1371,7 @@ pub const Parser = struct {
                 .key = .{ .static = key },
                 .value = value_expr,
                 .is_patch = is_patch,
+                .is_hidden = is_hidden,
                 .doc = doc,
                 .key_location = .{
                     .line = key_token.line,

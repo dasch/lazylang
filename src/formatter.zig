@@ -1128,6 +1128,8 @@ fn formatObjectField(w: *Writer, field: ast.ObjectField) FormatterError!void {
             }
             if (field.is_patch) {
                 try w.writeByte(' ');
+            } else if (field.is_hidden) {
+                try w.write(":: ");
             } else {
                 try w.write(": ");
             }

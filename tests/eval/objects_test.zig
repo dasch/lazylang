@@ -243,3 +243,44 @@ test "object extension can be chained" {
         "{ a: 1, b: 2, c: 3 }",
     );
 }
+
+// Hidden fields
+
+test "hidden field excluded from output" {
+    try expectEvaluates(
+        \\{ x: 1, _base:: 8080, y: 2 }
+    , "{ x: 1, y: 2 }");
+}
+
+test "hidden field accessible via field access" {
+    try expectEvaluates(
+        \\obj = { x: 1, _port:: 8080 }
+        \\obj._port
+    , "8080");
+}
+
+test "hidden field used by self" {
+    try expectEvaluates(
+        \\config = {
+        \\  _port:: 8080
+        \\  url: "http://localhost:" + toString self._port
+        \\}
+        \\config.url
+    , "\"http://localhost:8080\"");
+}
+
+test "hidden field preserved through extension" {
+    try expectEvaluates(
+        \\base = { _port:: 8080, url: ":" + toString self._port }
+        \\ext = base { _port:: 443 }
+        \\ext.url
+    , "\":443\"");
+}
+
+test "hidden field not in output after extension" {
+    try expectEvaluates(
+        \\base = { _port:: 8080, x: 1 }
+        \\ext = base { y: 2 }
+        \\ext
+    , "{ x: 1, y: 2 }");
+}

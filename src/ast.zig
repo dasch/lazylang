@@ -21,6 +21,7 @@ pub const TokenKind = enum {
     symbol,
     comma,
     colon,
+    colon_colon,
     semicolon,
     equals,
     arrow,
@@ -233,6 +234,7 @@ pub const ObjectField = struct {
     key: ObjectFieldKey,
     value: *Expression,
     is_patch: bool, // true if no colon (merge), false if colon (overwrite)
+    is_hidden: bool = false, // true if :: (hidden from output)
     doc: ?[]const u8, // Combined documentation comments
     key_location: ?error_reporter.SourceLocation, // Location of the field key for error reporting
     condition: ObjectFieldCondition = .none, // conditional inclusion (if/unless)

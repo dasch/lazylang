@@ -127,6 +127,7 @@ pub const ObjectFieldValue = struct {
     key: []const u8,
     value: Value,
     is_patch: bool, // true if field should be deep-merged (written as `field { ... }` without colon)
+    is_hidden: bool = false, // true if :: (hidden from output, but accessible)
     doc: ?[]const u8 = null,
 };
 
