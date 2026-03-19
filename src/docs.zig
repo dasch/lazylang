@@ -321,16 +321,7 @@ fn buildSignature(allocator: std.mem.Allocator, field_name: []const u8, value: *
     return signature.toOwnedSlice(allocator);
 }
 
-/// Follow through let bindings and where expressions to find the top-level object.
-/// This is needed because module files with imports wrap the object in let bindings.
-fn findTopLevelObject(expr: *const evaluator.Expression) ?*const evaluator.ObjectLiteral {
-    return switch (expr.data) {
-        .object => |*obj| obj,
-        .let => |let_expr| findTopLevelObject(let_expr.body),
-        .where_expr => |where_expr| findTopLevelObject(where_expr.expr),
-        else => null,
-    };
-}
+const findTopLevelObject = evaluator.findTopLevelObject;
 
 fn extractDocs(expr: *const evaluator.Expression, items: *std.ArrayListUnmanaged(DocItem), allocator: std.mem.Allocator) !void {
     switch (expr.data) {

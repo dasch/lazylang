@@ -50,15 +50,7 @@ const DocSpecResult = struct {
     error_message: ?[]const u8, // Only populated on error
 };
 
-/// Follow through let bindings and where expressions to find the top-level object.
-fn findTopLevelObject(expr: *const evaluator.Expression) ?*const evaluator.ObjectLiteral {
-    return switch (expr.data) {
-        .object => |*obj| obj,
-        .let => |let_expr| findTopLevelObject(let_expr.body),
-        .where_expr => |where_expr| findTopLevelObject(where_expr.expr),
-        else => null,
-    };
-}
+const findTopLevelObject = evaluator.findTopLevelObject;
 
 /// Extract docspecs from a documentation comment
 fn extractDocSpecs(

@@ -945,6 +945,17 @@ pub fn evaluateExpression(
             } else {
                 // Non-recursive case: evaluate value first, then pattern match
                 const value = try evaluateExpression(arena, let_expr.value, env, current_dir, ctx);
+
+                // Propagate doc comment to function values
+                if (let_expr.doc) |doc| {
+                    switch (value) {
+                        .function => |func| {
+                            func.doc = doc;
+                        },
+                        else => {},
+                    }
+                }
+
                 const new_env = try matchPattern(arena, let_expr.pattern, value, env, ctx);
                 break :blk try evaluateExpression(arena, let_expr.body, new_env, current_dir, ctx);
             }
@@ -1884,14 +1895,14 @@ pub fn evaluateExpression(
                                     else => return error.TypeMismatch,
                                 };
                                 const merged = try mergeObjects(arena, existing_obj, value_obj);
-                                try extension_fields.append(arena, .{ .key = key_copy, .value = merged, .is_patch = false });
+                                try extension_fields.append(arena, .{ .key = key_copy, .value = merged, .is_patch = false, .doc = field.doc });
                             } else {
                                 // Field doesn't exist in base, just add it
-                                try extension_fields.append(arena, .{ .key = key_copy, .value = value, .is_patch = field.is_patch });
+                                try extension_fields.append(arena, .{ .key = key_copy, .value = value, .is_patch = field.is_patch, .doc = field.doc });
                             }
                         } else {
                             // Overwrite: just use the new value
-                            try extension_fields.append(arena, .{ .key = key_copy, .value = value, .is_patch = field.is_patch });
+                            try extension_fields.append(arena, .{ .key = key_copy, .value = value, .is_patch = field.is_patch, .doc = field.doc });
                         }
                     }
 
