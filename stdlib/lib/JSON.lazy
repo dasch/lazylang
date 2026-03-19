@@ -1,15 +1,3 @@
-/// JSON parsing and encoding for Lazylang.
-///
-/// Provides `parse` (JSON string → Lazylang value) and `encode` (Lazylang value → JSON string).
-///
-/// **Note:** Since Lazylang is a JSON superset, you can import JSON files directly with `import`.
-/// Use this module when you need to parse JSON data at runtime or handle potentially invalid JSON.
-///
-/// **Supported:** All JSON types (null, boolean, number, string, array, object)
-/// **Encoding:** Tuples as arrays, proper escaping
-/// **Not supported:** Floats (converted to integers), NaN/Infinity
-///
-/// Uses Zig's standard library JSON parser for robust JSON 1.0 compliance.
 {
   /// Parses a JSON string into a Lazylang value.
   ///

@@ -1,5 +1,4 @@
 { describe, it, mustEq } = import "Spec"
-
 double = x -> x * 2
 addOne = x -> x + 1
 square = x -> x * x
@@ -21,15 +20,13 @@ describe "Pipeline Operator" [
     mustEq 121 (5 \ double \ addOne \ square)
 
   it "works with multi-line pipelines" do
-    result = 42
-      \ double
-      \ addOne
+    result = 42 \ double \ addOne
+
     mustEq 85 result
 
   it "works with multi-line lambda pipelines" do
-    result = 10
-      \ (x -> x * 2)
-      \ (x -> x + 5)
+    result = 10 \ (x -> x * 2) \ (x -> x + 5)
+
     mustEq 25 result
 
   it "works with inline lambda in pipeline" do

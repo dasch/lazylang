@@ -84,8 +84,7 @@ Tuple = import "Tuple"
   /// ```
   /// Object.mapValues (x -> x * 2) { a: 1, b: 2 }  //=> { a: 2, b: 4 }
   /// ```
-  mapValues: fn -> obj ->
-    { [k]: fn v for (k, v) in obj }
+  mapValues: fn -> obj -> { [k]: fn v for (k, v) in obj }
 
   /// Returns a new object with only the specified keys from the input object.
   ///
@@ -98,8 +97,8 @@ Tuple = import "Tuple"
   /// Object.slice ["name", "age"] { name: "John", age: 30, city: "NYC" } \
   ///   //=> { name: "John", age: 30 }
   /// ```
-  slice: keys -> obj ->
-    { [k]: v for (k, v) in obj when [key for key in keys when key == k] != [] }
+  slice: keys ->
+    obj -> { [k]: v for (k, v) in obj when [key for key in keys when key == k] != [] }
 
   /// Combines two objects into a new object with tuples as values, pairing values for each key.
   /// If a key exists in only one object, the missing value is replaced with `null`.
@@ -122,9 +121,10 @@ Tuple = import "Tuple"
   /// Object.zip {} { x: 1 } \
   ///   //=> { x: (null, 1) }
   /// ```
-  zip: obj1 -> obj2 ->
-    keys1 = Builtins.object_keys obj1;
-    keys2 = Builtins.object_keys obj2;
-    allKeys = Builtins.array_uniq [k for ks in [keys1, keys2] for k in ks];
-    { [k]: Tuple.mapBoth (Result.orDefault null) (Builtins.object_get (obj1, k), Builtins.object_get (obj2, k)) for k in allKeys }
+  zip: obj1 ->
+    obj2 ->
+      keys1 = Builtins.object_keys obj1
+      keys2 = Builtins.object_keys obj2
+      allKeys = Builtins.array_uniq [k for ks in [keys1, keys2] for k in ks]
+      { [k]: Tuple.mapBoth (Result.orDefault null) (Builtins.object_get (obj1, k), Builtins.object_get (obj2, k)) for k in allKeys }
 }

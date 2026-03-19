@@ -1,5 +1,4 @@
 { describe, it, mustEq } = import "Spec"
-
 describe #Tuple [
   describe #mapBoth [
     it "applies function to both elements of a tuple" do
@@ -8,19 +7,23 @@ describe #Tuple [
 
     it "works with addition" do
       result = Tuple.mapBoth (x -> x + 1) (10, 20)
+
       mustEq (11, 21) result
 
     it "works with string length" do
       result = Tuple.mapBoth (s -> String.length s) ("hello", "world")
+
       mustEq (5, 5) result
 
     it "works with string uppercase" do
       result = Tuple.mapBoth (s -> String.toUpperCase s) ("hello", "world")
+
       mustEq ("HELLO", "WORLD") result
 
     it "works with negative numbers" do
-      result = Tuple.mapBoth (x -> 0 - x) (5, (0 - 3))
-      mustEq ((0 - 5), 3) result
+      result = Tuple.mapBoth (x -> 0 - x) (5, 0 - 3)
+
+      mustEq (0 - 5, 3) result
 
     it "works with identity function" do
       result = Tuple.mapBoth (x -> x) (42, 99)
@@ -31,7 +34,7 @@ describe #Tuple [
       mustEq (0, 0) result
 
     it "works with boolean operations" do
-      result = Tuple.mapBoth (x -> !x) (true, false)
+      result = Tuple.mapBoth (x -> !(x)) (true, false)
       mustEq (false, true) result
 
     it "preserves different types in tuple" do

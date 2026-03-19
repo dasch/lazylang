@@ -1,5 +1,4 @@
 { describe, it, mustEq } = import "Spec"
-
 describe #Basics [
   describe #isInteger [
     it "returns true for integers" do

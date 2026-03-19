@@ -7,8 +7,12 @@ obj1 = { x: 1, y: 2, z: 3, }
 
 
 
+
+
 // arr1 = [foo, bar, baz]
 arr1 = [ foo, bar, baz, ]
+
+
 
 
 
@@ -25,11 +29,15 @@ obj2 = {
 
 
 
+
+
 // arr2 = [one, two, three]
 arr2 = [
   one,
   two,
   three,
 ]
+
+
 
 

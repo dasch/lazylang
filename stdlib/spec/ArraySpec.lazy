@@ -114,7 +114,7 @@ describe #Array [
       mustEq true (Array.all (x -> x > 0) [1, 2, 3])
 
     it "returns `false` when _some_ element fails predicate" do
-      mustEq false (Array.all (x -> x > 0) [1, (0 - 2), 3])
+      mustEq false (Array.all (x -> x > 0) [1, 0 - 2, 3])
 
     it "returns `true` for *empty* array" do
       mustEq true (Array.all (x -> x > 0) [])
@@ -150,11 +150,11 @@ describe #Array [
         { category: "vegetable", name: "carrot" }
       ]
       result = Array.groupBy (x -> x.category) arr
-      mustEq (2, 1) ((Array.length (result.fruit)), (Array.length (result.vegetable)))
+      mustEq (2, 1) (Array.length (result.fruit), Array.length (result.vegetable))
 
     it "handles empty array" do
       result = Array.groupBy (x -> x) []
-      mustEq {} result
+      mustEq {  } result
 
     it "groups integers by comparison" do
       result = Array.groupBy (x -> if x > 3 then "big" else "small") [1, 2, 3, 4, 5, 6]

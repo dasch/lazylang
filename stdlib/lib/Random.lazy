@@ -37,6 +37,7 @@ Tuple = import "Tuple"
   /// ```
   seed: value -> if value == 0 then 1 else value
 
+  // Fold over generators, threading the seed through each one
   /// Generates the next seed value using xorshift32 algorithm.
   ///
   /// **Parameter:**
@@ -51,8 +52,8 @@ Tuple = import "Tuple"
   /// ```
   next: seed ->
     x1 = Bitwise.xor seed (Bitwise.shl seed 13)
-  x2 = Bitwise.xor x1 (Bitwise.shr x1 17)
-  Bitwise.xor x2 (Bitwise.shl x2 5)
+    x2 = Bitwise.xor x1 (Bitwise.shr x1 17)
+    Bitwise.xor x2 (Bitwise.shl x2 5)
 
   /// Generates a random integer and returns both the value and the next seed.
   ///
@@ -69,10 +70,10 @@ Tuple = import "Tuple"
   int: seed ->
     nextFn = s ->
       x1 = Bitwise.xor s (Bitwise.shl s 13)
-  x2 = Bitwise.xor x1 (Bitwise.shr x1 17)
-  Bitwise.xor x2 (Bitwise.shl x2 5)
-  s1 = nextFn seed
-  (s1, nextFn s1)
+      x2 = Bitwise.xor x1 (Bitwise.shr x1 17)
+      Bitwise.xor x2 (Bitwise.shl x2 5)
+    s1 = nextFn seed
+    (s1, nextFn s1)
 
   /// Generates a random integer within the specified range [min, max).
   /// Uses modulo arithmetic to constrain the value to the range.
@@ -89,17 +90,19 @@ Tuple = import "Tuple"
   /// ```
   /// Random.intRange 1 100 42  //=> (57, 9876543)
   /// ```
-  intRange: min -> max -> seed ->
-    nextFn = s ->
-      x1 = Bitwise.xor s (Bitwise.shl s 13)
-  x2 = Bitwise.xor x1 (Bitwise.shr x1 17)
-  Bitwise.xor x2 (Bitwise.shl x2 5)
-  s1 = nextFn seed
-  value = s1
-  nextSeed = nextFn s1
-  range = max - min
-  normalized = if value < 0 then (0 - value) else value
-  (min + Math.mod normalized range, nextSeed)
+  intRange: min ->
+    max ->
+      seed ->
+        nextFn = s ->
+          x1 = Bitwise.xor s (Bitwise.shl s 13)
+          x2 = Bitwise.xor x1 (Bitwise.shr x1 17)
+          Bitwise.xor x2 (Bitwise.shl x2 5)
+        s1 = nextFn seed
+        value = s1
+        nextSeed = nextFn s1
+        range = max - min
+        normalized = if value < 0 then 0 - value else value
+        (min + Math.mod normalized range, nextSeed)
 
   /// Generates a random boolean and returns both the value and the next seed.
   /// Returns true if the next seed value is non-negative.
@@ -117,10 +120,10 @@ Tuple = import "Tuple"
   bool: seed ->
     nextFn = s ->
       x1 = Bitwise.xor s (Bitwise.shl s 13)
-  x2 = Bitwise.xor x1 (Bitwise.shr x1 17)
-  Bitwise.xor x2 (Bitwise.shl x2 5)
-  s1 = nextFn seed
-  (s1 >= 0, nextFn s1)
+      x2 = Bitwise.xor x1 (Bitwise.shr x1 17)
+      Bitwise.xor x2 (Bitwise.shl x2 5)
+    s1 = nextFn seed
+    (s1 >= 0, nextFn s1)
 
   /// Creates a generator that produces tuples by running multiple generators in sequence.
   /// The generated tuple will have the same length as the input tuple of generators.
@@ -143,17 +146,19 @@ Tuple = import "Tuple"
   /// Random.tuple (Random.int, Random.intRange 0 100, Random.bool) 42
   ///   //=> ((1234, 45, true), 890)
   /// ```
-  tuple: generators -> seed ->
-    genArray = Tuple.toArray generators
-
-  // Fold over generators, threading the seed through each one
-  (valuesArray, finalSeed) = Array.fold (state -> gen ->
-      (accValues, accSeed) = state
-      (value, newSeed) = gen accSeed
-      ([...accValues, value], newSeed)
-  ) ([], seed) genArray
-
-  (Tuple.fromArray valuesArray, finalSeed)
+  tuple: generators ->
+    seed ->
+      genArray = Tuple.toArray generators
+      (valuesArray, finalSeed) =
+        Array.fold (state ->
+          gen ->
+            (accValues, accSeed) = state
+            (value, newSeed) = gen accSeed
+            ([
+              ...accValues
+              value
+            ], newSeed)) ([], seed) genArray
+      (Tuple.fromArray valuesArray, finalSeed)
 
   /// Generates a list of N random values using a given generator.
   ///
@@ -170,12 +175,19 @@ Tuple = import "Tuple"
   /// Random.list 3 Random.int 42
   ///   //=> ([1234, 5678, 9012], 3456)
   /// ```
-  list: n -> gen -> seed ->
-    helper = remaining -> acc -> s ->
-      if remaining <= 0 then
-        (acc, s)
-      else
-        (value, nextSeed) = gen s
-        helper (remaining - 1) [...acc, value] nextSeed
-    helper n [] seed
+  list: n ->
+    gen ->
+      seed ->
+        helper = remaining ->
+          acc ->
+            s ->
+              if remaining <= 0 then
+                (acc, s)
+              else
+                (value, nextSeed) = gen s
+                helper (remaining - 1) [
+                  ...acc
+                  value
+                ] nextSeed
+        helper n [] seed
 }

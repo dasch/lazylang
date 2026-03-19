@@ -40,7 +40,7 @@ describe "Assertion Functions" [
   ]
 
   describe #forallWith [
-    forallWith { trials: 10, seed: 123 } (Random.intRange 0 50) "generates values in range" do n ->
-      must (n >= 0 && n <= 50)
+    forallWith { trials: 10, seed: 123 } (Random.intRange 0 50) "generates values in range" do
+      n -> must (n >= 0 && n <= 50)
   ]
 ]

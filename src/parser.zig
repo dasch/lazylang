@@ -499,7 +499,7 @@ pub const Parser = struct {
                         const argument = try self.parseLambda();
                         const node = try self.allocateExpression();
                         node.* = .{
-                            .data = .{ .application = .{ .function = expr, .argument = argument } },
+                            .data = .{ .application = .{ .function = expr, .argument = argument, .is_do = true } },
                             .location = expr.location, // Use function's location
                         };
                         expr = node;

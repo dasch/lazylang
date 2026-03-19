@@ -8,12 +8,16 @@ foo = x ->
     #err then 2;
 
 
+
+
 // x = 42
 // result = when x matches
 //   42 then y = 3
 //   x * y
 //   13 then z = 4
+//
 //   x + z
+//
 // { foo: foo #ok, result: result }
 x = 42
 result = when x matches
@@ -27,4 +31,6 @@ result = when x matches
     x + z
 
 { foo: foo #ok, result }
+
+
 

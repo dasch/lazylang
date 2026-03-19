@@ -34,8 +34,10 @@ const Writer = struct {
     at_line_start: bool,
     comments: []const Comment,
     next_comment: usize,
+    last_source_line: usize,
+    source: []const u8,
 
-    fn init(allocator: std.mem.Allocator, comments: []const Comment) Writer {
+    fn init(allocator: std.mem.Allocator, comments: []const Comment, source: []const u8) Writer {
         return .{
             .buf = std.ArrayList(u8){},
             .allocator = allocator,
@@ -43,7 +45,20 @@ const Writer = struct {
             .at_line_start = true,
             .comments = comments,
             .next_comment = 0,
+            .last_source_line = 0,
+            .source = source,
         };
+    }
+
+    /// Emit a blank line if the source had one before this line
+    fn preserveBlankLine(self: *Writer, source_line: usize) !void {
+        if (source_line > self.last_source_line + 1 and self.last_source_line > 0) {
+            // Source had a gap — check if there was a blank line
+            if (hasBlankLineBetween(self.source, self.last_source_line, source_line)) {
+                try self.blankLine();
+            }
+        }
+        self.last_source_line = source_line;
     }
 
     fn currentColumn(self: *const Writer) usize {
@@ -125,6 +140,19 @@ const Writer = struct {
     }
 };
 
+fn hasBlankLineBetween(source: []const u8, from_line: usize, to_line: usize) bool {
+    var current_line: usize = 1;
+    var lines = std.mem.splitScalar(u8, source, '\n');
+    while (lines.next()) |line| {
+        if (current_line > from_line and current_line < to_line) {
+            const trimmed = std.mem.trimLeft(u8, line, " \t");
+            if (trimmed.len == 0) return true;
+        }
+        current_line += 1;
+    }
+    return false;
+}
+
 fn endsWith2Newlines(s: []const u8) bool {
     return s.len >= 2 and s[s.len - 1] == '\n' and s[s.len - 2] == '\n';
 }
@@ -187,6 +215,7 @@ fn measureExpr(expr: *const ast.Expression) ?usize {
             return 1 + ow;
         },
         .application => |app| {
+            if (app.is_do) return null; // do blocks are inherently multi-line
             const fw = measureExpr(app.function) orelse return null;
             const aw = measureExpr(app.argument) orelse return null;
             const needs_parens = switch (app.argument.data) {
@@ -454,7 +483,7 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
 
     const comments = try extractComments(arena.allocator(), source);
 
-    var w = Writer.init(arena.allocator(), comments);
+    var w = Writer.init(arena.allocator(), comments, source);
 
     try formatExpr(&w, expression, false);
     try w.emitRemainingComments();
@@ -481,7 +510,18 @@ pub fn formatFile(allocator: std.mem.Allocator, path: []const u8) FormatterError
 // ============================================================================
 
 fn formatExpr(w: *Writer, expr: *const ast.Expression, parens_needed: bool) FormatterError!void {
-    try w.emitCommentsBefore(expr.location.line);
+    // Track source line for blank line preservation
+    if (expr.location.line > 0) {
+        w.last_source_line = expr.location.line;
+    }
+
+    // Wrap in parens if needed (except binary which handles its own parens)
+    if (parens_needed and expr.data != .binary) {
+        try w.writeByte('(');
+    }
+    defer if (parens_needed and expr.data != .binary) {
+        w.writeByte(')') catch {};
+    };
 
     switch (expr.data) {
         .integer => |v| {
@@ -495,7 +535,9 @@ fn formatExpr(w: *Writer, expr: *const ast.Expression, parens_needed: bool) Form
                 if (end == dot + 1) end = dot + 2;
                 try w.write(s[0..end]);
             } else {
+                // Always include .0 for floats (4.0 not 4)
                 try w.write(s);
+                try w.write(".0");
             }
         },
         .boolean => |v| try w.write(if (v) "true" else "false"),
@@ -730,8 +772,13 @@ fn formatLet(w: *Writer, let_expr: ast.Let) FormatterError!void {
     if (let_expr.doc) |doc| {
         var doc_lines = std.mem.splitScalar(u8, doc, '\n');
         while (doc_lines.next()) |doc_line| {
-            try w.write("/// ");
-            try w.write(std.mem.trimRight(u8, doc_line, " \t"));
+            const trimmed_doc = std.mem.trimRight(u8, doc_line, " \t");
+            if (trimmed_doc.len == 0) {
+                try w.write("///");
+            } else {
+                try w.write("/// ");
+                try w.write(trimmed_doc);
+            }
             try w.newline();
         }
     }
@@ -769,7 +816,9 @@ fn formatLet(w: *Writer, let_expr: ast.Let) FormatterError!void {
 
     // Body — skip if body is same as value (EOF let binding)
     if (let_expr.body != let_expr.value) {
+        try w.preserveBlankLine(let_expr.body.location.line);
         try w.newline();
+        try w.emitCommentsBefore(let_expr.body.location.line);
         try formatExpr(w, let_expr.body, false);
     }
 }
@@ -846,9 +895,27 @@ fn measureIfWidth(if_e: ast.If) ?usize {
 
 fn formatApplication(w: *Writer, app: ast.Application) FormatterError!void {
     try formatExpr(w, app.function, false);
+
+    if (app.is_do) {
+        // `do` syntax: function do\n  body
+        try w.write(" do");
+        w.indent += 1;
+        try w.newline();
+        try formatExpr(w, app.argument, false);
+        w.indent -= 1;
+        return;
+    }
+
     try w.writeByte(' ');
+    // In a curried application chain (f a b), some argument types need parens:
+    // - f a Module.field  → (f a Module).field without parens
+    // - f a { x: 1 }     → object extension of (f a) without parens
+    // - f a [1, 2]        → array indexing of (f a) without parens
+    const in_chain = app.function.data == .application;
     const needs_parens = switch (app.argument.data) {
-        .application, .binary, .lambda, .let, .if_expr, .when_matches, .where_expr, .assert_expr, .unary => true,
+        .application, .binary, .lambda, .let, .if_expr, .when_matches, .where_expr, .assert_expr, .unary, .object_extend, .range => true,
+        .field_access => true, // f Module.field parses as (f Module).field without parens
+        .object => in_chain, // f a { x: 1 } is object extension without parens
         else => false,
     };
     if (needs_parens) {
@@ -881,13 +948,31 @@ fn formatArray(w: *Writer, arr: ast.ArrayLiteral) FormatterError!void {
     // Multi-line
     try w.writeByte('[');
     w.indent += 1;
-    for (arr.elements) |elem| {
+    for (arr.elements, 0..) |elem, i| {
+        // Add blank line between multi-line array elements (like describe/it blocks)
+        if (i > 0 and isMultiLineElement(elem)) {
+            try w.newline();
+        }
         try w.newline();
+        const elem_line = switch (elem) {
+            .normal => |e| e.location.line,
+            .spread => |e| e.location.line,
+            .conditional_if => |ce| ce.expr.location.line,
+            .conditional_unless => |ce| ce.expr.location.line,
+        };
+        try w.emitCommentsBefore(elem_line);
         try formatArrayElement(w, elem);
     }
     w.indent -= 1;
     try w.newline();
     try w.writeByte(']');
+}
+
+fn isMultiLineElement(elem: ast.ArrayElement) bool {
+    return switch (elem) {
+        .normal => |e| measureExpr(e) == null,
+        else => false,
+    };
 }
 
 fn formatArrayElement(w: *Writer, elem: ast.ArrayElement) FormatterError!void {
@@ -914,8 +999,13 @@ fn formatObject(w: *Writer, obj: ast.ObjectLiteral) FormatterError!void {
     if (obj.module_doc) |doc| {
         var doc_lines = std.mem.splitScalar(u8, doc, '\n');
         while (doc_lines.next()) |doc_line| {
-            try w.write("/// ");
-            try w.write(std.mem.trimRight(u8, doc_line, " \t"));
+            const trimmed_doc = std.mem.trimRight(u8, doc_line, " \t");
+            if (trimmed_doc.len == 0) {
+                try w.write("///");
+            } else {
+                try w.write("/// ");
+                try w.write(trimmed_doc);
+            }
             try w.newline();
         }
     }
@@ -942,6 +1032,12 @@ fn formatObject(w: *Writer, obj: ast.ObjectLiteral) FormatterError!void {
     for (obj.fields, 0..) |field, i| {
         if (i > 0 and field.doc != null) try w.newline();
         try w.newline();
+        // Emit any regular comments before this field
+        const field_line = switch (field.key) {
+            .static => field.key_location.?.line,
+            .dynamic => |ke| ke.location.line,
+        };
+        try w.emitCommentsBefore(field_line);
         try formatObjectField(w, field);
     }
     w.indent -= 1;
@@ -953,8 +1049,13 @@ fn formatObjectField(w: *Writer, field: ast.ObjectField) FormatterError!void {
     if (field.doc) |doc| {
         var doc_lines = std.mem.splitScalar(u8, doc, '\n');
         while (doc_lines.next()) |doc_line| {
-            try w.write("/// ");
-            try w.write(std.mem.trimRight(u8, doc_line, " \t"));
+            const trimmed_doc = std.mem.trimRight(u8, doc_line, " \t");
+            if (trimmed_doc.len == 0) {
+                try w.write("///");
+            } else {
+                try w.write("/// ");
+                try w.write(trimmed_doc);
+            }
             try w.newline();
         }
     }
@@ -1101,6 +1202,8 @@ fn binaryOpStr(op: ast.BinaryOp) []const u8 {
 fn needsParens(expr: *const ast.Expression, parent_op: ast.BinaryOp) bool {
     return switch (expr.data) {
         .binary => |inner| opPrecedence(inner.op) < opPrecedence(parent_op),
+        // Lambdas in pipeline need parens: `x \ (a -> a + 1)` not `x \ a -> a + 1`
+        .lambda => parent_op == .pipeline,
         else => false,
     };
 }

@@ -1,34 +1,3 @@
-/// Provides utilities for working with tuples in Lazylang.
-///
-/// Tuples are fixed-size, ordered collections of values that can contain different types.
-/// They are created using parentheses: `(a, b)` or `(a, b, c)`.
-///
-/// ## Working with Tuples
-///
-/// - [length]: Returns the number of elements in a tuple
-/// - [toArray]: Converts a tuple to an array
-/// - [fromArray]: Converts an array to a tuple
-/// - [first]: Returns the first element of a tuple
-/// - [second]: Returns the second element of a tuple
-/// - [mapBoth]: Applies a function to both elements of a 2-tuple
-///
-/// ## Examples
-///
-/// ```
-/// // Get tuple length
-/// Tuple.length (1, 2, 3)  //=> 3
-///
-/// // Convert between tuple and array
-/// Tuple.toArray (1, 2, 3)  //=> [1, 2, 3]
-/// Tuple.fromArray [1, 2, 3]  //=> (1, 2, 3)
-///
-/// // Access elements
-/// Tuple.first (1, 2)  //=> 1
-/// Tuple.second (1, 2)  //=> 2
-///
-/// // Map both elements
-/// Tuple.mapBoth (x -> x * 2) (3, 4)  //=> (6, 8)
-/// ```
 {
   /// Returns the number of elements in a tuple.
   ///

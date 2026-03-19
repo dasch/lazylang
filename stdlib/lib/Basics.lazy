@@ -1,21 +1,3 @@
-/// Provides fundamental utilities and type predicates for Lazylang.
-///
-/// This module includes functions for:
-/// - **Type Checking**: [isInteger], [isFloat], [isBoolean], [isNull],
-///   [isString], [isArray], [isTuple], [isObject], [isFunction]
-/// - **Error Handling**: [crash]
-///
-/// The functions in this module are typically available without qualification
-/// in Lazylang programs (e.g., you can use `isString` instead of `Basics.isString`).
-///
-/// ## Examples
-///
-/// ```
-/// // Type checking
-/// isString "hello"  //=> true
-/// isInteger "hello"  //=> false
-/// isArray [1, 2, 3]  //=> true
-/// ```
 {
   /// Checks if a value is an integer.
   ///

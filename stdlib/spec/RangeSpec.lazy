@@ -20,6 +20,7 @@ describe #Range [
   describe #exclusive [
     it "creates an exclusive range" do
       range = Range.exclusive 1 5
+
       mustEq [1, 2, 3, 4] (Range.toArray range)
 
     it "works with syntactic sugar" do
@@ -40,18 +41,21 @@ describe #Range [
       mustEq [0, 1, 2, 3] (Range.toArray (0...4))
 
     it "handles negative numbers" do
-      mustEq [(0 - 2), (0 - 1), 0, 1, 2] (Range.toArray ((0 - 2)..2))
+      mustEq [0 - 2, 0 - 1, 0, 1, 2] (Range.toArray (0 - 2..2))
 
     it "handles large ranges - length" do
       arr = Range.toArray (1..100)
+
       mustEq 100 (Array.length arr)
 
     it "handles large ranges - first element" do
       arr = Range.toArray (1..100)
+
       mustEq (#ok, 1) (Array.get 0 arr)
 
     it "handles large ranges - last element" do
       arr = Range.toArray (1..100)
+
       mustEq (#ok, 100) (Array.get 99 arr)
   ]
 
@@ -105,13 +109,13 @@ describe #Range [
       mustEq false (Range.covers (1...5) 6)
 
     it "works with negative numbers - zero" do
-      mustEq true (Range.covers ((0 - 5)..5) 0)
+      mustEq true (Range.covers (0 - 5..5) 0)
 
     it "works with negative numbers - negative value" do
-      mustEq true (Range.covers ((0 - 5)..5) (0 - 3))
+      mustEq true (Range.covers (0 - 5..5) (0 - 3))
 
     it "works with negative numbers - out of range" do
-      mustEq false (Range.covers ((0 - 5)..5) (0 - 6))
+      mustEq false (Range.covers (0 - 5..5) (0 - 6))
   ]
 
   describe #zip [
@@ -144,8 +148,8 @@ describe #Range [
       mustEq [] result
 
     it "works with negative numbers" do
-      result = Range.zip ((0 - 2)..0) (5..7)
-      mustEq [((0 - 2), 5), ((0 - 1), 6), (0, 7)] result
+      result = Range.zip (0 - 2..0) (5..7)
+      mustEq [(0 - 2, 5), (0 - 1, 6), (0, 7)] result
 
     it "works with single-element ranges" do
       result = Range.zip (5..5) (10..10)

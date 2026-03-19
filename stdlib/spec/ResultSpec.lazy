@@ -1,5 +1,4 @@
 { describe, it, mustEq } = import "Spec"
-
 describe #Result [
   describe #ok [
     it "creates a success result with an integer" do
@@ -8,28 +7,34 @@ describe #Result [
 
     it "creates a success result with a string" do
       result = Result.ok "hello"
+
       mustEq (#ok, "hello") result
 
     it "creates a success result with null" do
       result = Result.ok null
+
       mustEq (#ok, null) result
 
     it "creates a success result with an array" do
       result = Result.ok [1, 2, 3]
+
       mustEq (#ok, [1, 2, 3]) result
   ]
 
   describe #error [
     it "creates an error result with a string" do
       result = Result.error "not found"
+
       mustEq (#error, "not found") result
 
     it "creates an error result with an integer" do
       result = Result.error 404
+
       mustEq (#error, 404) result
 
     it "creates an error result with null" do
       result = Result.error null
+
       mustEq (#error, null) result
   ]
 

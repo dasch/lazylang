@@ -177,6 +177,7 @@ pub const Binary = struct {
 pub const Application = struct {
     function: *Expression,
     argument: *Expression,
+    is_do: bool = false, // true if this application used `do` syntax
 };
 
 pub const If = struct {

@@ -1,7 +1,10 @@
 // foo = x -> if x > 0 then "positive" else "non-positive"
+//
 // x = 5
 // result1 = if x > 0 then 1 else 2
+//
 // foo2 = if x > 0 then 1 else 2
+//
 // {
 //   foo: foo
 //   result1: result1
@@ -27,4 +30,7 @@ foo2 =
     2;
 
 { foo, result1, foo2 }
+
+
+
 

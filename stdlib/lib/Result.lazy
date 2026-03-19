@@ -1,32 +1,3 @@
-/// Provides utilities for working with result values in Lazylang.
-///
-/// Results are tuples that represent either success `(#ok, value)` or failure `(#error, error)`.
-/// This module provides helper functions for constructing and working with result values.
-///
-/// ## Constructing Results
-///
-/// - `Result.ok value`: Creates a success result `(#ok, value)`
-/// - `Result.error error`: Creates an error result `(#error, error)`
-///
-/// ## Working with Results
-///
-/// - `Result.orDefault default result`: Returns the value if result is ok, otherwise returns default
-///
-/// ## Examples
-///
-/// ```
-/// // Create results
-/// Result.ok 42             //=> (#ok, 42)
-/// Result.error "not found" //=> (#error, "not found")
-///
-/// // Extract values with defaults
-/// Result.orDefault 0 (Result.ok 42)          //=> 42
-/// Result.orDefault 0 (Result.error "failed") //=> 0
-///
-/// // Useful with Array.get
-/// Result.orDefault 0 (Array.get 1 [10, 20, 30])  //=> 20
-/// Result.orDefault 0 (Array.get 99 [10, 20, 30]) //=> 0
-/// ```
 {
   /// Creates a success result.
   ///
@@ -80,10 +51,11 @@
   /// Array.get 99 [10, 20, 30]
   ///   \ Result.orDefault 0  //=> 0
   /// ```
-  orDefault: default -> result ->
-    when result matches
-      (#ok, value) then value
-      otherwise default
+  orDefault: default ->
+    result ->
+      when result matches
+        (#ok, value) then value
+        otherwise default
 
   /// Applies a function to the error value if the result is an error, otherwise returns the original result.
   ///
@@ -99,10 +71,11 @@
   /// Result.orElse (err -> Result.error (String.append err "!!!")) (#error, "not found")
   /// //=> (#error, "not found!!!")
   /// ```
-  orElse: f -> result ->
-    when result matches
-      (#error, error) then f error
-      otherwise result
+  orElse: f ->
+    result ->
+      when result matches
+        (#error, error) then f error
+        otherwise result
 
   /// Applies a function to the value inside a success result.
   /// If the result is an error, returns it unchanged.
@@ -116,8 +89,9 @@
   /// Result.map (x -> x * 2) (#ok, 21)      //=> (#ok, 42)
   /// Result.map (x -> x * 2) (#error, "bad") //=> (#error, "bad")
   /// ```
-  map: f -> result ->
-    when result matches
-      (#ok, value) then (#ok, f value)
-      otherwise result
+  map: f ->
+    result ->
+      when result matches
+        (#ok, value) then (#ok, f value)
+        otherwise result
 }
