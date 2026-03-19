@@ -138,6 +138,16 @@ const Writer = struct {
         }
     }
 
+    /// Check if any inline comment exists on the given source lines
+    fn hasInlineCommentOnLines(self: *const Writer, start_line: usize, end_line: usize) bool {
+        for (self.comments) |comment| {
+            if (comment.is_inline and comment.line >= start_line and comment.line <= end_line) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     fn emitRemainingComments(self: *Writer) !void {
         while (self.next_comment < self.comments.len) {
             const comment = self.comments[self.next_comment];
@@ -1074,7 +1084,15 @@ fn formatObject(w: *Writer, obj: ast.ObjectLiteral) FormatterError!void {
     const single_line_width = measureObject(obj);
     const col = w.currentColumn();
     if (single_line_width) |width| {
-        if (col + width <= MAX_LINE_WIDTH) {
+        // Check if any field has an inline comment - if so, force multi-line to preserve it
+        const has_inline = blk: {
+            for (obj.fields) |field| {
+                const field_line = if (field.key_location) |kl| kl.line else field.value.location.line;
+                if (w.hasInlineCommentOnLines(field_line, field.value.location.line)) break :blk true;
+            }
+            break :blk false;
+        };
+        if (!has_inline and col + width <= MAX_LINE_WIDTH) {
             try w.write("{ ");
             for (obj.fields, 0..) |field, i| {
                 if (i > 0) try w.write(", ");

@@ -63,3 +63,20 @@ test "string formatting" {
         "name = \"Alice\"\n"
     );
 }
+
+test "object with inline comment stays multi-line" {
+    const allocator = testing.allocator;
+    // An object with an inline comment on a field should not collapse to single-line
+    try testFormat(allocator,
+        "{\n  x: 1 // comment\n}",
+        "{\n  x: 1 // comment\n}\n"
+    );
+}
+
+test "object with inline comment on one of two fields stays multi-line" {
+    const allocator = testing.allocator;
+    try testFormat(allocator,
+        "{\n  x: 1 // comment\n  y: 2\n}",
+        "{\n  x: 1 // comment\n  y: 2\n}\n"
+    );
+}
