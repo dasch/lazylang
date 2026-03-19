@@ -665,14 +665,19 @@ fn mergeObjects(arena: std.mem.Allocator, base: ObjectValue, extension: ObjectVa
     const module_doc = extension.module_doc orelse base.module_doc;
     const fields = try result_fields.toOwnedSlice(arena);
 
-    // Late-binding self: create a new self_value cell for the merged object
-    // and update all thunks to point to it, so self references see the
-    // final (extended) object, not the original base.
+    // Late-binding self: clone thunks and point them to a new self_value cell
+    // for the merged object. Cloning is necessary so the base object's thunks
+    // are not mutated (pure functional semantics).
     const self_cell = try arena.create(Value);
     self_cell.* = .null_value; // placeholder
     for (fields) |*field| {
         if (field.value == .thunk) {
-            field.value.thunk.self_value = self_cell;
+            const old_thunk = field.value.thunk;
+            const new_thunk = try arena.create(Thunk);
+            new_thunk.* = old_thunk.*;
+            new_thunk.self_value = self_cell;
+            new_thunk.state = .unevaluated; // reset so it re-evaluates with new self
+            field.value = .{ .thunk = new_thunk };
         }
     }
     const result = Value{ .object = .{ .fields = fields, .module_doc = module_doc } };
