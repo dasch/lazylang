@@ -146,3 +146,53 @@ test "string concatenation empty strings" {
         \\"" + "hello" + ""
     , "\"hello\"");
 }
+
+// Escape sequences
+
+test "escape sequence: newline" {
+    try expectEvaluates(
+        \\"hello\nworld"
+    , "\"hello\nworld\"");
+}
+
+test "escape sequence: tab" {
+    try expectEvaluates(
+        \\"hello\tworld"
+    , "\"hello\tworld\"");
+}
+
+test "escape sequence: carriage return" {
+    try expectEvaluates(
+        \\"hello\rworld"
+    , "\"hello\rworld\"");
+}
+
+test "escape sequence: escaped backslash" {
+    try expectEvaluates(
+        \\"hello\\world"
+    , "\"hello\\world\"");
+}
+
+test "escape sequence: escaped double quote" {
+    try expectEvaluates(
+        \\"hello\"world"
+    , "\"hello\"world\"");
+}
+
+test "escape sequence: multiple escapes" {
+    try expectEvaluates(
+        \\"line1\nline2\nline3"
+    , "\"line1\nline2\nline3\"");
+}
+
+test "escape sequence: mixed escapes" {
+    try expectEvaluates(
+        \\"col1\tcol2\ncol3\tcol4"
+    , "\"col1\tcol2\ncol3\tcol4\"");
+}
+
+test "no escape sequences in single-quoted strings" {
+    try expectEvaluates(
+        \\'hello\nworld'
+    , "\"hello\\nworld\"");
+}

@@ -331,25 +331,86 @@ pub const Tokenizer = struct {
     fn consumeString(self: *Tokenizer, quote_char: u8) TokenizerError!ast.Token {
         const start_line = self.line;
         const start_column = self.column;
+        const process_escapes = quote_char == '"';
         self.advance(); // skip opening quote
         const start_content = self.index;
-        while (self.index < self.source.len) {
-            if (self.source[self.index] == quote_char) {
-                const token = ast.Token{
-                    .kind = .string,
-                    .lexeme = self.source[start_content..self.index],
-                    .preceded_by_newline = self.last_whitespace_had_newline,
-                    .preceded_by_whitespace = self.last_had_whitespace,
-                    .line = start_line,
-                    .column = start_column,
-                    .offset = start_content - 1, // include the opening quote
-                    .doc_comments = null,
-                };
-                self.advance(); // skip closing quote
-                return token;
+
+        // First pass: check if any escapes exist (only for double-quoted strings)
+        var has_escapes = false;
+        if (process_escapes) {
+            var scan = self.index;
+            while (scan < self.source.len and self.source[scan] != quote_char) {
+                if (self.source[scan] == '\\') {
+                    has_escapes = true;
+                    break;
+                }
+                scan += 1;
             }
-            self.advance();
         }
+
+        if (!has_escapes) {
+            // No escapes: return a slice of the source (original behavior)
+            while (self.index < self.source.len) {
+                if (self.source[self.index] == quote_char) {
+                    const token = ast.Token{
+                        .kind = .string,
+                        .lexeme = self.source[start_content..self.index],
+                        .preceded_by_newline = self.last_whitespace_had_newline,
+                        .preceded_by_whitespace = self.last_had_whitespace,
+                        .line = start_line,
+                        .column = start_column,
+                        .offset = start_content - 1, // include the opening quote
+                        .doc_comments = null,
+                    };
+                    self.advance(); // skip closing quote
+                    return token;
+                }
+                self.advance();
+            }
+        } else {
+            // Has escapes: build a new string with processed escape sequences
+            var result = std.ArrayList(u8){};
+            while (self.index < self.source.len) {
+                if (self.source[self.index] == quote_char) {
+                    const content = result.toOwnedSlice(self.arena) catch return error.OutOfMemory;
+                    const token = ast.Token{
+                        .kind = .string,
+                        .lexeme = content,
+                        .preceded_by_newline = self.last_whitespace_had_newline,
+                        .preceded_by_whitespace = self.last_had_whitespace,
+                        .line = start_line,
+                        .column = start_column,
+                        .offset = start_content - 1, // include the opening quote
+                        .doc_comments = null,
+                    };
+                    self.advance(); // skip closing quote
+                    return token;
+                }
+                if (self.source[self.index] == '\\' and self.index + 1 < self.source.len) {
+                    self.advance(); // skip backslash
+                    const escaped = switch (self.source[self.index]) {
+                        'n' => @as(u8, '\n'),
+                        't' => @as(u8, '\t'),
+                        'r' => @as(u8, '\r'),
+                        '\\' => @as(u8, '\\'),
+                        '"' => @as(u8, '"'),
+                        else => {
+                            // Unknown escape: keep backslash and character as-is
+                            result.append(self.arena, '\\') catch return error.OutOfMemory;
+                            result.append(self.arena, self.source[self.index]) catch return error.OutOfMemory;
+                            self.advance();
+                            continue;
+                        },
+                    };
+                    result.append(self.arena, escaped) catch return error.OutOfMemory;
+                    self.advance();
+                    continue;
+                }
+                result.append(self.arena, self.source[self.index]) catch return error.OutOfMemory;
+                self.advance();
+            }
+        }
+
         // Record error location for unterminated string
         if (self.error_ctx) |ctx| {
             ctx.setErrorLocation(start_line, start_column, start_content - 1, 1);
