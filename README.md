@@ -201,11 +201,38 @@ Object fields can reference other fields in the same object using `self`:
 config = {
   host: "localhost"
   port: 8080
-  url: "http://" + self.host
+  url: "http://" + self.host + ":" + toString self.port
 }
 ```
 
-This is useful for derived fields that depend on other fields in the same object.
+`self` is late-binding: when an object is extended, `self` in the base object's fields refers to the **extended** object, not the original:
+
+```
+base = {
+  host: "localhost"
+  url: "http://" + self.host
+}
+
+prod = base { host: "prod.example.com" }
+prod.url  // "http://prod.example.com"
+base.url  // "http://localhost" (base is not mutated)
+```
+
+### Hidden fields
+
+Fields defined with `::` instead of `:` are excluded from output but remain accessible via field access. This is useful for intermediate computed values:
+
+```
+config = {
+  _base_port:: 8000
+  http_port: self._base_port
+  grpc_port: self._base_port + 1
+}
+// Output: { http_port: 8000, grpc_port: 8001 }
+// config._base_port is still accessible: 8000
+```
+
+Hidden fields are preserved through object extension:
 
 ### Conditional object fields
 
@@ -229,7 +256,7 @@ When the condition is false (for `if`) or true (for `unless`), the field is **om
   [null]: 42
 
   // This is useful for conditional fields, since `if ... then ...` expressions can return null.
-  [if foo then 'bar']: 42
+  [if foo then "bar"]: 42
 
   // This results in `{ bim: 42, boo: 42 }`.
   ["bim", "boo", null]: 42
@@ -308,7 +335,7 @@ This syntax only works inside array literals and provides a clean way to build a
 
 ```
 [
-  doSomething(thing, otherThing)
+  doSomething thing otherThing
   for thing in things
   for otherThing in otherThings
   when thing.isActive
@@ -387,7 +414,7 @@ Destructuring can be used in variable assignments:
 The argument of a function definition can also be destructured:
 
 ```
-fullname = { first, last } -> first + ' ' + last
+fullname = { first, last } -> first + " " + last
 ```
 
 Pattern matching can be used in `when` expressions:
@@ -427,7 +454,7 @@ bill + tip where
   bill = ...
   tip = bill * 0.2
 
-center = (width, heiht) -> (x, y) where
+center = (width, height) -> (x, y) where
   x = (screenWidth - width) / 2
   y = (screenHeight - height) / 2
 ```
@@ -439,8 +466,6 @@ center = (width, heiht) -> (x, y) where
     y = ...
     x y
 ```
-
-There is also special syntax for function arguments:
 
 ## Tags
 
@@ -599,18 +624,19 @@ These documentation comments can be extracted using the `lazy docs` command to g
 ## Testing
 
 ```
-{ describe, it, mustEq } = import Spec
+{ describe, it, mustEq } = import "Spec"
 
-describe "List" [
+describe "Array" [
   describe "concat" [
-    it "concatenates two lists" (mustEq [1, 2, 3, 4] result) where
-      result = List.concat [1, 2] [3, 4]
+    it "concatenates arrays" do
+      result = Array.concat [[1, 2], [3, 4]]
+      mustEq [1, 2, 3, 4] result
   ]
 
   describe "sort" [
-    it "sorts the items in the list" do
+    it "sorts the items in the array" do
       items = [3, 1, 2]
-      mustEq [1, 2, 3] (List.sort items)
+      mustEq [1, 2, 3] (Array.sort items)
   ]
 ]
 ```
@@ -641,7 +667,7 @@ The object has two fields:
 * `env`: an object containing the environment variables
 
 ```
-// Execute with `lazy run hello.lazy
+// Execute with: lazy run hello.lazy
 
 { args, env } ->
   if env.HELLO == 'world' then
