@@ -382,6 +382,69 @@ pub const Parser = struct {
         return self.current.kind == .equals;
     }
 
+    /// Parse a lambda body in pipeline context.
+    /// Supports let-bindings, where clauses, and nested lambdas,
+    /// but stops at the pipeline operator (\) at the top level.
+    fn parsePipelineLambdaBody(self: *Parser) ParseError!*Expression {
+        // Check for let-binding
+        const is_let_binding = switch (self.current.kind) {
+            .identifier => self.lookahead.kind == .equals,
+            .l_paren, .l_bracket, .l_brace => self.isPatternBinding(),
+            else => false,
+        };
+
+        if (is_let_binding) {
+            const start_token = self.current;
+            const doc = self.current.doc_comments;
+            const pattern = try self.parsePattern();
+            try self.expectToken(.equals, "in let binding");
+            const value = try self.parsePipelineLambdaBody();
+
+            if (self.current.kind == .semicolon) {
+                try self.advance();
+            } else if (!self.current.preceded_by_newline and self.current.kind != .eof) {
+                self.recordError();
+                return error.UnexpectedToken;
+            }
+
+            if (self.current.kind == .eof or self.current.kind == .r_paren or self.current.kind == .backslash) {
+                return try self.makeExpression(.{ .let = .{ .pattern = pattern, .value = value, .body = value, .doc = doc } }, start_token);
+            }
+
+            const value_line = value.location.line;
+            const body_start_line = self.current.line;
+            const has_blank = body_start_line > value_line + 1;
+            const body = try self.parsePipelineLambdaBody();
+            return try self.makeExpression(.{ .let = .{ .pattern = pattern, .value = value, .body = body, .doc = doc, .blank_line_before_body = has_blank } }, start_token);
+        }
+
+        // Parse binary expression stopping at pipeline operator
+        const expr = try self.parseBinary(3);
+
+        // Check for where clause
+        if (self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "where")) {
+            const where_token = self.current;
+            try self.advance();
+
+            var bindings = std.ArrayListUnmanaged(ast.WhereBinding){};
+            while (true) {
+                if (self.current.kind == .eof or self.current.kind == .r_paren or self.current.kind == .backslash) break;
+                const bind_doc = self.current.doc_comments;
+                const bind_pattern = try self.parsePattern();
+                try self.expectToken(.equals, "in where binding");
+                const bind_value = try self.parseBinary(3);
+                try bindings.append(self.arena, .{ .pattern = bind_pattern, .value = bind_value, .doc = bind_doc });
+                if (self.current.kind == .semicolon) {
+                    try self.advance();
+                } else if (!self.current.preceded_by_newline) break;
+            }
+
+            return try self.makeExpression(.{ .where_expr = .{ .expr = expr, .bindings = try bindings.toOwnedSlice(self.arena) } }, where_token);
+        }
+
+        return expr;
+    }
+
     fn parseBinary(self: *Parser, min_precedence: u32) ParseError!*Expression {
         var left = try self.parseUnary();
 
@@ -405,9 +468,8 @@ pub const Parser = struct {
                     const lambda_start = self.current;
                     const param = try self.parsePattern();
                     try self.expect(.arrow);
-                    // Parse body at precedence above pipeline so \ terminates it.
-                    // Pipeline is precedence 2, so we use 3.
-                    const body = try self.parseBinary(3);
+                    // Parse body supporting let-bindings and where, but stop at \
+                    const body = try self.parsePipelineLambdaBody();
                     const lambda_node = try self.allocateExpression();
                     lambda_node.* = .{
                         .data = .{ .lambda = .{ .param = param, .body = body } },
