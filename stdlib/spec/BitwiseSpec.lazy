@@ -1,0 +1,29 @@
+{ describe, it, mustEq } = import "Spec"
+Bitwise = import "Bitwise"
+
+describe #Bitwise [
+  describe #xor [
+    it "XORs two integers" do
+      mustEq 6 (Bitwise.xor 5 3)
+  ]
+
+  describe #and [
+    it "ANDs two integers" do
+      mustEq 1 (Bitwise.and 5 3)
+  ]
+
+  describe #shl [
+    it "shifts left" do
+      mustEq 20 (Bitwise.shl 5 2)
+  ]
+
+  describe #shr [
+    it "shifts right" do
+      mustEq 2 (Bitwise.shr 10 2)
+  ]
+
+  describe #not [
+    it "inverts bits" do
+      mustEq true (Bitwise.not 0 != 0)
+  ]
+]

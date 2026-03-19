@@ -326,3 +326,19 @@ test "hidden field excluded from JSON eval output" {
         \\{ x: 1, _secret:: 42 }
     , "{ x: 1 }");
 }
+
+// Hidden field edge cases
+
+test "Object.keys includes hidden fields" {
+    try expectEvaluates(
+        \\Object = import "Object"
+        \\obj = { x: 1, _secret:: 42, y: 2 }
+        \\Object.keys obj
+    , "[\"x\", \"_secret\", \"y\"]");
+}
+
+test "hidden field not in object output" {
+    try expectEvaluates(
+        \\{ visible: 1, _hidden:: 2 }
+    , "{ visible: 1 }");
+}

@@ -1,0 +1,23 @@
+{ describe, it, must, mustEq } = import "Spec"
+YAML = import "YAML"
+
+describe #YAML [
+  describe #parse [
+    it "parses a string" do
+      mustEq (#ok, "hello") (YAML.parse "hello")
+
+    it "parses an integer" do
+      mustEq (#ok, 42) (YAML.parse "42")
+
+    it "parses a boolean" do
+      mustEq (#ok, true) (YAML.parse "true")
+  ]
+
+  describe #encode [
+    it "encodes an integer" do
+      must (isString (YAML.encode 42))
+
+    it "encodes a string" do
+      must (isString (YAML.encode "hello"))
+  ]
+]

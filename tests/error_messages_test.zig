@@ -433,6 +433,20 @@ test "error: cyclic reference - indirect" {
     , error.CyclicReference);
 }
 
+test "error: circular self reference" {
+    try expectError(
+        \\obj = { x: self.x }
+        \\obj.x
+    , error.CyclicReference);
+}
+
+test "error: indirect circular self reference" {
+    try expectError(
+        \\obj = { x: self.y + 1, y: self.x + 1 }
+        \\obj.x
+    , error.CyclicReference);
+}
+
 // ============================================================================
 // BUILTIN FUNCTION ERRORS
 // ============================================================================

@@ -68,3 +68,34 @@ test "evaluates operator function with fold" {
 test "evaluates operator function with map" {
     try expectEvaluates("Array = import 'Array'; Array.map ((+) 1) [1, 2, 3]", "[2, 3, 4]");
 }
+
+// Pipeline lambda bodies
+
+test "pipeline with simple lambda" {
+    try expectEvaluates("10 \\ x -> x * 2", "20");
+}
+
+test "pipeline with chained lambdas" {
+    try expectEvaluates("10 \\ x -> x * 2 \\ x -> x + 5", "25");
+}
+
+test "pipeline lambda with let-binding body" {
+    try expectEvaluates(
+        \\10 \ x -> y = x * 2; y + 1
+    , "21");
+}
+
+test "pipeline lambda with where clause" {
+    try expectEvaluates(
+        \\10 \ a -> b where b = a * 2
+    , "20");
+}
+
+test "multi-line pipeline with lambdas" {
+    try expectEvaluates(
+        \\result = 10
+        \\  \ x -> x * 2
+        \\  \ x -> x + 5
+        \\result
+    , "25");
+}
