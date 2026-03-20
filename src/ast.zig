@@ -27,6 +27,7 @@ pub const TokenKind = enum {
     arrow,
     backslash,
     plus,
+    plus_plus,
     minus,
     star,
     slash,
@@ -79,6 +80,7 @@ pub const BinaryOp = enum {
     less_or_equal,
     greater_or_equal,
     merge,
+    concatenate,
 };
 
 /// Unary operators

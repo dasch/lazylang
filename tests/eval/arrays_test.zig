@@ -167,6 +167,22 @@ test "array rest pattern in when/matches" {
     , "[2, 3, 4]");
 }
 
+// Array concatenation
+
+test "array concatenation with ++" {
+    try expectEvaluates("[1, 2] ++ [3, 4]", "[1, 2, 3, 4]");
+}
+
+test "array concatenation with empty arrays" {
+    try expectEvaluates("[] ++ [1, 2]", "[1, 2]");
+    try expectEvaluates("[1, 2] ++ []", "[1, 2]");
+    try expectEvaluates("[] ++ []", "[]");
+}
+
+test "array concatenation chains" {
+    try expectEvaluates("[1] ++ [2] ++ [3]", "[1, 2, 3]");
+}
+
 test "array rest pattern with literal prefix" {
     try expectEvaluates(
         \\when [1, 2, 3] is

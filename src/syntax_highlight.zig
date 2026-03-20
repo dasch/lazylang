@@ -54,7 +54,7 @@ fn getTokenClass(kind: evaluator.TokenKind, lexeme: []const u8) TokenClass {
         .symbol => .symbol,
         .comma, .semicolon => .punctuation,
         .colon, .equals, .arrow, .backslash, .dot, .dot_dot_dot => .operator,
-        .plus, .minus, .star, .ampersand, .ampersand_ampersand => .operator,
+        .plus, .plus_plus, .minus, .star, .ampersand, .ampersand_ampersand => .operator,
         .pipe_pipe, .bang, .equals_equals, .bang_equals => .operator,
         .less, .greater, .less_equals, .greater_equals => .operator,
         .l_paren, .r_paren, .l_bracket, .r_bracket, .l_brace, .r_brace => .punctuation,

@@ -1460,6 +1460,23 @@ pub fn evaluateExpression(
                     // Merge the two objects
                     break :blk2 try mergeObjects(arena, left_obj, right_obj);
                 },
+                .concatenate => blk2: {
+                    // Array concatenation operator: arr1 ++ arr2
+                    const left_arr = switch (left_value) {
+                        .array => |a| a,
+                        else => return error.TypeMismatch,
+                    };
+                    const right_arr = switch (right_value) {
+                        .array => |a| a,
+                        else => return error.TypeMismatch,
+                    };
+
+                    const combined = try arena.alloc(Value, left_arr.elements.len + right_arr.elements.len);
+                    @memcpy(combined[0..left_arr.elements.len], left_arr.elements);
+                    @memcpy(combined[left_arr.elements.len..], right_arr.elements);
+
+                    break :blk2 Value{ .array = .{ .elements = combined } };
+                },
             };
             break :blk result;
         },

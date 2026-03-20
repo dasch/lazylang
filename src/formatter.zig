@@ -1299,6 +1299,7 @@ fn binaryOpStr(op: ast.BinaryOp) []const u8 {
         .less_or_equal => "<=",
         .greater_or_equal => ">=",
         .merge => "&",
+        .concatenate => "++",
     };
 }
 
@@ -1318,7 +1319,7 @@ fn opPrecedence(op: ast.BinaryOp) u8 {
         .equal, .not_equal => 4,
         .less_than, .greater_than, .less_or_equal, .greater_or_equal => 5,
         .merge => 6,
-        .add, .subtract => 7,
+        .add, .subtract, .concatenate => 7,
         .multiply, .divide => 8,
     };
 }
