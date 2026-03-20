@@ -1569,7 +1569,7 @@ pub const Parser = struct {
         // Check for operator function: (+), (-), (*), (/), etc.
         const op: ?BinaryOp = switch (self.current.kind) {
             .plus => .add,
-                        .plus_plus => .concatenate,
+            .plus_plus => .concatenate,
             .minus => .subtract,
             .star => .multiply,
             .slash => .divide,

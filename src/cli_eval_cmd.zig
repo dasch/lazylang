@@ -288,8 +288,26 @@ fn writeManifestFiles(
                 break :blk try evaluator.formatValueAsJson(allocator, field_value);
             },
             .yaml => blk: {
-                // In YAML mode, any value can be encoded
-                break :blk try evaluator.formatValueAsYaml(allocator, field_value);
+                // In YAML mode, arrays are formatted as multi-document YAML
+                // (separated by ---) for Kubernetes compatibility.
+                switch (field_value) {
+                    .array => |arr| {
+                        var builder = std.ArrayList(u8){};
+                        errdefer builder.deinit(allocator);
+                        for (arr.elements, 0..) |element, i| {
+                            if (i > 0) {
+                                try builder.appendSlice(allocator, "---\n");
+                            }
+                            const elem_value = try evaluator.force(arena, element);
+                            const formatted = try evaluator.formatValueAsYaml(allocator, elem_value);
+                            defer allocator.free(formatted);
+                            try builder.appendSlice(allocator, formatted);
+                            try builder.append(allocator, '\n');
+                        }
+                        break :blk try builder.toOwnedSlice(allocator);
+                    },
+                    else => break :blk try evaluator.formatValueAsYaml(allocator, field_value),
+                }
             },
         };
         defer if (needs_free) allocator.free(content);
