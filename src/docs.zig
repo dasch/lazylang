@@ -456,11 +456,11 @@ pub fn writeSinglePageDocs(file: anytype, modules: []const ModuleInfo, allocator
     // Write sidebar module links
     for (modules) |module| {
         try file.writeAll("    <a class=\"mod-link\" href=\"#");
-        try file.writeAll(module.name);
+        try writeHtmlEscaped(file, module.name);
         try file.writeAll("\" data-module=\"");
-        try file.writeAll(module.name);
+        try writeHtmlEscaped(file, module.name);
         try file.writeAll("\">");
-        try file.writeAll(module.name);
+        try writeHtmlEscaped(file, module.name);
         try file.writeAll("<span class=\"count\">");
         var buf: [16]u8 = undefined;
         const count_str = try std.fmt.bufPrint(&buf, "{d}", .{module.items.len});
@@ -469,15 +469,15 @@ pub fn writeSinglePageDocs(file: anytype, modules: []const ModuleInfo, allocator
 
         // Nested function links
         try file.writeAll("    <div class=\"mod-fns\" data-module-fns=\"");
-        try file.writeAll(module.name);
+        try writeHtmlEscaped(file, module.name);
         try file.writeAll("\">\n");
         for (module.items) |item| {
             try file.writeAll("      <a class=\"fn-link\" href=\"#");
-            try file.writeAll(module.name);
+            try writeHtmlEscaped(file, module.name);
             try file.writeAll(".");
-            try file.writeAll(item.name);
+            try writeHtmlEscaped(file, item.name);
             try file.writeAll("\">");
-            try file.writeAll(item.name);
+            try writeHtmlEscaped(file, item.name);
             try file.writeAll("</a>\n");
         }
         try file.writeAll("    </div>\n");
@@ -500,10 +500,10 @@ pub fn writeSinglePageDocs(file: anytype, modules: []const ModuleInfo, allocator
     for (modules) |module| {
         // Module section
         try file.writeAll("<section class=\"module-section\" id=\"");
-        try file.writeAll(module.name);
+        try writeHtmlEscaped(file, module.name);
         try file.writeAll("\">\n");
         try file.writeAll("<h2 class=\"module-heading\">");
-        try file.writeAll(module.name);
+        try writeHtmlEscaped(file, module.name);
         try file.writeAll("</h2>\n");
 
         // Module-level doc
@@ -519,19 +519,19 @@ pub fn writeSinglePageDocs(file: anytype, modules: []const ModuleInfo, allocator
         // Function entries
         for (module.items) |item| {
             try file.writeAll("<div class=\"fn-entry\" id=\"");
-            try file.writeAll(module.name);
+            try writeHtmlEscaped(file, module.name);
             try file.writeAll(".");
-            try file.writeAll(item.name);
+            try writeHtmlEscaped(file, item.name);
             try file.writeAll("\">\n");
 
             // Signature header - split name from params
             try file.writeAll("<div class=\"fn-sig\" onclick=\"copyAnchor('");
-            try file.writeAll(module.name);
+            try writeJsEscaped(file, module.name);
             try file.writeAll(".");
-            try file.writeAll(item.name);
+            try writeJsEscaped(file, item.name);
             try file.writeAll("')\">");
             try file.writeAll("<span class=\"fn-name\">");
-            try file.writeAll(item.name);
+            try writeHtmlEscaped(file, item.name);
             try file.writeAll("</span>");
 
             // Extract params part (everything after "name: ")
@@ -540,7 +540,7 @@ pub fn writeSinglePageDocs(file: anytype, modules: []const ModuleInfo, allocator
             if (colon_pos) |pos| {
                 if (pos + 2 < sig.len) {
                     try file.writeAll("<span class=\"fn-params\">: ");
-                    try file.writeAll(sig[pos + 2 ..]);
+                    try writeHtmlEscaped(file, sig[pos + 2 ..]);
                     try file.writeAll("</span>");
                 }
             }
@@ -554,7 +554,7 @@ pub fn writeSinglePageDocs(file: anytype, modules: []const ModuleInfo, allocator
             if (doc_html) |h| {
                 try file.writeAll(h);
             } else {
-                try file.writeAll(item.doc);
+                try writeHtmlEscaped(file, item.doc);
             }
             try file.writeAll("</div>\n");
             try file.writeAll("</div>\n");
@@ -592,17 +592,17 @@ pub fn writeSinglePageDocs(file: anytype, modules: []const ModuleInfo, allocator
     try file.writeAll("<script>\nconst MODULES = [\n");
     for (modules) |module| {
         try file.writeAll("  {name:\"");
-        try file.writeAll(module.name);
+        try writeJsEscaped(file, module.name);
         try file.writeAll("\",items:[\n");
         for (module.items) |item| {
             try file.writeAll("    {name:\"");
-            try file.writeAll(item.name);
+            try writeJsEscaped(file, item.name);
             try file.writeAll("\",sig:\"");
             try writeJsEscaped(file, item.signature);
             try file.writeAll("\",id:\"");
-            try file.writeAll(module.name);
+            try writeJsEscaped(file, module.name);
             try file.writeAll(".");
-            try file.writeAll(item.name);
+            try writeJsEscaped(file, item.name);
             try file.writeAll("\"},\n");
         }
         try file.writeAll("  ]},\n");
@@ -662,9 +662,9 @@ pub fn writeSinglePageDocs(file: anytype, modules: []const ModuleInfo, allocator
         \\  resultsEl.innerHTML = visible.map((r, i) => {
         \\    const sel = i === selIdx ? ' selected' : '';
         \\    if (r.type === 'mod') {
-        \\      return `<div class="pr-item${sel}" data-idx="${i}"><span class="pr-badge mod">mod</span><span class="pr-name">${r.name}</span></div>`;
+        \\      return `<div class="pr-item${sel}" data-idx="${i}"><span class="pr-badge mod">mod</span><span class="pr-name">${esc(r.name)}</span></div>`;
         \\    }
-        \\    return `<div class="pr-item${sel}" data-idx="${i}"><span class="pr-badge fn">fn</span><span class="pr-name">${r.name}</span><span class="pr-sig">${esc(r.sig)}</span></div>`;
+        \\    return `<div class="pr-item${sel}" data-idx="${i}"><span class="pr-badge fn">fn</span><span class="pr-name">${esc(r.name)}</span><span class="pr-sig">${esc(r.sig)}</span></div>`;
         \\  }).join('');
         \\
         \\  // Scroll selected into view
@@ -774,12 +774,26 @@ pub fn writeSinglePageDocs(file: anytype, modules: []const ModuleInfo, allocator
     );
 }
 
+fn writeHtmlEscaped(file: anytype, s: []const u8) !void {
+    for (s) |c| {
+        switch (c) {
+            '<' => try file.writeAll("&lt;"),
+            '>' => try file.writeAll("&gt;"),
+            '&' => try file.writeAll("&amp;"),
+            '"' => try file.writeAll("&quot;"),
+            else => try file.writeAll(&[_]u8{c}),
+        }
+    }
+}
+
 fn writeJsEscaped(file: anytype, s: []const u8) !void {
     for (s) |c| {
         switch (c) {
             '"' => try file.writeAll("\\\""),
             '\\' => try file.writeAll("\\\\"),
             '\n' => try file.writeAll("\\n"),
+            '\r' => try file.writeAll("\\r"),
+            '<' => try file.writeAll("\\x3c"),
             else => try file.writeAll(&[_]u8{c}),
         }
     }
