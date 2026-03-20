@@ -1,9 +1,0 @@
-// Worker component: processes background jobs.
-{
-  replicas: 1
-  command: ["bundle", "exec", "sidekiq"]
-
-  env: {
-    RAILS_ENV: "production"
-  }
-}

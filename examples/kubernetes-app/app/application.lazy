@@ -1,8 +1,0 @@
-// Application-wide configuration.
-{
-  name: "recipe-service"
-  namespace: "recipes"
-  team: "kitchen"
-  registry: "docker.io/zendesk"
-  components: ["web", "worker"]
-}
