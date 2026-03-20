@@ -366,18 +366,23 @@ pub fn evalFileWithValue(allocator: std.mem.Allocator, path: []const u8) EvalErr
     defer file.close();
 
     const contents = try file.readToEndAlloc(allocator, std.math.maxInt(usize));
-    defer allocator.free(contents);
+    // Note: do NOT free contents here — string values in the result
+    // are slices of this buffer. evalSourceWithValue dupes it into its
+    // arena so the buffer lives as long as the result.
 
     const directory = std.fs.path.dirname(path);
     var result = try evalSourceWithValue(allocator, contents, directory);
 
-    // Register the main file for error reporting
+    // Register the main file for error reporting (before freeing contents)
     if (result.err != null) {
         result.error_ctx.registerSource(path, contents) catch {};
         if (result.error_ctx.current_file.len == 0) {
             result.error_ctx.setCurrentFile(path);
         }
     }
+
+    // Now safe to free the original — evalSourceWithValue duped it into its arena.
+    allocator.free(contents);
 
     return result;
 }
@@ -390,9 +395,13 @@ fn evalSourceWithValue(
     var arena = std.heap.ArenaAllocator.init(allocator);
     errdefer arena.deinit();
 
+    // Dupe source into the arena — string values are slices of the source
+    // buffer, and the caller may free its copy after we return.
+    const owned_source = try arena.allocator().dupe(u8, source);
+
     const lazy_paths = try collectLazyPaths(arena.allocator());
     var err_ctx = error_context.ErrorContext.init(allocator);
-    err_ctx.setSource(source);
+    err_ctx.setSource(owned_source);
 
     var module_cache2 = value_mod.ModuleCache.init(allocator);
     defer {
@@ -415,7 +424,7 @@ fn evalSourceWithValue(
         .import_stack = &import_stack2,
     };
 
-    var parser = try Parser.init(arena.allocator(), source);
+    var parser = try Parser.init(arena.allocator(), owned_source);
     parser.setErrorContext(&err_ctx);
     const expression = parser.parse() catch |err| {
         arena.deinit();
