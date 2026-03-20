@@ -1184,7 +1184,14 @@ pub fn collectModulesFromDirectory(
         defer allocator.free(full_path);
 
         try stdout.print("Extracting docs from {s}...\n", .{full_path});
-        const module_info = try extractModuleInfo(allocator, full_path);
+        const module_info = extractModuleInfo(allocator, full_path) catch {
+            try stdout.print("  Skipping {s} (failed to evaluate)\n", .{full_path});
+            continue;
+        };
+        // Only include modules that have documented items
+        if (module_info.items.len == 0 and module_info.module_doc == null) {
+            continue;
+        }
         try modules.append(allocator, module_info);
     }
 }
