@@ -125,7 +125,7 @@ test "evaluates array in if-then-else" {
 
 test "evaluates array in pattern matching" {
     try expectEvaluates(
-        \\when [1, 2, 3] matches
+        \\when [1, 2, 3] is
         \\  [a, b, c] then a + b + c
     , "6");
 }
@@ -162,14 +162,14 @@ test "array rest pattern in function parameter" {
 
 test "array rest pattern in when/matches" {
     try expectEvaluates(
-        \\when [1, 2, 3, 4] matches
+        \\when [1, 2, 3, 4] is
         \\  [x, ...rest] then rest
     , "[2, 3, 4]");
 }
 
 test "array rest pattern with literal prefix" {
     try expectEvaluates(
-        \\when [1, 2, 3] matches
+        \\when [1, 2, 3] is
         \\  [1, ...rest] then rest
         \\  otherwise []
     , "[2, 3]");

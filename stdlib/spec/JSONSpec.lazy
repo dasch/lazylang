@@ -16,7 +16,7 @@ describe #JSON [
       mustEq (#ok, [1, 2, 3]) (JSON.parse "[1, 2, 3]")
 
     it "returns error for invalid JSON" do
-      when JSON.parse "{ invalid }" matches
+      when JSON.parse "{ invalid }" is
         (#error, msg) then must (isString msg)
         otherwise crash "expected error"
   ]

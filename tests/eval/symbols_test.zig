@@ -23,7 +23,7 @@ test "evaluates symbol in object" {
 
 test "evaluates pattern matching with symbol" {
     try expectEvaluates(
-        \\when (#ok, 42) matches
+        \\when (#ok, 42) is
         \\  (#ok, x) then x
     ,
         "42",
@@ -32,7 +32,7 @@ test "evaluates pattern matching with symbol" {
 
 test "evaluates pattern matching with different symbols" {
     try expectEvaluates(
-        \\when (#error, 10) matches
+        \\when (#error, 10) is
         \\  (#ok, x) then x
         \\  (#error, y) then y
     ,
@@ -42,7 +42,7 @@ test "evaluates pattern matching with different symbols" {
 
 test "evaluates pattern matching with symbol as only value" {
     try expectEvaluates(
-        \\when #noSuchKey matches
+        \\when #noSuchKey is
         \\  #ok then 1
         \\  #noSuchKey then 2
     ,
@@ -53,7 +53,7 @@ test "evaluates pattern matching with symbol as only value" {
 test "evaluates error handling pattern from README" {
     try expectEvaluates(
         \\result = (#ok, 100)
-        \\when result matches
+        \\when result is
         \\  (#ok, value) then value
         \\  #noSuchKey then 0
     ,
@@ -63,7 +63,7 @@ test "evaluates error handling pattern from README" {
 
 test "evaluates symbols are case sensitive" {
     try expectEvaluates(
-        \\when #OK matches
+        \\when #OK is
         \\  #ok then 1
         \\  #OK then 2
     ,
@@ -73,7 +73,7 @@ test "evaluates symbols are case sensitive" {
 
 test "evaluates nested pattern with symbols" {
     try expectEvaluates(
-        \\when ((#ok, #success), 42) matches
+        \\when ((#ok, #success), 42) is
         \\  ((#ok, #success), x) then x
     ,
         "42",
@@ -82,7 +82,7 @@ test "evaluates nested pattern with symbols" {
 
 test "symbol is interchangeable with string" {
     try expectEvaluates(
-        \\when ("ok", 42) matches
+        \\when ("ok", 42) is
         \\  (#ok, x) then x
     ,
         "42",
@@ -91,7 +91,7 @@ test "symbol is interchangeable with string" {
 
 test "string matches symbol pattern" {
     try expectEvaluates(
-        \\when #ok matches
+        \\when #ok is
         \\  "ok" then 1
         \\  otherwise 2
     ,

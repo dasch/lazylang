@@ -337,7 +337,7 @@ test "error: pattern mismatch - tuple length" {
 }
 
 test "error: pattern mismatch - tuple value" {
-    try expectError("when (1, 2) matches (1, 3) then 0", error.TypeMismatch);
+    try expectError("when (1, 2) is (1, 3) then 0", error.TypeMismatch);
 }
 
 test "error: pattern mismatch - array length" {
@@ -391,27 +391,27 @@ test "error: pattern mismatch - wrong type for tuple" {
 
 test "error: pattern mismatch - when matches no match" {
     try expectError(
-        \\when 42 matches
+        \\when 42 is
         \\  [x, y] then x + y
         \\  { x } then x
     , error.TypeMismatch);
 }
 
 test "error: pattern mismatch - symbol" {
-    try expectError("when #error matches #ok then 0", error.TypeMismatch);
+    try expectError("when #error is #ok then 0", error.TypeMismatch);
 }
 
 test "error: pattern mismatch - boolean" {
-    try expectError("when false matches true then 0", error.TypeMismatch);
+    try expectError("when false is true then 0", error.TypeMismatch);
 }
 
 test "error: pattern mismatch - integer" {
-    try expectError("when 2 matches 1 then 0", error.TypeMismatch);
+    try expectError("when 2 is 1 then 0", error.TypeMismatch);
 }
 
 test "error: pattern mismatch - string" {
     try expectError(
-        \\when "world" matches "hello" then 0
+        \\when "world" is "hello" then 0
     , error.TypeMismatch);
 }
 

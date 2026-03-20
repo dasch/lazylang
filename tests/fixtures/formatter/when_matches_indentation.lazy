@@ -1,9 +1,9 @@
 // foo = x ->
-//   when x matches
+//   when x is
 //     #ok then 1
 //     #err then 2
 foo = x ->
-  when x matches
+  when x is
     #ok then 1
     #err then 2;
 
@@ -11,7 +11,7 @@ foo = x ->
 
 
 // x = 42
-// result = when x matches
+// result = when x is
 //   42 then y = 3
 //   x * y
 //   13 then z = 4
@@ -20,7 +20,7 @@ foo = x ->
 //
 // { foo: foo #ok, result: result }
 x = 42
-result = when x matches
+result = when x is
   42 then
     y = 3
     x * y

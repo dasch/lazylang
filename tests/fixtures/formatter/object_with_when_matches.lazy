@@ -5,7 +5,7 @@
 //         foldHelper = acc ->
 //           xs ->
 //             idx ->
-//               when __array_get (xs, idx) matches
+//               when __array_get (xs, idx) is
 //                 (#ok, x) then foldHelper (fn acc x) xs (idx + 1)
 //                 otherwise acc
 //
@@ -16,7 +16,7 @@
 exports = {
   fold: fn -> init -> arr ->
     foldHelper = acc -> xs -> idx ->
-      when __array_get (xs, idx) matches
+      when __array_get (xs, idx) is
         (#ok, x) then foldHelper (fn acc x) xs (idx + 1)
         otherwise acc
     foldHelper init arr 0

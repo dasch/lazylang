@@ -648,6 +648,7 @@ pub const Parser = struct {
                     // Don't consume keywords as function arguments
                     if (std.mem.eql(u8, self.current.lexeme, "then") or
                         std.mem.eql(u8, self.current.lexeme, "else") or
+                        std.mem.eql(u8, self.current.lexeme, "is") or
                         std.mem.eql(u8, self.current.lexeme, "matches") or
                         std.mem.eql(u8, self.current.lexeme, "otherwise") or
                         std.mem.eql(u8, self.current.lexeme, "where") or
@@ -902,7 +903,7 @@ pub const Parser = struct {
                     try self.advance();
                     const value = try self.parseBinary(0);
 
-                    if (self.current.kind != .identifier or !std.mem.eql(u8, self.current.lexeme, "matches")) {
+                    if (self.current.kind != .identifier or !std.mem.eql(u8, self.current.lexeme, "is")) {
                         self.recordError();
                         return error.UnexpectedToken;
                     }

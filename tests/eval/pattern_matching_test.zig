@@ -3,7 +3,7 @@ const expectEvaluates = common.expectEvaluates;
 
 test "evaluates when matches with tuple pattern" {
     try expectEvaluates(
-        \\when (1, 2) matches
+        \\when (1, 2) is
         \\  (x, y) then x + y
     ,
         "3",
@@ -13,7 +13,7 @@ test "evaluates when matches with tuple pattern" {
 test "evaluates when matches with multiple patterns" {
     try expectEvaluates(
         \\value = [1, 2, 3]
-        \\when value matches
+        \\when value is
         \\  (x, y) then x + y
         \\  [a, b, c] then a + b + c
     ,
@@ -24,7 +24,7 @@ test "evaluates when matches with multiple patterns" {
 test "evaluates when matches with otherwise" {
     try expectEvaluates(
         \\value = 42
-        \\when value matches
+        \\when value is
         \\  (x, y) then x + y
         \\  otherwise 100
     ,
@@ -34,7 +34,7 @@ test "evaluates when matches with otherwise" {
 
 test "evaluates when matches with array pattern" {
     try expectEvaluates(
-        \\when [1, 2, 3] matches
+        \\when [1, 2, 3] is
         \\  [a, b, c] then a + b + c
     ,
         "6",
@@ -43,7 +43,7 @@ test "evaluates when matches with array pattern" {
 
 test "evaluates when matches with object pattern" {
     try expectEvaluates(
-        \\when { x: 10, y: 20 } matches
+        \\when { x: 10, y: 20 } is
         \\  { x, y } then x + y
     ,
         "30",
@@ -52,7 +52,7 @@ test "evaluates when matches with object pattern" {
 
 test "evaluates when matches with nested pattern" {
     try expectEvaluates(
-        \\when (1, (2, 3)) matches
+        \\when (1, (2, 3)) is
         \\  (a, (b, c)) then a + b + c
     ,
         "6",
@@ -61,7 +61,7 @@ test "evaluates when matches with nested pattern" {
 
 test "evaluates when matches selecting first match" {
     try expectEvaluates(
-        \\when (5, 10) matches
+        \\when (5, 10) is
         \\  (a, b) then a + b
         \\  (x, y) then x * y
     ,
@@ -71,7 +71,7 @@ test "evaluates when matches selecting first match" {
 
 test "evaluates when matches with literal number in tuple pattern" {
     try expectEvaluates(
-        \\when (1, 2) matches
+        \\when (1, 2) is
         \\  (0, x) then x
         \\  (1, y) then y + 10
     ,
@@ -81,7 +81,7 @@ test "evaluates when matches with literal number in tuple pattern" {
 
 test "evaluates when matches with literal string in tuple pattern" {
     try expectEvaluates(
-        \\when ("ok", 42) matches
+        \\when ("ok", 42) is
         \\  ("error", msg) then msg
         \\  ("ok", value) then value
     ,
@@ -92,7 +92,7 @@ test "evaluates when matches with literal string in tuple pattern" {
 test "evaluates when matches with literal in object pattern" {
     try expectEvaluates(
         \\obj = { status: "ok", payload: 100 }
-        \\when obj matches
+        \\when obj is
         \\  { status: "error" } then 0
         \\  { status: "ok", payload } then payload
     ,
@@ -102,7 +102,7 @@ test "evaluates when matches with literal in object pattern" {
 
 test "evaluates when matches with boolean literal" {
     try expectEvaluates(
-        \\when (true, 5) matches
+        \\when (true, 5) is
         \\  (false, x) then x
         \\  (true, y) then y + 10
     ,
@@ -112,7 +112,7 @@ test "evaluates when matches with boolean literal" {
 
 test "evaluates when matches with null literal" {
     try expectEvaluates(
-        \\when (null, 42) matches
+        \\when (null, 42) is
         \\  (null, x) then x
         \\  (y, z) then y + z
     ,
@@ -122,7 +122,7 @@ test "evaluates when matches with null literal" {
 
 test "evaluates when matches with mixed literals" {
     try expectEvaluates(
-        \\when (1, "test", true) matches
+        \\when (1, "test", true) is
         \\  (1, "test", flag) then flag
         \\  (x, y, z) then false
     ,

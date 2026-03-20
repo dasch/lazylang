@@ -6,7 +6,7 @@ parsed_array = YAML.parse "[1, 2, 3]"
 yaml_int = YAML.encode 42
 yaml_config = YAML.encode { name: "MyApp", version: "1.0.0" }
 
-port = when YAML.parse "port: 8080" matches
+port = when YAML.parse "port: 8080" is
   (#ok, config) then config.port
   otherwise 3000
 

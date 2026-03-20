@@ -25,7 +25,7 @@
   /// **Usage with pattern matching:**
   /// ```
   /// result = JSON.parse userInput
-  /// config = when result matches
+  /// config = when result is
   ///   (#ok, data) then data
   ///   (#error, msg) then { error: msg }
   /// ```

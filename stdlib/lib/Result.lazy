@@ -53,7 +53,7 @@
   /// ```
   orDefault: default ->
     result ->
-      when result matches
+      when result is
         (#ok, value) then value
         otherwise default
 
@@ -73,7 +73,7 @@
   /// ```
   orElse: f ->
     result ->
-      when result matches
+      when result is
         (#error, error) then f error
         otherwise result
 
@@ -91,7 +91,7 @@
   /// ```
   map: f ->
     result ->
-      when result matches
+      when result is
         (#ok, value) then (#ok, f value)
         otherwise result
 }

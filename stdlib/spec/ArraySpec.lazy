@@ -95,7 +95,7 @@ describe #Array [
       arr = [{ name: "Alice", age: 30 }, { name: "Bob", age: 25 }, { name: "Charlie", age: 35 }]
 
       result = Array.sortBy .age arr
-      first = when Array.get 0 result matches
+      first = when Array.get 0 result is
         (#ok, val) then val
         otherwise null
 
@@ -222,7 +222,7 @@ describe #Array [
     it "returns `(#ok, value)` for the *first* matching element" do
       mustEq (#ok, 3) (Array.find (x -> x > 2) [1, 2, 3, 4])
 
-    it "returns `#notFound` when no element matches" do
+    it "returns `#notFound` when no element is" do
       mustEq #notFound (Array.find (x -> x > 10) [1, 2, 3])
 
     it "returns `#notFound` for an *empty* array" do

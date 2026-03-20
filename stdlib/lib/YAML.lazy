@@ -23,7 +23,7 @@
   /// **Usage with pattern matching:**
   /// ```
   /// result = YAML.parse "port: 8080"
-  /// port = when result matches
+  /// port = when result is
   ///   (#ok, config) then config.port
   ///   (#error, _) then 3000
   /// ```

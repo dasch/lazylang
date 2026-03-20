@@ -120,7 +120,7 @@ Tuple = import "Tuple"
                 if idx >= Builtins.array_length xs then
                   acc
                 else
-                  when Builtins.array_get (xs, idx) matches
+                  when Builtins.array_get (xs, idx) is
                     (#ok, x) then foldHelper f (f acc x) xs (idx + 1)
                     otherwise acc
 
@@ -368,7 +368,7 @@ Tuple = import "Tuple"
             if idx >= Builtins.array_length xs then
               #notFound
             else
-              when Builtins.array_get (xs, idx) matches
+              when Builtins.array_get (xs, idx) is
                 (#ok, x) then if p x then (#ok, x) else findHelper p xs (idx + 1)
                 otherwise #notFound
 
@@ -394,7 +394,7 @@ Tuple = import "Tuple"
             if idx >= Builtins.array_length xs then
               #notFound
             else
-              when Builtins.array_get (xs, idx) matches
+              when Builtins.array_get (xs, idx) is
                 (#ok, x) then if x == v then (#ok, idx) else indexOfHelper v xs (idx + 1)
                 otherwise #notFound
 

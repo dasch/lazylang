@@ -104,68 +104,68 @@ test "object pattern: empty object missing fields" {
 
 test "integer pattern: value mismatch" {
     try expectError(
-        \\when 2 matches 1 then 0
+        \\when 2 is 1 then 0
     , error.TypeMismatch);
 }
 
 test "integer pattern: type mismatch with string" {
     try expectError(
-        \\when "hello" matches 1 then 0
+        \\when "hello" is 1 then 0
     , error.TypeMismatch);
 }
 
 test "float pattern: value mismatch" {
     try expectError(
-        \\when 2.5 matches 1.5 then 0
+        \\when 2.5 is 1.5 then 0
     , error.TypeMismatch);
 }
 
 test "float pattern: type mismatch with integer" {
     try expectError(
-        \\when 1 matches 1.5 then 0
+        \\when 1 is 1.5 then 0
     , error.TypeMismatch);
 }
 
 test "boolean pattern: value mismatch" {
     try expectError(
-        \\when false matches true then 0
+        \\when false is true then 0
     , error.TypeMismatch);
 }
 
 test "boolean pattern: type mismatch with integer" {
     try expectError(
-        \\when 1 matches true then 0
+        \\when 1 is true then 0
     , error.TypeMismatch);
 }
 
 test "null pattern: type mismatch with integer" {
     try expectError(
-        \\when 0 matches null then 0
+        \\when 0 is null then 0
     , error.TypeMismatch);
 }
 
 test "string pattern: value mismatch" {
     try expectError(
-        \\when "world" matches "hello" then 0
+        \\when "world" is "hello" then 0
     , error.TypeMismatch);
 }
 
 test "string pattern: type mismatch with integer" {
     try expectError(
-        \\when 42 matches "hello" then 0
+        \\when 42 is "hello" then 0
     , error.TypeMismatch);
 }
 
 test "symbol pattern: value mismatch" {
     try expectError(
-        \\when #error matches #ok then 0
+        \\when #error is #ok then 0
     , error.TypeMismatch);
 }
 
 test "symbol pattern: matches equivalent string" {
     // Symbols are syntactic sugar for strings, so "ok" matches #ok
     var result = try evaluator.evalInline(std.testing.allocator,
-        \\when "ok" matches #ok then 1
+        \\when "ok" is #ok then 1
     );
     defer result.deinit();
     try std.testing.expectEqualStrings("1", result.text);
@@ -209,9 +209,9 @@ test "function application: destructuring pattern mismatch" {
 
 // When matches without matching patterns
 
-test "when matches: no pattern matches and no otherwise" {
+test "when matches: no pattern is and no otherwise" {
     try expectError(
-        \\when 42 matches
+        \\when 42 is
         \\  [x, y] then x + y
         \\  { x } then x
     , error.TypeMismatch);

@@ -711,7 +711,7 @@ fn formatExpr(w: *Writer, expr: *const ast.Expression, parens_needed: bool) Form
         .when_matches => |wm| {
             try w.write("when ");
             try formatExpr(w, wm.value, false);
-            try w.write(" matches");
+            try w.write(" is");
             w.indent += 1;
             for (wm.branches) |branch| {
                 try w.newline();

@@ -269,7 +269,7 @@ test "parser: if-then without else" {
 test "parser: when matches" {
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
-    var parser = try Parser.init(arena.allocator(), "when x matches\n  1 then \"one\"\n  2 then \"two\"\n  otherwise \"other\"");
+    var parser = try Parser.init(arena.allocator(), "when x is\n  1 then \"one\"\n  2 then \"two\"\n  otherwise \"other\"");
     const expr = try parser.parse();
 
     switch (expr.data) {
