@@ -23,6 +23,23 @@ name = "Alice"
 greeting = 'Hello'
 ```
 
+### Escape sequences
+
+Double-quoted strings support escape sequences:
+
+```
+newline = "hello\nworld"
+tab = "col1\tcol2"
+quote = "she said \"hi\""
+backslash = "path\\to\\file"
+```
+
+Single-quoted strings are literal — no escape processing:
+
+```
+literal = 'hello\nworld'  // contains a literal backslash and n
+```
+
 ### String concatenation
 
 Strings can be concatenated using the `+` operator:
@@ -411,6 +428,24 @@ Destructuring can be used in variable assignments:
 [head, ...tail] = [1, 2, 3, 4]
 ```
 
+### Default values
+
+Object destructuring supports default values for missing fields:
+
+```
+{ port = 8080, host } = { host: "localhost" }
+// port is 8080 (default), host is "localhost"
+```
+
+This is particularly useful in function parameters:
+
+```
+serve = { port = 8080, host = "localhost" } -> "http://" + host + ":" + toString port
+serve {}                         // "http://localhost:8080"
+serve { port: 3000 }             // "http://localhost:3000"
+serve { host: "0.0.0.0" }       // "http://0.0.0.0:8080"
+```
+
 The argument of a function definition can also be destructured:
 
 ```
@@ -477,6 +512,24 @@ Tags are string shorthand using the `#` prefix. `#foo` is syntactic sugar for th
 ```
 
 Tags are particularly useful as discriminators in tagged tuples for error handling and pattern matching, where they're more visually distinct than quoted strings.
+
+## Type conversion
+
+Built-in functions for converting between types:
+
+```
+toString 42       // "42"
+toString true     // "true"
+toString #ok      // "#ok"
+
+toInteger "42"    // 42
+toInteger 3.14    // 3
+
+toFloat 42        // 42.0
+toFloat "3.14"    // 3.14
+```
+
+These are available without import (exposed through the `Basics` module).
 
 ## Error handling
 
