@@ -263,7 +263,7 @@ pub const Parser = struct {
                 const doc = self.current.doc_comments;
                 const pattern = try self.parsePattern();
                 try self.expectToken(.equals, "in where binding");
-                const value = try self.parseBinary(0);
+                const value = try self.parseLambda();
 
                 try bindings.append(self.arena, .{ .pattern = pattern, .value = value, .doc = doc });
 
