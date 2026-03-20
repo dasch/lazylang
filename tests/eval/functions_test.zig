@@ -99,3 +99,52 @@ test "multi-line pipeline with lambdas" {
         \\result
     , "25");
 }
+
+// Operator sections
+
+test "right section: comparison" {
+    try expectEvaluates("(> 10) 42", "true");
+}
+
+test "right section: comparison false" {
+    try expectEvaluates("(> 100) 42", "false");
+}
+
+test "right section: arithmetic" {
+    try expectEvaluates("(+ 1) 41", "42");
+}
+
+test "right section: multiply" {
+    try expectEvaluates("(* 2) 21", "42");
+}
+
+test "right section: equality" {
+    try expectEvaluates("(== 42) 42", "true");
+}
+
+test "right section with matches" {
+    try expectEvaluates(
+        \\when 42 matches
+        \\  (> 100) then "big"
+        \\  (> 10) then "medium"
+        \\  otherwise "small"
+    , "\"medium\"");
+}
+
+test "right section with Array.filter" {
+    try expectEvaluates(
+        \\Array = import "Array"
+        \\Array.filter (> 3) [1, 2, 3, 4, 5]
+    , "[4, 5]");
+}
+
+test "right section with Array.map" {
+    try expectEvaluates(
+        \\Array = import "Array"
+        \\Array.map (* 2) [1, 2, 3]
+    , "[2, 4, 6]");
+}
+
+test "negative literal in parens is not a section" {
+    try expectEvaluates("(-1)", "-1");
+}
