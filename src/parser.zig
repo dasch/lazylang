@@ -241,8 +241,11 @@ pub const Parser = struct {
             const where_token = self.current; // Capture for location
             try self.advance();
 
-            // Parse bindings: collect them into a list
+            // Parse bindings: collect them into a list.
+            // Use indentation to scope: bindings must be indented past the
+            // `where` keyword, otherwise they belong to the outer scope.
             var bindings = std.ArrayListUnmanaged(WhereBinding){};
+            var binding_indent: ?usize = null;
 
             while (true) {
                 // Check if we're done
@@ -250,6 +253,17 @@ pub const Parser = struct {
                 if (self.current.kind == .r_paren) break; // Could be inside parentheses
                 if (self.current.kind == .r_bracket) break;
                 if (self.current.kind == .r_brace) break;
+
+                // Indentation scoping: the first binding on a new line sets
+                // the indent level. Subsequent bindings must be at the same
+                // or greater indent to stay in the where clause.
+                if (self.current.preceded_by_newline) {
+                    if (binding_indent) |indent| {
+                        if (self.current.column < indent) break;
+                    } else {
+                        binding_indent = self.current.column;
+                    }
+                }
 
                 // Check if next token starts a binding
                 const is_binding = switch (self.current.kind) {
