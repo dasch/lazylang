@@ -417,6 +417,30 @@ Functions can only take one argument, but can easily be chained together:
 addThreeNumbers = a -> b -> c -> a + b + c
 ```
 
+### Operator sections
+
+Operators in parentheses create functions. `(+)` creates a binary function, while `(op expr)` creates a unary function with one operand pre-filled:
+
+```
+(+)       // x -> y -> x + y (binary function)
+(> 100)   // x -> x > 100
+(* 2)     // x -> x * 2
+(== null) // x -> x == null
+(+ 1)     // x -> x + 1
+```
+
+Operator sections are particularly useful with higher-order functions and predicate matching:
+
+```
+Array.filter (> 3) [1, 2, 3, 4, 5]  // [4, 5]
+Array.map (* 2) [1, 2, 3]           // [2, 4, 6]
+
+when amount matches
+  (> 1000) then requireApproval
+  (> 100) then doubleCheck
+  otherwise approve
+```
+
 ## Pattern matching and destructuring
 
 Lazylang supports pattern matching and destructuring for many data types, including objects, arrays, and tuples.

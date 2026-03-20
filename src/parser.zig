@@ -1584,9 +1584,38 @@ pub const Parser = struct {
         };
 
         if (op) |operator| {
-            try self.advance();
-            try self.expect(.r_paren);
-            return try self.makeExpression(.{ .operator_function = operator }, paren_token);
+            // For minus: (-1) is negative literal, not a section.
+            // Only treat as operator if followed by whitespace or closing paren.
+            const is_negative_literal = operator == .subtract and self.lookahead.kind == .number and !self.lookahead.preceded_by_whitespace;
+            if (!is_negative_literal) {
+                try self.advance();
+
+                // Operator function: (op) → x -> y -> x op y
+                if (self.current.kind == .r_paren) {
+                    try self.advance();
+                    return try self.makeExpression(.{ .operator_function = operator }, paren_token);
+                }
+
+                // Right section: (op expr) → x -> x op expr
+                const rhs = try self.parseBinary(0);
+                try self.expect(.r_paren);
+
+                const param_pattern = try self.arena.create(Pattern);
+                param_pattern.* = .{
+                    .data = .{ .identifier = "__x" },
+                    .location = .{ .line = paren_token.line, .column = paren_token.column, .offset = paren_token.offset, .length = paren_token.lexeme.len },
+                };
+                const param_ref = try self.makeExpression(.{ .identifier = "__x" }, paren_token);
+                const body = try self.makeExpression(.{ .binary = .{
+                    .op = operator,
+                    .left = param_ref,
+                    .right = rhs,
+                } }, paren_token);
+                return try self.makeExpression(.{ .lambda = .{
+                    .param = param_pattern,
+                    .body = body,
+                } }, paren_token);
+            }
         }
 
         // Parse first element
