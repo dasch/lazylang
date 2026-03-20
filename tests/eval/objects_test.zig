@@ -342,3 +342,24 @@ test "hidden field not in object output" {
         \\{ visible: 1, _hidden:: 2 }
     , "{ visible: 1 }");
 }
+
+// Sibling field references
+
+test "object fields can reference sibling fields" {
+    try expectEvaluates("{ x: 1, y: x + 1 }.y", "2");
+}
+
+test "object fields can reference later sibling fields" {
+    try expectEvaluates("{ x: y + 1, y: 1 }.x", "2");
+}
+
+test "object sibling references work with self" {
+    try expectEvaluates("{ x: 1, y: self.x + 1 }.y", "2");
+}
+
+test "object sibling fields shadow outer scope" {
+    try expectEvaluates(
+        \\x = 100
+        \\{ x: 1, y: x + 1 }.y
+    , "2");
+}

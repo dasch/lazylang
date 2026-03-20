@@ -809,15 +809,40 @@ pub fn force(arena: std.mem.Allocator, value: Value) EvalError!Value {
                 },
                 .unevaluated => {
                     thunk.state = .evaluating;
-                    // If this thunk has a self reference, bind `self` in the environment
+                    // If this thunk has a self reference, bind `self` and all sibling
+                    // field names in the environment so fields can reference each other.
                     const eval_env = if (thunk.self_value) |self_val| blk: {
-                        const self_env = try arena.create(Environment);
-                        self_env.* = .{
+                        // Start with `self` binding
+                        var current_env = try arena.create(Environment);
+                        current_env.* = .{
                             .name = "self",
                             .value = self_val.*,
                             .parent = thunk.env,
                         };
-                        break :blk self_env;
+                        // Add bindings for each sibling field name,
+                        // skipping the current field to avoid self-referential cycles.
+                        switch (self_val.*) {
+                            .object => |obj| {
+                                for (obj.fields) |field| {
+                                    // Skip the field being evaluated (avoid circular reference)
+                                    const is_self_thunk = switch (field.value) {
+                                        .thunk => |t| t == thunk,
+                                        else => false,
+                                    };
+                                    if (is_self_thunk) continue;
+
+                                    const field_env = try arena.create(Environment);
+                                    field_env.* = .{
+                                        .name = field.key,
+                                        .value = field.value,
+                                        .parent = current_env,
+                                    };
+                                    current_env = field_env;
+                                }
+                            },
+                            else => {},
+                        }
+                        break :blk current_env;
                     } else thunk.env;
                     const result = try evaluateExpression(arena, thunk.expr, eval_env, thunk.current_dir, thunk.ctx);
                     thunk.state = .{ .evaluated = result };
