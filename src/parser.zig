@@ -623,10 +623,13 @@ pub const Parser = struct {
 
     fn parseApplication(self: *Parser) ParseError!*Expression {
         var expr = try self.parsePostfix();
+        const app_column = expr.location.column;
         var just_applied = false; // Track if we just parsed a function application
 
         while (true) {
-            if (self.current.preceded_by_newline) break;
+            // Allow multi-line application when the next line is indented
+            // past the function's column position.
+            if (self.current.preceded_by_newline and self.current.column <= app_column) break;
             switch (self.current.kind) {
                 .identifier => {
                     // Handle 'do' keyword specially - it introduces a block argument
