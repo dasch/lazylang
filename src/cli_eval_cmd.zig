@@ -267,7 +267,11 @@ fn writeManifestFiles(
     // For each field in the object, write to a file
     for (obj.fields) |field| {
         const filename = field.key;
-        const field_value = try evaluator.force(arena, field.value);
+        // Deep-force all thunks using the eval arena before formatting.
+        // Formatters use temporary arenas for force() calls, but thunk
+        // results are cached — if forced with a temp arena, the cached
+        // values become dangling pointers when the temp arena dies.
+        const field_value = try evaluator.forceDeep(arena, field.value);
 
         // Format the value based on output_format
         const needs_free = output_format != .pretty;

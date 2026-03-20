@@ -109,29 +109,28 @@ setNamespace = { appConfig, componentConfig, manifests } ->
    for manifest in manifests]
 
 setStandardLabels = { appConfig, componentConfig, manifests } ->
-  labels = {
-    "app.kubernetes.io/name": appConfig.name
-    "app.kubernetes.io/component": componentConfig.name
-    "app.kubernetes.io/managed-by": "lazylang"
-  }
+  [setLabelsOn labels manifest for manifest in manifests] where
+    labels = {
+      "app.kubernetes.io/name": appConfig.name
+      "app.kubernetes.io/component": componentConfig.name
+      "app.kubernetes.io/managed-by": "lazylang"
+    }
 
-  setLabelsOn = labels ->
-    manifest ->
-      existingLabels =
-        when Object.get "labels" manifest.metadata is
-          (#ok, existing) then existing
-          otherwise {}
+    setLabelsOn = labels ->
+      manifest ->
+        existingLabels =
+          when Object.get "labels" manifest.metadata is
+            (#ok, existing) then existing
+            otherwise {}
 
-      withMeta = manifest & { metadata: manifest.metadata & { labels: existingLabels & labels } }
+        withMeta = manifest & { metadata: manifest.metadata & { labels: existingLabels & labels } }
 
-      if manifest.kind == "Deployment" then
-        templateMeta = withMeta.spec.template.metadata
-        newTemplate = withMeta.spec.template & { metadata: templateMeta & { labels: templateMeta.labels & labels } }
-        withMeta & { spec: withMeta.spec & { template: newTemplate } }
-      else
-        withMeta
-
-  [setLabelsOn labels manifest for manifest in manifests]
+        if manifest.kind == "Deployment" then
+          templateMeta = withMeta.spec.template.metadata
+          newTemplate = withMeta.spec.template & { metadata: templateMeta & { labels: templateMeta.labels & labels } }
+          withMeta & { spec: withMeta.spec & { template: newTemplate } }
+        else
+          withMeta
 
 // -- Pipeline --
 

@@ -127,6 +127,7 @@ pub const ModuleFile = module_resolver.ModuleFile;
 // Re-export evaluator functions
 pub const matchPattern = evaluator.matchPattern;
 pub const force = evaluator.force;
+pub const forceDeep = evaluator.forceDeep;
 pub const evaluateExpression = evaluator.evaluateExpression;
 pub const importModule = evaluator.importModule;
 pub const createStdlibEnvironment = evaluator.createStdlibEnvironment;
@@ -416,7 +417,11 @@ fn evalSourceWithValue(
         import_stack2.deinit();
     }
 
-    const context = EvalContext{
+    // Allocate EvalContext on the arena so it outlives this function —
+    // thunks capture a pointer to it, and in --manifest mode thunks are
+    // forced after evalSourceWithValue returns.
+    const context = try arena.allocator().create(EvalContext);
+    context.* = .{
         .allocator = allocator,
         .lazy_paths = lazy_paths,
         .error_ctx = &err_ctx,
@@ -436,8 +441,8 @@ fn evalSourceWithValue(
         };
     };
 
-    const env = try evaluator.createStdlibEnvironment(arena.allocator(), current_dir, &context);
-    const value = evaluateExpression(arena.allocator(), expression, env, current_dir, &context) catch |err| {
+    const env = try evaluator.createStdlibEnvironment(arena.allocator(), current_dir, context);
+    const value = evaluateExpression(arena.allocator(), expression, env, current_dir, context) catch |err| {
         arena.deinit();
         return EvalValueResult{
             .value = .null_value,

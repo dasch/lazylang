@@ -35,6 +35,24 @@ test "evaluates where with multi-arg lambda binding" {
     try expectEvaluates("add 3 4 where add = a -> b -> a + b", "7");
 }
 
+test "where with lambda does not consume subsequent let bindings" {
+    try expectEvaluates(
+        \\f = x -> x where
+        \\  g = a -> a
+        \\h = 42
+        \\h
+    , "42");
+}
+
+test "where with indented bindings stays scoped" {
+    try expectEvaluates(
+        \\result = [y for y in xs] where
+        \\  transform = x -> x * 2
+        \\  xs = [1, 2, 3]
+        \\result
+    , "[1, 2, 3]");
+}
+
 test "evaluates where in tuple" {
     try expectEvaluates("(x where x = 1, y where y = 2)", "(1, 2)");
 }

@@ -854,6 +854,34 @@ pub fn force(arena: std.mem.Allocator, value: Value) EvalError!Value {
     };
 }
 
+/// Recursively force all thunks in a value, including nested objects and arrays.
+/// Use this to ensure all thunks are evaluated with the correct arena before
+/// passing values to formatters that use temporary arenas.
+pub fn forceDeep(arena: std.mem.Allocator, value: Value) EvalError!Value {
+    const forced = try force(arena, value);
+    return switch (forced) {
+        .object => |obj| {
+            for (obj.fields) |*field| {
+                field.value = try forceDeep(arena, field.value);
+            }
+            return forced;
+        },
+        .array => |arr| {
+            for (arr.elements) |*elem| {
+                elem.* = try forceDeep(arena, elem.*);
+            }
+            return forced;
+        },
+        .tuple => |tup| {
+            for (tup.elements) |*elem| {
+                elem.* = try forceDeep(arena, elem.*);
+            }
+            return forced;
+        },
+        else => forced,
+    };
+}
+
 /// Find the first field access in an expression (used for cyclic reference detection)
 fn findFirstFieldAccess(expr: *Expression) ?error_reporter.SourceLocation {
     return switch (expr.data) {
