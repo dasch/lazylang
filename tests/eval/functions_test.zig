@@ -69,6 +69,46 @@ test "evaluates operator function with map" {
     try expectEvaluates("Array = import 'Array'; Array.map ((+) 1) [1, 2, 3]", "[2, 3, 4]");
 }
 
+// Multi-line application
+
+test "multi-line application with indented arguments" {
+    try expectEvaluates(
+        \\add = a -> b -> a + b
+        \\add
+        \\  1
+        \\  2
+    , "3");
+}
+
+test "multi-line application with parenthesized lambda" {
+    try expectEvaluates(
+        \\Array = import 'Array'
+        \\Array.fold
+        \\  (acc -> x -> acc + x)
+        \\  0
+        \\  [1, 2, 3]
+    , "6");
+}
+
+test "multi-line application in let binding" {
+    try expectEvaluates(
+        \\add = a -> b -> a + b
+        \\result =
+        \\  add
+        \\    1
+        \\    2
+        \\result
+    , "3");
+}
+
+test "separate let bindings are not treated as application" {
+    try expectEvaluates(
+        \\a = 10
+        \\b = 20
+        \\a + b
+    , "30");
+}
+
 // Pipeline lambda bodies
 
 test "pipeline with simple lambda" {
