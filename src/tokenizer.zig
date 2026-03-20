@@ -81,6 +81,10 @@ pub const Tokenizer = struct {
         switch (char) {
             '+' => {
                 self.advance();
+                if (self.index < self.source.len and self.source[self.index] == '+') {
+                    self.advance();
+                    return self.makeToken(.plus_plus, start, start_line, start_column);
+                }
                 return self.makeToken(.plus, start, start_line, start_column);
             },
             '-' => {

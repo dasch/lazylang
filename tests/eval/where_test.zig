@@ -27,6 +27,14 @@ test "evaluates where with complex expression" {
     try expectEvaluates("a + b * c where a = 1; b = 2; c = 3", "7");
 }
 
+test "evaluates where with lambda binding" {
+    try expectEvaluates("f 10 where f = x -> x + 1", "11");
+}
+
+test "evaluates where with multi-arg lambda binding" {
+    try expectEvaluates("add 3 4 where add = a -> b -> a + b", "7");
+}
+
 test "evaluates where in tuple" {
     try expectEvaluates("(x where x = 1, y where y = 2)", "(1, 2)");
 }

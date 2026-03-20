@@ -116,6 +116,7 @@ pub const Parser = struct {
             .dot => "'.'",
             .dot_dot => "'..'",
             .plus => "'+'",
+            .plus_plus => "'++'",
             .minus => "'-'",
             .star => "'*'",
             .slash => "'/'",
@@ -262,7 +263,7 @@ pub const Parser = struct {
                 const doc = self.current.doc_comments;
                 const pattern = try self.parsePattern();
                 try self.expectToken(.equals, "in where binding");
-                const value = try self.parseBinary(0);
+                const value = try self.parseLambda();
 
                 try bindings.append(self.arena, .{ .pattern = pattern, .value = value, .doc = doc });
 
@@ -506,6 +507,7 @@ pub const Parser = struct {
                 .data = .{ .binary = .{
                     .op = switch (op_token.kind) {
                         .plus => .add,
+                        .plus_plus => .concatenate,
                         .minus => .subtract,
                         .star => .multiply,
                         .slash => .divide,
@@ -1567,6 +1569,7 @@ pub const Parser = struct {
         // Check for operator function: (+), (-), (*), (/), etc.
         const op: ?BinaryOp = switch (self.current.kind) {
             .plus => .add,
+            .plus_plus => .concatenate,
             .minus => .subtract,
             .star => .multiply,
             .slash => .divide,
@@ -1984,7 +1987,7 @@ fn getPrecedence(kind: TokenKind) ?u32 {
         .equals_equals, .bang_equals, .less, .greater, .less_equals, .greater_equals => 5,
         .ampersand => 6, // Object merge operator
         .dot_dot, .dot_dot_dot => 6, // Range operators
-        .plus, .minus => 7,
+        .plus, .plus_plus, .minus => 7,
         .star, .slash => 8,
         else => null,
     };

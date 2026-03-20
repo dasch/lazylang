@@ -172,6 +172,33 @@ pub fn runEval(
     };
     defer allocator.free(file_content);
 
+    // In manifest mode, evaluate once to get the raw value — no need
+    // for a formatted string. This avoids evaluating the file twice.
+    if (manifest_mode) {
+        var value_result = evaluator.evalFileWithValue(allocator, file_path.?) catch |err| {
+            if (json_output) {
+                try json_error.reportErrorAsJson(stderr, file_path.?, &error_context.ErrorContext.init(allocator), @errorName(err), @errorName(err), null);
+            } else {
+                try cli_error_reporting.reportError(allocator, stderr, file_path.?, file_content, err, null, colors_enabled);
+            }
+            return .{ .exit_code = 1 };
+        };
+        defer value_result.deinit();
+
+        if (value_result.err) |_| {
+            try cli_error_reporting.reportErrorWithContext(allocator, stderr, file_path.?, file_content, &value_result.error_ctx, null, colors_enabled);
+            return .{ .exit_code = 1 };
+        }
+
+        writeManifestFiles(allocator, value_result.value, value_result.arena.allocator(), output_format, stdout, stderr) catch |err| {
+            if (err != error.TypeMismatch) {
+                return err;
+            }
+            return .{ .exit_code = 1 };
+        };
+        return .{ .exit_code = 0 };
+    }
+
     const format: evaluator.FormatStyle = switch (output_format) {
         .pretty => .pretty,
         .json => .json,
@@ -199,32 +226,6 @@ pub fn runEval(
     }
 
     if (result.output) |output| {
-        if (manifest_mode) {
-            // Get the raw value for manifest mode
-            var value_result = evaluator.evalFileWithValue(allocator, file_path.?) catch |err| {
-                if (json_output) {
-                    try json_error.reportErrorAsJson(stderr, file_path.?, &error_context.ErrorContext.init(allocator), @errorName(err), @errorName(err), null);
-                } else {
-                    try cli_error_reporting.reportError(allocator, stderr, file_path.?, file_content, err, null, colors_enabled);
-                }
-                return .{ .exit_code = 1 };
-            };
-            defer value_result.deinit();
-
-            if (value_result.err) |_| {
-                try cli_error_reporting.reportErrorWithContext(allocator, stderr, file_path.?, file_content, &value_result.error_ctx, null, colors_enabled);
-                return .{ .exit_code = 1 };
-            }
-
-            writeManifestFiles(allocator, value_result.value, value_result.arena.allocator(), output_format, stdout, stderr) catch |err| {
-                if (err != error.TypeMismatch) {
-                    return err;
-                }
-                return .{ .exit_code = 1 };
-            };
-            return .{ .exit_code = 0 };
-        }
-
         try stdout.print("{s}\n", .{output.text});
         return .{ .exit_code = 0 };
     } else {
@@ -287,8 +288,26 @@ fn writeManifestFiles(
                 break :blk try evaluator.formatValueAsJson(allocator, field_value);
             },
             .yaml => blk: {
-                // In YAML mode, any value can be encoded
-                break :blk try evaluator.formatValueAsYaml(allocator, field_value);
+                // In YAML mode, arrays are formatted as multi-document YAML
+                // (separated by ---) for Kubernetes compatibility.
+                switch (field_value) {
+                    .array => |arr| {
+                        var builder = std.ArrayList(u8){};
+                        errdefer builder.deinit(allocator);
+                        for (arr.elements, 0..) |element, i| {
+                            if (i > 0) {
+                                try builder.appendSlice(allocator, "---\n");
+                            }
+                            const elem_value = try evaluator.force(arena, element);
+                            const formatted = try evaluator.formatValueAsYaml(allocator, elem_value);
+                            defer allocator.free(formatted);
+                            try builder.appendSlice(allocator, formatted);
+                            try builder.append(allocator, '\n');
+                        }
+                        break :blk try builder.toOwnedSlice(allocator);
+                    },
+                    else => break :blk try evaluator.formatValueAsYaml(allocator, field_value),
+                }
             },
         };
         defer if (needs_free) allocator.free(content);

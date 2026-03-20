@@ -278,12 +278,10 @@ test "eval --manifest --yaml writes YAML-encoded values to files" {
     try std.testing.expectEqual(@as(u8, 0), outcome.result.exit_code);
     try std.testing.expect(std.mem.indexOf(u8, outcome.stdout, "Wrote data.yaml") != null);
 
-    // Verify file was created with YAML content
+    // Verify file was created with multi-document YAML (--- separators)
     const file_content = try tmp.dir.readFileAlloc(allocator, "data.yaml", 1024);
     defer allocator.free(file_content);
-    try std.testing.expect(std.mem.indexOf(u8, file_content, "- 1") != null);
-    try std.testing.expect(std.mem.indexOf(u8, file_content, "- 2") != null);
-    try std.testing.expect(std.mem.indexOf(u8, file_content, "- 3") != null);
+    try std.testing.expect(std.mem.indexOf(u8, file_content, "1\n---\n2\n---\n3") != null);
 }
 
 test "eval --manifest errors when output is not an object" {
