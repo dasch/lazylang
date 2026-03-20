@@ -8,7 +8,7 @@ Tuple = import "Tuple"
 ///
 /// ## Creating Ranges
 ///
-/// - `Range.inclusive start end`: Creates an inclusive range [start..end]
+/// - `Range.inclusive start end`: Creates an inclusive range `start..end`
 /// - `Range.exclusive start end`: Creates an exclusive range [start...end)
 ///
 /// ## Converting to Arrays
@@ -39,7 +39,7 @@ Tuple = import "Tuple"
   /// - `end`: The ending integer (inclusive)
   ///
   /// **Returns:**
-  /// A Range value representing the sequence [start, start+1, ..., end]
+  /// A Range value representing the sequence `start, start+1, ..., end`
   ///
   /// **Example:**
   /// ```
@@ -57,7 +57,7 @@ Tuple = import "Tuple"
   /// - `end`: The ending integer (exclusive)
   ///
   /// **Returns:**
-  /// A Range value representing the sequence [start, start+1, ..., end-1]
+  /// A Range value representing the sequence `start, start+1, ..., end-1`
   ///
   /// **Example:**
   /// ```

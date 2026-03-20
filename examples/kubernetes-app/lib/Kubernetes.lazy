@@ -1,0 +1,176 @@
+Array = import "Array"
+Object = import "Object"
+
+// K8s library: generates Kubernetes manifests from application + component config.
+//
+// Usage:
+//   K8s = import "../lib/K8s"
+//   K8s.buildComponent { appConfig, componentConfig }
+//
+// The build pipeline is: generateManifests -> setNamespace -> setLabels
+// Each transform: { appConfig, componentConfig, manifests } -> [manifest]
+
+// -- Helpers --
+
+setLabelsOn = labels ->
+  manifest ->
+    existingLabels =
+      when Object.get "labels" manifest.metadata is
+        (#ok, existing) then existing
+        otherwise {}
+
+    withMeta = manifest & { metadata: manifest.metadata & { labels: existingLabels & labels } }
+
+    if manifest.kind == "Deployment" then
+      templateMeta = withMeta.spec.template.metadata
+      newTemplate = withMeta.spec.template & { metadata: templateMeta & { labels: templateMeta.labels & labels } }
+      withMeta & { spec: withMeta.spec & { template: newTemplate } }
+    else
+      withMeta
+
+// -- Transform stages --
+
+generateManifests = { appConfig, componentConfig, manifests } ->
+  image = "${appConfig.registry}/${appConfig.name}"
+
+  container =
+    { name: componentConfig.name, image }
+    & (if componentConfig.containerPort != null then { ports: [{ containerPort: componentConfig.containerPort }] } else {})
+    & (if componentConfig.command != null then { command: componentConfig.command } else {})
+    & (if componentConfig.env != {} then { env: [{ name, value } for (name, value) in componentConfig.env] } else {})
+
+  deployment = {
+    apiVersion: "apps/v1"
+    kind: "Deployment"
+    metadata: { name: componentConfig.name }
+    spec: {
+      replicas: componentConfig.replicas
+      selector: {
+        matchLabels: {
+          app: appConfig.name
+          component: componentConfig.name
+        }
+      }
+      template: {
+        metadata: { labels: {} }
+        spec: {
+          containers: [container]
+        }
+      }
+    }
+  }
+
+  serviceManifests =
+    if componentConfig.service != null then
+      [{
+        apiVersion: "v1"
+        kind: "Service"
+        metadata: { name: componentConfig.name }
+        spec: {
+          selector: {
+            app: appConfig.name
+            component: componentConfig.name
+          }
+          ports: [{
+            protocol: "TCP"
+            port: componentConfig.service.port
+            targetPort:
+              if componentConfig.containerPort != null then
+                componentConfig.containerPort
+              else
+                componentConfig.service.port
+          }]
+        }
+      }]
+    else
+      []
+
+  hpaManifests =
+    if componentConfig.hpa != null then
+      [{
+        apiVersion: "autoscaling/v2"
+        kind: "HorizontalPodAutoscaler"
+        metadata: { name: componentConfig.name }
+        spec: {
+          scaleTargetRef: {
+            apiVersion: "apps/v1"
+            kind: "Deployment"
+            name: componentConfig.name
+          }
+          minReplicas: componentConfig.hpa.minReplicas
+          maxReplicas: componentConfig.hpa.maxReplicas
+          metrics: [{
+            type: "Resource"
+            resource: {
+              name: "cpu"
+              target: {
+                type: "Utilization"
+                averageUtilization: componentConfig.hpa.cpuUtilization
+              }
+            }
+          }]
+        }
+      }]
+    else
+      []
+
+  [m for ms in [manifests, [deployment], serviceManifests, hpaManifests] for m in ms]
+
+setNamespace = { appConfig, componentConfig, manifests } ->
+  [manifest & { metadata: manifest.metadata & { namespace: appConfig.namespace } }
+   for manifest in manifests]
+
+setStandardLabels = { appConfig, componentConfig, manifests } ->
+  labels = {
+    "app.kubernetes.io/name": appConfig.name
+    "app.kubernetes.io/component": componentConfig.name
+    "app.kubernetes.io/managed-by": "lazylang"
+  }
+
+  [setLabelsOn labels manifest for manifest in manifests]
+
+// -- Pipeline --
+
+defaultPipeline = [generateManifests, setNamespace, setStandardLabels]
+
+runPipeline = pipeline ->
+  ctx ->
+    Array.fold
+      (ms -> transform -> transform (ctx & { manifests: ms }))
+      ctx.manifests
+      pipeline
+
+// -- Default component config --
+
+defaultComponentConfig = {
+  replicas: 1
+  containerPort: null
+  command: null
+  env: {}
+  service: null
+  hpa: null
+}
+
+// -- Public API --
+
+{
+  defaultComponentConfig
+
+  buildComponent: { appConfig, componentConfig } ->
+    runPipeline defaultPipeline { appConfig, componentConfig, manifests: [] }
+
+  buildAll: appConfig ->
+    components ->
+      { [name]: runPipeline defaultPipeline { appConfig, componentConfig: config, manifests: [] }
+        for (name, config) in components
+      }
+
+  transforms: {
+    generateManifests
+    setNamespace
+    setStandardLabels
+  }
+
+  runPipeline
+  defaultPipeline
+}

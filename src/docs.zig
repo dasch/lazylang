@@ -508,7 +508,7 @@ pub fn writeSinglePageDocs(file: anytype, modules: []const ModuleInfo, allocator
 
         // Module-level doc
         if (module.module_doc) |doc| {
-            if (renderMarkdownToHtml(allocator, doc)) |html| {
+            if (renderMarkdownToHtmlWithModule(allocator, doc, module.name)) |html| {
                 defer allocator.free(html);
                 try file.writeAll("<div class=\"module-doc\">");
                 try file.writeAll(html);
@@ -548,7 +548,7 @@ pub fn writeSinglePageDocs(file: anytype, modules: []const ModuleInfo, allocator
             try file.writeAll("</div>\n");
 
             // Doc content
-            const doc_html = renderMarkdownToHtml(allocator, item.doc) catch null;
+            const doc_html = renderMarkdownToHtmlWithModule(allocator, item.doc, module.name) catch null;
             defer if (doc_html) |h| allocator.free(h);
             try file.writeAll("<div class=\"fn-doc\">");
             if (doc_html) |h| {
@@ -980,6 +980,10 @@ pub fn syntaxHighlightCode(allocator: std.mem.Allocator, code: []const u8) ![]co
 }
 
 fn renderInlineMarkdown(allocator: std.mem.Allocator, result: *std.ArrayListUnmanaged(u8), text: []const u8) !void {
+    return renderInlineMarkdownWithModule(allocator, result, text, null);
+}
+
+fn renderInlineMarkdownWithModule(allocator: std.mem.Allocator, result: *std.ArrayListUnmanaged(u8), text: []const u8, module_name: ?[]const u8) !void {
     var i: usize = 0;
     while (i < text.len) {
         if (text[i] == '`') {
@@ -1004,7 +1008,15 @@ fn renderInlineMarkdown(allocator: std.mem.Allocator, result: *std.ArrayListUnma
             while (i < text.len and text[i] != ']') : (i += 1) {}
             if (i < text.len) {
                 const func_name = text[start..i];
+                // Qualify unqualified names with the current module
+                const is_qualified = std.mem.indexOf(u8, func_name, ".") != null;
                 try result.appendSlice(allocator, "<a href=\"#");
+                if (!is_qualified) {
+                    if (module_name) |mod| {
+                        try result.appendSlice(allocator, mod);
+                        try result.append(allocator, '.');
+                    }
+                }
                 try result.appendSlice(allocator, func_name);
                 try result.appendSlice(allocator, "\">");
                 try result.appendSlice(allocator, func_name);
@@ -1044,6 +1056,10 @@ fn renderInlineMarkdown(allocator: std.mem.Allocator, result: *std.ArrayListUnma
 }
 
 pub fn renderMarkdownToHtml(allocator: std.mem.Allocator, markdown: []const u8) ![]const u8 {
+    return renderMarkdownToHtmlWithModule(allocator, markdown, null);
+}
+
+pub fn renderMarkdownToHtmlWithModule(allocator: std.mem.Allocator, markdown: []const u8, module_name: ?[]const u8) ![]const u8 {
     var result = std.ArrayListUnmanaged(u8){};
     errdefer result.deinit(allocator);
 
@@ -1104,7 +1120,7 @@ pub fn renderMarkdownToHtml(allocator: std.mem.Allocator, markdown: []const u8) 
                     try result.appendSlice(allocator, "<");
                     try result.appendSlice(allocator, tag);
                     try result.appendSlice(allocator, " style=\"margin-top:1.5em;margin-bottom:0.5em\">");
-                    try renderInlineMarkdown(allocator, &result, heading_text);
+                    try renderInlineMarkdownWithModule(allocator, &result, heading_text, module_name);
                     try result.appendSlice(allocator, "</");
                     try result.appendSlice(allocator, tag);
                     try result.appendSlice(allocator, ">\n");
@@ -1116,11 +1132,11 @@ pub fn renderMarkdownToHtml(allocator: std.mem.Allocator, markdown: []const u8) 
 
             if (std.mem.startsWith(u8, trimmed, "- ")) {
                 try result.appendSlice(allocator, "<li>");
-                try renderInlineMarkdown(allocator, &result, trimmed[2..]);
+                try renderInlineMarkdownWithModule(allocator, &result, trimmed[2..], module_name);
                 try result.appendSlice(allocator, "</li>\n");
             } else if (line.len > 0) {
                 try result.appendSlice(allocator, "<p>");
-                try renderInlineMarkdown(allocator, &result, line);
+                try renderInlineMarkdownWithModule(allocator, &result, line, module_name);
                 try result.appendSlice(allocator, "</p>\n");
             } else {
                 try result.appendSlice(allocator, "\n");
@@ -1157,18 +1173,18 @@ pub fn renderMarkdownToHtml(allocator: std.mem.Allocator, markdown: []const u8) 
                 try result.appendSlice(allocator, "<");
                 try result.appendSlice(allocator, tag);
                 try result.appendSlice(allocator, " style=\"margin-top:1.5em;margin-bottom:0.5em\">");
-                try renderInlineMarkdown(allocator, &result, heading_text);
+                try renderInlineMarkdownWithModule(allocator, &result, heading_text, module_name);
                 try result.appendSlice(allocator, "</");
                 try result.appendSlice(allocator, tag);
                 try result.appendSlice(allocator, ">");
             }
         } else if (std.mem.startsWith(u8, trimmed, "- ")) {
             try result.appendSlice(allocator, "<li>");
-            try renderInlineMarkdown(allocator, &result, trimmed[2..]);
+            try renderInlineMarkdownWithModule(allocator, &result, trimmed[2..], module_name);
             try result.appendSlice(allocator, "</li>");
         } else if (line.len > 0) {
             try result.appendSlice(allocator, "<p>");
-            try renderInlineMarkdown(allocator, &result, line);
+            try renderInlineMarkdownWithModule(allocator, &result, line, module_name);
             try result.appendSlice(allocator, "</p>");
         }
     }
