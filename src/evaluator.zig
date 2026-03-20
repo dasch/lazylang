@@ -1521,12 +1521,20 @@ pub fn evaluateExpression(
             for (when_matches.branches) |branch| {
                 // Try to match the pattern
                 const match_env = matchPattern(arena, branch.pattern, value, env, ctx) catch |err| {
-                    // If pattern doesn't match, try next branch
                     if (err == error.TypeMismatch) continue;
                     return err;
                 };
 
-                // Pattern matched, evaluate the expression
+                // Check optional `and` guard
+                if (branch.guard) |guard_expr| {
+                    const guard_val = try evaluateExpression(arena, guard_expr, match_env, current_dir, ctx);
+                    switch (guard_val) {
+                        .boolean => |b| if (!b) continue, // guard failed, try next branch
+                        else => return error.TypeMismatch,
+                    }
+                }
+
+                // Pattern matched (and guard passed), evaluate the expression
                 break :blk try evaluateExpression(arena, branch.expression, match_env, current_dir, ctx);
             }
 
@@ -1535,7 +1543,37 @@ pub fn evaluateExpression(
                 break :blk try evaluateExpression(arena, otherwise_expr, env, current_dir, ctx);
             }
 
-            // No pattern matched and no otherwise clause - error
+            return error.TypeMismatch;
+        },
+        .when_predicate => |when_pred| blk: {
+            const value = try evaluateExpression(arena, when_pred.value, env, current_dir, ctx);
+
+            // Try each predicate branch
+            for (when_pred.branches) |branch| {
+                const predicate = try evaluateExpression(arena, branch.predicate, env, current_dir, ctx);
+
+                // Call the predicate with the value
+                const result = switch (predicate) {
+                    .function => |func| try evaluateExpression(arena, func.body, try matchPattern(arena, func.param, value, func.env, ctx), current_dir, ctx),
+                    .native_fn => |native_fn| try native_fn(arena, &[_]Value{value}),
+                    else => return error.ExpectedFunction,
+                };
+
+                // Check if predicate returned truthy
+                const is_match = switch (result) {
+                    .boolean => |b| b,
+                    else => true, // non-boolean truthy
+                };
+
+                if (is_match) {
+                    break :blk try evaluateExpression(arena, branch.expression, env, current_dir, ctx);
+                }
+            }
+
+            if (when_pred.otherwise) |otherwise_expr| {
+                break :blk try evaluateExpression(arena, otherwise_expr, env, current_dir, ctx);
+            }
+
             return error.TypeMismatch;
         },
         .application => |application| blk: {

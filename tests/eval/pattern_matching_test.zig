@@ -129,3 +129,70 @@ test "evaluates when matches with mixed literals" {
         "true",
     );
 }
+
+// Guards with `and`
+
+test "when is with and guard" {
+    try expectEvaluates(
+        \\when (#ok, 42) is
+        \\  (#ok, x) and x > 10 then "big"
+        \\  (#ok, x) then "small"
+    ,
+        "\"big\"",
+    );
+}
+
+test "when is guard rejects and falls through" {
+    try expectEvaluates(
+        \\when (#ok, 3) is
+        \\  (#ok, x) and x > 10 then "big"
+        \\  (#ok, x) then "small"
+    ,
+        "\"small\"",
+    );
+}
+
+// Predicate matching with `matches`
+
+test "when matches with type predicates" {
+    try expectEvaluates(
+        \\when "hello" matches
+        \\  isString then "string"
+        \\  isInteger then "integer"
+    ,
+        "\"string\"",
+    );
+}
+
+test "when matches with custom predicate" {
+    try expectEvaluates(
+        \\positive = x -> x > 0
+        \\negative = x -> x < 0
+        \\when 42 matches
+        \\  negative then "neg"
+        \\  positive then "pos"
+    ,
+        "\"pos\"",
+    );
+}
+
+test "when matches with otherwise" {
+    try expectEvaluates(
+        \\when [] matches
+        \\  isString then "string"
+        \\  isInteger then "integer"
+        \\  otherwise "other"
+    ,
+        "\"other\"",
+    );
+}
+
+test "when matches with lambda predicate" {
+    try expectEvaluates(
+        \\when 15 matches
+        \\  (x -> x > 10) then "big"
+        \\  otherwise "small"
+    ,
+        "\"big\"",
+    );
+}

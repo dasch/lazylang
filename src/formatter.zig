@@ -282,7 +282,7 @@ fn measureExpr(expr: *const ast.Expression) ?usize {
             const fw = measureExpr(app.function) orelse return null;
             const aw = measureExpr(app.argument) orelse return null;
             const needs_parens = switch (app.argument.data) {
-                .application, .binary, .lambda, .let, .if_expr, .when_matches, .where_expr, .assert_expr, .unary => true,
+                .application, .binary, .lambda, .let, .if_expr, .when_matches, .when_predicate, .where_expr, .assert_expr, .unary => true,
                 else => false,
             };
             return fw + 1 + aw + if (needs_parens) @as(usize, 2) else @as(usize, 0);
@@ -393,7 +393,7 @@ fn measureExpr(expr: *const ast.Expression) ?usize {
             return w;
         },
         // These are inherently multi-line
-        .let, .when_matches, .where_expr, .assert_expr => null,
+        .let, .when_matches, .when_predicate, .where_expr, .assert_expr => null,
     };
 }
 
@@ -716,10 +716,32 @@ fn formatExpr(w: *Writer, expr: *const ast.Expression, parens_needed: bool) Form
             for (wm.branches) |branch| {
                 try w.newline();
                 try formatPattern(w, branch.pattern);
+                if (branch.guard) |guard| {
+                    try w.write(" and ");
+                    try formatExpr(w, guard, false);
+                }
                 try w.write(" then ");
                 try formatExpr(w, branch.expression, false);
             }
             if (wm.otherwise) |otherwise| {
+                try w.newline();
+                try w.write("otherwise ");
+                try formatExpr(w, otherwise, false);
+            }
+            w.indent -= 1;
+        },
+        .when_predicate => |wp| {
+            try w.write("when ");
+            try formatExpr(w, wp.value, false);
+            try w.write(" matches");
+            w.indent += 1;
+            for (wp.branches) |branch| {
+                try w.newline();
+                try formatExpr(w, branch.predicate, false);
+                try w.write(" then ");
+                try formatExpr(w, branch.expression, false);
+            }
+            if (wp.otherwise) |otherwise| {
                 try w.newline();
                 try w.write("otherwise ");
                 try formatExpr(w, otherwise, false);
@@ -981,7 +1003,7 @@ fn formatApplication(w: *Writer, app: ast.Application) FormatterError!void {
     // - f a [1, 2]        → array indexing of (f a) without parens
     const in_chain = app.function.data == .application;
     const needs_parens = switch (app.argument.data) {
-        .application, .binary, .lambda, .let, .if_expr, .when_matches, .where_expr, .assert_expr, .unary, .object_extend, .range => true,
+        .application, .binary, .lambda, .let, .if_expr, .when_matches, .when_predicate, .where_expr, .assert_expr, .unary, .object_extend, .range => true,
         // field_access: dot binds tighter than application, so f Module.field is fine
         .object => in_chain, // f a { x: 1 } is object extension without parens
         else => false,

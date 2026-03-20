@@ -113,6 +113,7 @@ pub const ExpressionData = union(enum) {
     application: Application,
     if_expr: If,
     when_matches: WhenMatches,
+    when_predicate: WhenPredicate,
     array: ArrayLiteral,
     tuple: TupleLiteral,
     object: ObjectLiteral,
@@ -196,6 +197,18 @@ pub const WhenMatches = struct {
 
 pub const MatchBranch = struct {
     pattern: *Pattern,
+    expression: *Expression,
+    guard: ?*Expression = null, // optional `and` guard
+};
+
+pub const WhenPredicate = struct {
+    value: *Expression,
+    branches: []PredicateBranch,
+    otherwise: ?*Expression,
+};
+
+pub const PredicateBranch = struct {
+    predicate: *Expression,
     expression: *Expression,
 };
 

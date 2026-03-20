@@ -899,16 +899,65 @@ pub const Parser = struct {
                     } }, assert_token);
                 }
                 if (std.mem.eql(u8, self.current.lexeme, "when")) {
-                    const when_token = self.current; // Capture for location
+                    const when_token = self.current;
                     try self.advance();
                     const value = try self.parseBinary(0);
 
-                    if (self.current.kind != .identifier or !std.mem.eql(u8, self.current.lexeme, "is")) {
+                    // Determine if this is `when x is` (structural) or `when x matches` (predicate)
+                    const is_predicate = self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "matches");
+                    const is_structural = self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "is");
+
+                    if (!is_predicate and !is_structural) {
                         self.recordError();
                         return error.UnexpectedToken;
                     }
                     try self.advance();
 
+                    if (is_predicate) {
+                        // Parse predicate branches: each is an expression (function) then result
+                        var pred_branches = std.ArrayListUnmanaged(ast.PredicateBranch){};
+                        var pred_otherwise: ?*Expression = null;
+                        var pred_indent: ?usize = null;
+
+                        while (true) {
+                            if (self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "otherwise")) {
+                                try self.advance();
+                                pred_otherwise = try self.parseLambda();
+                                break;
+                            }
+                            if (self.current.kind == .eof or self.current.kind == .semicolon) break;
+                            if (pred_indent) |indent| {
+                                if (self.current.preceded_by_newline and self.current.column < indent) break;
+                            }
+                            if (pred_indent == null and self.current.preceded_by_newline) {
+                                pred_indent = self.current.column;
+                            }
+
+                            // Parse predicate expression
+                            const predicate = try self.parseApplication();
+
+                            // Expect "then"
+                            if (self.current.kind != .identifier or !std.mem.eql(u8, self.current.lexeme, "then")) {
+                                self.recordError();
+                                return error.UnexpectedToken;
+                            }
+                            try self.advance();
+                            const branch_expr = try self.parseLambda();
+
+                            try pred_branches.append(self.arena, .{
+                                .predicate = predicate,
+                                .expression = branch_expr,
+                            });
+                        }
+
+                        return try self.makeExpression(.{ .when_predicate = .{
+                            .value = value,
+                            .branches = try pred_branches.toOwnedSlice(self.arena),
+                            .otherwise = pred_otherwise,
+                        } }, when_token);
+                    }
+
+                    // Structural matching: `when x is`
                     var branches = std.ArrayListUnmanaged(MatchBranch){};
                     var otherwise_expr: ?*Expression = null;
                     var branch_indent: ?usize = null; // Track indentation of first branch
@@ -942,6 +991,13 @@ pub const Parser = struct {
                         // Parse pattern
                         const pattern = try self.parsePattern();
 
+                        // Check for optional `and` guard
+                        var guard: ?*Expression = null;
+                        if (self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "and")) {
+                            try self.advance();
+                            guard = try self.parseBinary(0);
+                        }
+
                         // Expect "then"
                         if (self.current.kind != .identifier or !std.mem.eql(u8, self.current.lexeme, "then")) {
                             self.recordError();
@@ -955,6 +1011,7 @@ pub const Parser = struct {
                         try branches.append(self.arena, .{
                             .pattern = pattern,
                             .expression = branch_expr,
+                            .guard = guard,
                         });
                     }
 
