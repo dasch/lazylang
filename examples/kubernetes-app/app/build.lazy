@@ -1,0 +1,17 @@
+// Entry point: builds Kubernetes manifests for all components.
+//
+// Run with:
+//   ./bin/lazy eval examples/kubernetes-app/app/build.lazy
+//   ./bin/lazy eval --manifest --yaml examples/kubernetes-app/app/build.lazy
+
+K8s = import "../lib/Kubernetes"
+appConfig = import "./application"
+
+// Each component must be explicitly imported (no dynamic imports).
+// Merge with defaults and add the component name.
+components = {
+  web: K8s.defaultComponentConfig & (import "./components/web/config") & { name: "web" }
+  worker: K8s.defaultComponentConfig & (import "./components/worker/config") & { name: "worker" }
+}
+
+K8s.buildAll appConfig components
