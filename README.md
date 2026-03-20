@@ -452,17 +452,53 @@ The argument of a function definition can also be destructured:
 fullname = { first, last } -> first + " " + last
 ```
 
-Pattern matching can be used in `when` expressions:
+### Structural matching (`when ... is`)
+
+`when ... is` matches values against structural patterns:
 
 ```
-when value matches
-  (x, y) then ...
-  [head, ...tail] then ...
-  { key1, key2 } then ...
-  otherwise ...
+when value is
+  (x, y) then x + y
+  [head, ...tail] then head
+  { name, age } then name
+  otherwise "unknown"
 ```
 
-The `otherwise` keyword will match anything. If left out, a value that doesn't match any pattern will result in a crash.
+Branches can have `and` guards for additional conditions:
+
+```
+when response is
+  (#ok, value) and isString value then "string: " + value
+  (#ok, value) then "other: " + toString value
+  (#error, msg) then "error: " + msg
+```
+
+### Predicate matching (`when ... matches`)
+
+`when ... matches` tests a value against predicate functions:
+
+```
+when input matches
+  isString then "it's a string: " + input
+  isInteger then "it's a number: " + toString input
+  isArray then "it's an array"
+  otherwise "something else"
+```
+
+Any function that takes a value and returns a boolean works as a predicate, including custom functions and lambdas:
+
+```
+positive = x -> x > 0
+negative = x -> x < 0
+
+when score matches
+  (x -> x > 90) then "excellent"
+  positive then "above zero"
+  negative then "below zero"
+  otherwise "zero"
+```
+
+The `otherwise` keyword will match anything. If left out, a value that doesn't match any branch will result in a crash.
 
 ## Expression pipelining
 
@@ -536,7 +572,7 @@ These are available without import (exposed through the `Basics` module).
 Errors are handled similar to Erlang; code that may fail should evaluate to a tuple `(#ok, value)` rather than just `value`, and on failure should use some other value, e.g. `#noSuchKey`. Then, pattern matching can be used to handle errors:
 
 ```
-when Object.get "team" resource matches
+when Object.get "team" resource is
   (#ok, team) then team
   #noSuchKey then defaultTeam
 ```
@@ -544,7 +580,7 @@ when Object.get "team" resource matches
 Since tags are just strings, you can also match with string literals:
 
 ```
-when Object.get "team" resource matches
+when Object.get "team" resource is
   ("ok", team) then team
   "noSuchKey" then defaultTeam
 ```
