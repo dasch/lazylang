@@ -365,6 +365,10 @@ pub const Server = struct {
             .dot_dot, .dot_dot_dot => 3, // operator
             .l_paren, .r_paren, .l_bracket, .r_bracket, .l_brace, .r_brace => 3, // operator
             .eof => 0, // keyword (shouldn't happen)
+            .keyword_if, .keyword_then, .keyword_else, .keyword_when, .keyword_is,
+            .keyword_for, .keyword_in, .keyword_where, .keyword_do, .keyword_otherwise,
+            .keyword_unless, .keyword_matches, .keyword_import, .keyword_assert,
+            .keyword_self, .keyword_and => 0, // keyword
         };
     }
 

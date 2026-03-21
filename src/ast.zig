@@ -50,6 +50,47 @@ pub const TokenKind = enum {
     r_bracket,
     l_brace,
     r_brace,
+    // Keywords
+    keyword_if,
+    keyword_then,
+    keyword_else,
+    keyword_when,
+    keyword_is,
+    keyword_for,
+    keyword_in,
+    keyword_where,
+    keyword_do,
+    keyword_otherwise,
+    keyword_unless,
+    keyword_matches,
+    keyword_import,
+    keyword_assert,
+    keyword_self,
+    keyword_and,
+
+    /// Returns true if this token kind is a keyword.
+    pub fn isKeyword(self: TokenKind) bool {
+        return switch (self) {
+            .keyword_if,
+            .keyword_then,
+            .keyword_else,
+            .keyword_when,
+            .keyword_is,
+            .keyword_for,
+            .keyword_in,
+            .keyword_where,
+            .keyword_do,
+            .keyword_otherwise,
+            .keyword_unless,
+            .keyword_matches,
+            .keyword_import,
+            .keyword_assert,
+            .keyword_self,
+            .keyword_and,
+            => true,
+            else => false,
+        };
+    }
 };
 
 /// Token produced by the lexer
