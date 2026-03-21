@@ -1278,6 +1278,8 @@ fn writeEscapedString(w: *Writer, s: []const u8) FormatterError!void {
             '\n' => try w.write("\\n"),
             '\t' => try w.write("\\t"),
             '\r' => try w.write("\\r"),
+            0x08 => try w.write("\\b"),
+            0x0C => try w.write("\\f"),
             else => try w.writeByte(c),
         }
     }

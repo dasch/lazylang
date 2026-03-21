@@ -22,6 +22,28 @@ const std = @import("std");
 const eval = @import("eval.zig");
 const yaml = @import("yaml.zig");
 
+// Helper: extract exactly 2 elements from a tuple argument.
+fn extractTuple2(args: []const eval.Value) eval.EvalError!struct { eval.Value, eval.Value } {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+    const t = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+    if (t.elements.len != 2) return error.WrongNumberOfArguments;
+    return .{ t.elements[0], t.elements[1] };
+}
+
+// Helper: extract exactly 3 elements from a tuple argument.
+fn extractTuple3(args: []const eval.Value) eval.EvalError!struct { eval.Value, eval.Value, eval.Value } {
+    if (args.len != 1) return error.WrongNumberOfArguments;
+    const t = switch (args[0]) {
+        .tuple => |t| t,
+        else => return error.TypeMismatch,
+    };
+    if (t.elements.len != 3) return error.WrongNumberOfArguments;
+    return .{ t.elements[0], t.elements[1], t.elements[2] };
+}
+
 // Array builtins
 
 pub fn arrayLength(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
@@ -263,7 +285,7 @@ pub fn arrayUniq(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalEr
         // Check if element is already in seen
         var found = false;
         for (seen.items) |seen_elem| {
-            if (valuesEqual(arena, elem, seen_elem)) {
+            if (try valuesEqual(arena, elem, seen_elem)) {
                 found = true;
                 break;
             }
@@ -277,60 +299,26 @@ pub fn arrayUniq(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalEr
     return eval.Value{ .array = .{ .elements = try seen.toOwnedSlice(arena) } };
 }
 
-pub fn rangeInclusive(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+fn rangeCreate(arena: std.mem.Allocator, args: []const eval.Value, comptime inclusive: bool) eval.EvalError!eval.Value {
     _ = arena;
-    if (args.len != 1) return error.WrongNumberOfArguments;
-
-    const tuple_arg = switch (args[0]) {
-        .tuple => |t| t,
-        else => return error.TypeMismatch,
-    };
-
-    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
-
-    const start = switch (tuple_arg.elements[0]) {
+    const start_val, const end_val = try extractTuple2(args);
+    const start = switch (start_val) {
         .integer => |i| i,
         else => return error.TypeMismatch,
     };
-
-    const end = switch (tuple_arg.elements[1]) {
+    const end = switch (end_val) {
         .integer => |i| i,
         else => return error.TypeMismatch,
     };
+    return eval.Value{ .range = .{ .start = start, .end = end, .inclusive = inclusive } };
+}
 
-    return eval.Value{ .range = .{
-        .start = start,
-        .end = end,
-        .inclusive = true,
-    } };
+pub fn rangeInclusive(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+    return rangeCreate(arena, args, true);
 }
 
 pub fn rangeExclusive(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
-    _ = arena;
-    if (args.len != 1) return error.WrongNumberOfArguments;
-
-    const tuple_arg = switch (args[0]) {
-        .tuple => |t| t,
-        else => return error.TypeMismatch,
-    };
-
-    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
-
-    const start = switch (tuple_arg.elements[0]) {
-        .integer => |i| i,
-        else => return error.TypeMismatch,
-    };
-
-    const end = switch (tuple_arg.elements[1]) {
-        .integer => |i| i,
-        else => return error.TypeMismatch,
-    };
-
-    return eval.Value{ .range = .{
-        .start = start,
-        .end = end,
-        .inclusive = false,
-    } };
+    return rangeCreate(arena, args, false);
 }
 
 pub fn rangeToArray(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
@@ -391,35 +379,7 @@ pub fn rangeCovers(arena: std.mem.Allocator, args: []const eval.Value) eval.Eval
     return eval.Value{ .boolean = is_covered };
 }
 
-fn valuesEqual(arena: std.mem.Allocator, a: eval.Value, b: eval.Value) bool {
-    // Force thunks before comparison
-    const a_forced = eval.force(arena, a) catch a;
-    const b_forced = eval.force(arena, b) catch b;
-
-    return switch (a_forced) {
-        .integer => |av| switch (b_forced) {
-            .integer => |bv| av == bv,
-            else => false,
-        },
-        .boolean => |av| switch (b_forced) {
-            .boolean => |bv| av == bv,
-            else => false,
-        },
-        .null_value => switch (b_forced) {
-            .null_value => true,
-            else => false,
-        },
-        .string => |av| switch (b_forced) {
-            .string => |bv| std.mem.eql(u8, av, bv),
-            else => false,
-        },
-        .range => |av| switch (b_forced) {
-            .range => |bv| av.start == bv.start and av.end == bv.end and av.inclusive == bv.inclusive,
-            else => false,
-        },
-        else => false, // Functions, arrays, objects, tuples not compared
-    };
-}
+const valuesEqual = eval.valuesEqual;
 
 // String builtins
 pub fn stringLength(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
@@ -530,11 +490,11 @@ pub fn stringChars(arena: std.mem.Allocator, args: []const eval.Value) eval.Eval
         else => return error.TypeMismatch,
     };
 
+    const backing = try arena.alloc(u8, str.len);
+    @memcpy(backing, str);
     const chars = try arena.alloc(eval.Value, str.len);
-    for (str, 0..) |c, i| {
-        const char_str = try arena.alloc(u8, 1);
-        char_str[0] = c;
-        chars[i] = eval.Value{ .string = char_str };
+    for (0..str.len) |i| {
+        chars[i] = eval.Value{ .string = backing[i .. i + 1] };
     }
 
     return eval.Value{ .array = .{ .elements = chars } };
@@ -1012,44 +972,20 @@ pub fn mathSqrt(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalErr
     return eval.Value{ .integer = @intFromFloat(result) };
 }
 
-pub fn mathFloor(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+// For integers, floor/ceil/round are all identity functions.
+fn mathIntIdentity(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
     _ = arena;
     if (args.len != 1) return error.WrongNumberOfArguments;
-
     const n = switch (args[0]) {
         .integer => |i| i,
         else => return error.TypeMismatch,
     };
-
-    // For integers, floor is identity
     return eval.Value{ .integer = n };
 }
 
-pub fn mathCeil(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
-    _ = arena;
-    if (args.len != 1) return error.WrongNumberOfArguments;
-
-    const n = switch (args[0]) {
-        .integer => |i| i,
-        else => return error.TypeMismatch,
-    };
-
-    // For integers, ceil is identity
-    return eval.Value{ .integer = n };
-}
-
-pub fn mathRound(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
-    _ = arena;
-    if (args.len != 1) return error.WrongNumberOfArguments;
-
-    const n = switch (args[0]) {
-        .integer => |i| i,
-        else => return error.TypeMismatch,
-    };
-
-    // For integers, round is identity
-    return eval.Value{ .integer = n };
-}
+pub const mathFloor = mathIntIdentity;
+pub const mathCeil = mathIntIdentity;
+pub const mathRound = mathIntIdentity;
 
 pub fn mathLog(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
     _ = arena;
@@ -1368,256 +1304,161 @@ pub fn floatPow(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalErr
     return eval.Value{ .float = std.math.pow(f64, base, exponent) };
 }
 
+fn mathModRemImpl(
+    arena: std.mem.Allocator,
+    args: []const eval.Value,
+    comptime float_op: fn (f64, f64) f64,
+    comptime int_op: fn (i64, i64) i64,
+) eval.EvalError!eval.Value {
+    _ = arena;
+    const a_val, const b_val = try extractTuple2(args);
+    const is_float = (a_val == .float or b_val == .float);
+    if (is_float) {
+        const a = switch (a_val) {
+            .float => |f| f,
+            .integer => |i| @as(f64, @floatFromInt(i)),
+            else => return error.TypeMismatch,
+        };
+        const b = switch (b_val) {
+            .float => |f| f,
+            .integer => |i| @as(f64, @floatFromInt(i)),
+            else => return error.TypeMismatch,
+        };
+        if (b == 0.0) return error.DivisionByZero;
+        return eval.Value{ .float = float_op(a, b) };
+    } else {
+        const a = switch (a_val) {
+            .integer => |i| i,
+            else => return error.TypeMismatch,
+        };
+        const b = switch (b_val) {
+            .integer => |i| i,
+            else => return error.TypeMismatch,
+        };
+        if (b == 0) return error.DivisionByZero;
+        return eval.Value{ .integer = int_op(a, b) };
+    }
+}
+
 /// Modulo operation (remainder with sign of divisor)
 pub fn mathMod(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
-    _ = arena;
-    if (args.len != 1) return error.WrongNumberOfArguments;
-
-    const tuple_arg = switch (args[0]) {
-        .tuple => |t| t,
-        else => return error.TypeMismatch,
-    };
-
-    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
-
-    // Check if we're dealing with floats
-    const is_float = (tuple_arg.elements[0] == .float or tuple_arg.elements[1] == .float);
-
-    if (is_float) {
-        const a = switch (tuple_arg.elements[0]) {
-            .float => |f| f,
-            .integer => |i| @as(f64, @floatFromInt(i)),
-            else => return error.TypeMismatch,
-        };
-
-        const b = switch (tuple_arg.elements[1]) {
-            .float => |f| f,
-            .integer => |i| @as(f64, @floatFromInt(i)),
-            else => return error.TypeMismatch,
-        };
-
-        if (b == 0.0) return error.DivisionByZero;
-        return eval.Value{ .float = @mod(a, b) };
-    } else {
-        const a = switch (tuple_arg.elements[0]) {
-            .integer => |i| i,
-            else => return error.TypeMismatch,
-        };
-
-        const b = switch (tuple_arg.elements[1]) {
-            .integer => |i| i,
-            else => return error.TypeMismatch,
-        };
-
-        if (b == 0) return error.DivisionByZero;
-        return eval.Value{ .integer = @mod(a, b) };
-    }
+    return mathModRemImpl(arena, args, struct {
+        fn f(a: f64, b: f64) f64 {
+            return @mod(a, b);
+        }
+    }.f, struct {
+        fn f(a: i64, b: i64) i64 {
+            return @mod(a, b);
+        }
+    }.f);
 }
 
 /// Remainder operation (remainder with sign of dividend)
 pub fn mathRem(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
-    _ = arena;
-    if (args.len != 1) return error.WrongNumberOfArguments;
-
-    const tuple_arg = switch (args[0]) {
-        .tuple => |t| t,
-        else => return error.TypeMismatch,
-    };
-
-    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
-
-    // Check if we're dealing with floats
-    const is_float = (tuple_arg.elements[0] == .float or tuple_arg.elements[1] == .float);
-
-    if (is_float) {
-        const a = switch (tuple_arg.elements[0]) {
-            .float => |f| f,
-            .integer => |i| @as(f64, @floatFromInt(i)),
-            else => return error.TypeMismatch,
-        };
-
-        const b = switch (tuple_arg.elements[1]) {
-            .float => |f| f,
-            .integer => |i| @as(f64, @floatFromInt(i)),
-            else => return error.TypeMismatch,
-        };
-
-        if (b == 0.0) return error.DivisionByZero;
-        return eval.Value{ .float = @rem(a, b) };
-    } else {
-        const a = switch (tuple_arg.elements[0]) {
-            .integer => |i| i,
-            else => return error.TypeMismatch,
-        };
-
-        const b = switch (tuple_arg.elements[1]) {
-            .integer => |i| i,
-            else => return error.TypeMismatch,
-        };
-
-        if (b == 0) return error.DivisionByZero;
-        return eval.Value{ .integer = @rem(a, b) };
-    }
+    return mathModRemImpl(arena, args, struct {
+        fn f(a: f64, b: f64) f64 {
+            return @rem(a, b);
+        }
+    }.f, struct {
+        fn f(a: i64, b: i64) i64 {
+            return @rem(a, b);
+        }
+    }.f);
 }
 
 // Bitwise operation builtins
 
+fn intBinaryOp(comptime op: fn (i64, i64) i64) fn (std.mem.Allocator, []const eval.Value) eval.EvalError!eval.Value {
+    return struct {
+        fn call(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+            _ = arena;
+            const a_val, const b_val = try extractTuple2(args);
+            const a = switch (a_val) {
+                .integer => |i| i,
+                else => return error.TypeMismatch,
+            };
+            const b = switch (b_val) {
+                .integer => |i| i,
+                else => return error.TypeMismatch,
+            };
+            return eval.Value{ .integer = op(a, b) };
+        }
+    }.call;
+}
+
 /// Bitwise XOR: a ^ b
-pub fn bitwiseXor(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+pub const bitwiseXor = intBinaryOp(struct {
+    fn f(a: i64, b: i64) i64 {
+        return a ^ b;
+    }
+}.f);
+
+/// Bitwise AND: a & b
+pub const bitwiseAnd = intBinaryOp(struct {
+    fn f(a: i64, b: i64) i64 {
+        return a & b;
+    }
+}.f);
+
+fn bitwiseShift(
+    arena: std.mem.Allocator,
+    args: []const eval.Value,
+    comptime direction: enum { left, right },
+) eval.EvalError!eval.Value {
     _ = arena;
-    if (args.len != 1) return error.WrongNumberOfArguments;
-
-    const tuple_arg = switch (args[0]) {
-        .tuple => |t| t,
-        else => return error.TypeMismatch,
-    };
-
-    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
-
-    const a = switch (tuple_arg.elements[0]) {
+    const value_val, const shift_val = try extractTuple2(args);
+    const value = switch (value_val) {
         .integer => |i| i,
         else => return error.TypeMismatch,
     };
-
-    const b = switch (tuple_arg.elements[1]) {
+    const shift = switch (shift_val) {
         .integer => |i| i,
         else => return error.TypeMismatch,
     };
-
-    return eval.Value{ .integer = a ^ b };
+    if (shift < 0 or shift >= 64) return error.TypeMismatch;
+    const shift_u6: u6 = @intCast(shift);
+    return eval.Value{ .integer = switch (direction) {
+        .left => value << shift_u6,
+        .right => value >> shift_u6,
+    } };
 }
 
 /// Bitwise left shift: a << n
 pub fn bitwiseShl(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
-    _ = arena;
-    if (args.len != 1) return error.WrongNumberOfArguments;
-
-    const tuple_arg = switch (args[0]) {
-        .tuple => |t| t,
-        else => return error.TypeMismatch,
-    };
-
-    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
-
-    const value = switch (tuple_arg.elements[0]) {
-        .integer => |i| i,
-        else => return error.TypeMismatch,
-    };
-
-    const shift = switch (tuple_arg.elements[1]) {
-        .integer => |i| i,
-        else => return error.TypeMismatch,
-    };
-
-    if (shift < 0 or shift >= 64) return error.TypeMismatch;
-
-    const shift_u6: u6 = @intCast(shift);
-    return eval.Value{ .integer = value << shift_u6 };
+    return bitwiseShift(arena, args, .left);
 }
 
 /// Bitwise right shift (arithmetic): a >> n
 pub fn bitwiseShr(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
-    _ = arena;
-    if (args.len != 1) return error.WrongNumberOfArguments;
-
-    const tuple_arg = switch (args[0]) {
-        .tuple => |t| t,
-        else => return error.TypeMismatch,
-    };
-
-    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
-
-    const value = switch (tuple_arg.elements[0]) {
-        .integer => |i| i,
-        else => return error.TypeMismatch,
-    };
-
-    const shift = switch (tuple_arg.elements[1]) {
-        .integer => |i| i,
-        else => return error.TypeMismatch,
-    };
-
-    if (shift < 0 or shift >= 64) return error.TypeMismatch;
-
-    const shift_u6: u6 = @intCast(shift);
-    return eval.Value{ .integer = value >> shift_u6 };
-}
-
-/// Bitwise AND: a & b
-pub fn bitwiseAnd(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
-    _ = arena;
-    if (args.len != 1) return error.WrongNumberOfArguments;
-
-    const tuple_arg = switch (args[0]) {
-        .tuple => |t| t,
-        else => return error.TypeMismatch,
-    };
-
-    if (tuple_arg.elements.len != 2) return error.WrongNumberOfArguments;
-
-    const a = switch (tuple_arg.elements[0]) {
-        .integer => |i| i,
-        else => return error.TypeMismatch,
-    };
-
-    const b = switch (tuple_arg.elements[1]) {
-        .integer => |i| i,
-        else => return error.TypeMismatch,
-    };
-
-    return eval.Value{ .integer = a & b };
+    return bitwiseShift(arena, args, .right);
 }
 
 // Type predicate builtins
 
+fn makeTypePredicate(comptime tag: std.meta.Tag(eval.Value)) fn (std.mem.Allocator, []const eval.Value) eval.EvalError!eval.Value {
+    return struct {
+        fn call(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
+            _ = arena;
+            if (args.len != 1) return error.WrongNumberOfArguments;
+            return eval.Value{ .boolean = args[0] == tag };
+        }
+    }.call;
+}
+
 /// Check if a value is an integer
-pub fn isInteger(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
-    _ = arena;
-    if (args.len != 1) return error.WrongNumberOfArguments;
-    return eval.Value{ .boolean = args[0] == .integer };
-}
-
+pub const isInteger = makeTypePredicate(.integer);
 /// Check if a value is a float
-pub fn isFloat(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
-    _ = arena;
-    if (args.len != 1) return error.WrongNumberOfArguments;
-    return eval.Value{ .boolean = args[0] == .float };
-}
-
+pub const isFloat = makeTypePredicate(.float);
 /// Check if a value is a boolean
-pub fn isBoolean(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
-    _ = arena;
-    if (args.len != 1) return error.WrongNumberOfArguments;
-    return eval.Value{ .boolean = args[0] == .boolean };
-}
-
+pub const isBoolean = makeTypePredicate(.boolean);
 /// Check if a value is null
-pub fn isNull(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
-    _ = arena;
-    if (args.len != 1) return error.WrongNumberOfArguments;
-    return eval.Value{ .boolean = args[0] == .null_value };
-}
-
+pub const isNull = makeTypePredicate(.null_value);
 /// Check if a value is a string
-pub fn isString(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
-    _ = arena;
-    if (args.len != 1) return error.WrongNumberOfArguments;
-    return eval.Value{ .boolean = args[0] == .string };
-}
-
+pub const isString = makeTypePredicate(.string);
 /// Check if a value is an array
-pub fn isArray(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
-    _ = arena;
-    if (args.len != 1) return error.WrongNumberOfArguments;
-    return eval.Value{ .boolean = args[0] == .array };
-}
-
+pub const isArray = makeTypePredicate(.array);
 /// Check if a value is a tuple
-pub fn isTuple(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
-    _ = arena;
-    if (args.len != 1) return error.WrongNumberOfArguments;
-    return eval.Value{ .boolean = args[0] == .tuple };
-}
+pub const isTuple = makeTypePredicate(.tuple);
 
 /// Get the length of a tuple
 pub fn tupleLength(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
@@ -1669,11 +1510,7 @@ pub fn tupleFromArray(arena: std.mem.Allocator, args: []const eval.Value) eval.E
 }
 
 /// Check if a value is an object
-pub fn isObject(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {
-    _ = arena;
-    if (args.len != 1) return error.WrongNumberOfArguments;
-    return eval.Value{ .boolean = args[0] == .object };
-}
+pub const isObject = makeTypePredicate(.object);
 
 /// Check if a value is a function (either Lazylang function or native function)
 pub fn isFunction(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalError!eval.Value {

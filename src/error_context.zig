@@ -64,6 +64,8 @@ pub const ErrorData = union(enum) {
         expected: []const u8,
         found: []const u8,
         operation: ?[]const u8 = null,
+        expected_owned: bool = false,
+        found_owned: bool = false,
     },
     unknown_identifier: struct {
         name: []const u8,
@@ -310,12 +312,9 @@ pub const ErrorContext = struct {
                 self.allocator.free(old_data.module_name);
             },
             .type_mismatch => |old_data| {
-                // The expected and found strings are usually from formatPatternValue/formatValueShort
-                // which use page_allocator, so we don't free them here (they're leaked but acceptable)
-                // However, the operation string might be allocated with err_ctx.allocator if it's
-                // a custom operation like "calling function `f`"
+                if (old_data.expected_owned) self.allocator.free(old_data.expected);
+                if (old_data.found_owned) self.allocator.free(old_data.found);
                 if (old_data.operation) |op| {
-                    // Only free if it starts with "calling function" (our custom allocations)
                     if (std.mem.startsWith(u8, op, "calling function `")) {
                         self.allocator.free(op);
                     }

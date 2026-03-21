@@ -75,6 +75,8 @@ pub const formatValueAsJson = value_format.formatValueAsJson;
 pub const formatValueAsYaml = value_format.formatValueAsYaml;
 pub const formatValueShort = value_format.formatValueShort;
 pub const valueToString = value_format.valueToString;
+pub const jsonEscapeString = value_format.jsonEscapeString;
+pub const crashNotSerializable = value_format.crashNotSerializable;
 
 // Re-export AST types
 pub const TokenKind = ast.TokenKind;
@@ -131,17 +133,8 @@ pub const forceDeep = evaluator.forceDeep;
 pub const evaluateExpression = evaluator.evaluateExpression;
 pub const importModule = evaluator.importModule;
 pub const createStdlibEnvironment = evaluator.createStdlibEnvironment;
+pub const valuesEqual = evaluator.valuesEqual;
 
-fn lookup(env: ?*Environment, name: []const u8) ?Value {
-    var current = env;
-    while (current) |scope| {
-        if (std.mem.eql(u8, scope.name, name)) {
-            return scope.value;
-        }
-        current = scope.parent;
-    }
-    return null;
-}
 
 pub const EvalOutput = struct {
     allocator: std.mem.Allocator,
