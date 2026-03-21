@@ -1,4 +1,4 @@
-{ describe, forall, forallWith, it, must, mustEq } = import "Spec"
+{ describe, forall, it, must, mustEq } = import "Spec"
 Array = import "Array"
 Random = import "Random"
 Range = import "Range"
