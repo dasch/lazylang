@@ -2464,44 +2464,58 @@ pub fn createStdlibEnvironment(
     // Start with builtin environment
     var env = try builtin_env.createBuiltinEnvironment(arena);
 
-    // Import standard library modules (if available)
-    const stdlib_modules = [_][]const u8{ "Array", "Basics", "Float", "Math", "Object", "Range", "Result", "String", "Tuple" };
-    for (stdlib_modules) |module_name| {
-        // Try to import the module, but continue if it's not found
-        const module_value = importModule(arena, module_name, current_dir, ctx) catch |err| {
-            if (err == error.ModuleNotFound) {
-                // Module not found, skip it
-                continue;
-            }
-            return err;
+    // Basics must be loaded eagerly because its fields are spread into
+    // the environment as unqualified names (isString, toString, crash, etc.)
+    const basics_value = importModule(arena, "Basics", current_dir, ctx) catch |err| {
+        if (err == error.ModuleNotFound) return env;
+        return err;
+    };
+    const basics_obj = switch (basics_value) {
+        .object => |obj| obj,
+        else => return error.TypeMismatch,
+    };
+    for (basics_obj.fields) |field| {
+        const field_value = try force(arena, field.value);
+        const field_env = try arena.create(Environment);
+        field_env.* = .{
+            .parent = env,
+            .name = field.key,
+            .value = field_value,
+        };
+        env = field_env;
+    }
+    const basics_env = try arena.create(Environment);
+    basics_env.* = .{ .parent = env, .name = "Basics", .value = basics_value };
+    env = basics_env;
+
+    // Other stdlib modules are lazy-loaded: we create thunks with synthetic
+    // import expressions so the module is only parsed and evaluated on first access.
+    const lazy_modules = [_][]const u8{ "Array", "Float", "Math", "Object", "Range", "Result", "String", "Tuple" };
+    for (lazy_modules) |module_name| {
+        const import_expr = try arena.create(Expression);
+        import_expr.* = .{
+            .data = .{ .import_expr = .{
+                .path = module_name,
+                .path_location = .{ .line = 0, .column = 0, .offset = 0, .length = 0 },
+            } },
+            .location = .{ .line = 0, .column = 0, .offset = 0, .length = 0 },
         };
 
-        // Special handling for Basics: expose all fields unqualified
-        if (std.mem.eql(u8, module_name, "Basics")) {
-            const basics_obj = switch (module_value) {
-                .object => |obj| obj,
-                else => return error.TypeMismatch,
-            };
+        const thunk = try arena.create(value_mod.Thunk);
+        thunk.* = .{
+            .expr = import_expr,
+            .env = env,
+            .current_dir = current_dir,
+            .ctx = ctx,
+            .state = .unevaluated,
+            .field_key_location = null,
+        };
 
-            // Add each field from Basics to the environment
-            for (basics_obj.fields) |field| {
-                const field_value = try force(arena, field.value);
-                const field_env = try arena.create(Environment);
-                field_env.* = .{
-                    .parent = env,
-                    .name = field.key,
-                    .value = field_value,
-                };
-                env = field_env;
-            }
-        }
-
-        // Add the module itself to the environment
         const new_env = try arena.create(Environment);
         new_env.* = .{
             .parent = env,
             .name = module_name,
-            .value = module_value,
+            .value = .{ .thunk = thunk },
         };
         env = new_env;
     }
