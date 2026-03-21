@@ -1,0 +1,119 @@
+{ describe, forall, forallWith, it, must, mustEq } = import "Spec"
+Array = import "Array"
+Random = import "Random"
+Range = import "Range"
+
+// A generator that produces small integer arrays (length 0..9, values 0..99).
+// Each call returns (array, nextSeed).
+smallIntArray = seed ->
+  (len, s1) = Random.intRange 0 10 seed
+  (values, s2) = Random.list len (Random.intRange 0 100) s1
+  (values, s2)
+
+// A generator that produces integers in a reasonable range.
+smallInt = Random.intRange (0 - 1000) 1001
+
+describe #ArrayProperties [
+  describe "reverse" [
+    forall smallIntArray "reverse is an involution: reverse(reverse(xs)) == xs" do
+      xs -> mustEq xs (Array.reverse (Array.reverse xs))
+
+    it "reverse involution holds for known arrays" do
+      mustEq [1, 2, 3] (Array.reverse (Array.reverse [1, 2, 3]))
+
+    it "reverse involution holds for empty array" do
+      mustEq [] (Array.reverse (Array.reverse []))
+
+    it "reverse involution holds for single element" do
+      mustEq [42] (Array.reverse (Array.reverse [42]))
+  ]
+
+  describe "map" [
+    forall smallIntArray "map preserves length: length(map f xs) == length xs" do
+      xs ->
+        f = x -> x * 2 + 1
+        mustEq (Array.length xs) (Array.length (Array.map f xs))
+
+    it "map preserves length for known array" do
+      mustEq 4 (Array.length (Array.map (x -> x + 1) [1, 2, 3, 4]))
+
+    it "map preserves length for empty array" do
+      mustEq 0 (Array.length (Array.map (x -> x) []))
+
+    forall smallIntArray "map identity: map (x -> x) xs == xs" do
+      xs -> mustEq xs (Array.map (x -> x) xs)
+  ]
+
+  describe "filter" [
+    forall smallIntArray "filter shrinks or preserves length: length(filter f xs) <= length xs" do
+      xs ->
+        f = x -> x > 50
+        filtered = Array.filter f xs
+        must (Array.length filtered <= Array.length xs)
+
+    it "filter by always-true preserves all elements" do
+      xs = [1, 2, 3, 4, 5]
+      mustEq xs (Array.filter (x -> true) xs)
+
+    it "filter by always-false yields empty array" do
+      xs = [1, 2, 3, 4, 5]
+      mustEq [] (Array.filter (x -> false) xs)
+
+    forall smallIntArray "filter never increases length" do
+      xs ->
+        evens = Array.filter (x -> Math.mod x 2 == 0) xs
+        must (Array.length evens <= Array.length xs)
+  ]
+
+  describe "fold" [
+    forall smallIntArray "fold sum is commutative with reversed array" do
+      xs ->
+        sumFwd = Array.fold (acc -> x -> acc + x) 0 xs
+        sumRev = Array.fold (acc -> x -> acc + x) 0 (Array.reverse xs)
+        mustEq sumFwd sumRev
+
+    it "fold sum equals sum of reversed array for known input" do
+      xs = [1, 2, 3, 4, 5]
+      mustEq (Array.fold (acc -> x -> acc + x) 0 xs) (Array.fold (acc -> x -> acc + x) 0 (Array.reverse xs))
+
+    it "fold sum of empty array is zero" do
+      mustEq 0 (Array.fold (acc -> x -> acc + x) 0 [])
+
+    forall smallIntArray "fold count equals length" do
+      xs ->
+        count = Array.fold (acc -> _ -> acc + 1) 0 xs
+        mustEq (Array.length xs) count
+  ]
+
+  describe "concat" [
+    forall smallIntArray "concat of [xs] equals xs" do
+      xs -> mustEq xs (Array.concat [xs])
+
+    it "concat length equals sum of lengths" do
+      a = [1, 2, 3]
+      b = [4, 5]
+      c = [6]
+      mustEq (Array.length a + Array.length b + Array.length c) (Array.length (Array.concat [
+        a
+        b
+        c
+      ]))
+
+    forall smallIntArray "concat with empty array is identity" do
+      xs -> mustEq xs (Array.concat [xs, []])
+
+    forall smallIntArray "concat with empty array on left is identity" do
+      xs -> mustEq xs (Array.concat [[], xs])
+  ]
+
+  describe "++ operator" [
+    forall smallIntArray "xs ++ [] == xs" do
+      xs -> mustEq xs (xs ++ [])
+
+    forall smallIntArray "[] ++ xs == xs" do
+      xs -> mustEq xs ([] ++ xs)
+
+    forall smallIntArray "length of xs ++ xs equals 2 * length xs" do
+      xs -> mustEq (2 * Array.length xs) (Array.length (xs ++ xs))
+  ]
+]
