@@ -1,0 +1,32 @@
+// Benchmark: nested comprehensions — object and array.
+services = ["web", "api", "worker", "cache", "db"]
+envs = ["dev", "staging", "prod"]
+regions = ["us-east-1", "us-west-2", "eu-west-1"]
+
+// Object comprehension: generate config for each service × env
+configs = {
+  ["${svc}-${env}"]: {
+    name: svc
+    environment: env
+    replicas: if env == "prod" then 3 else 1
+    regions: [r for r in regions]
+    labels: { service: svc, env, managed: "true" }
+  }
+  for svc in services
+  for env in envs
+}
+
+// Array comprehension: flatten to list of deployment specs
+deployments = [
+  {
+    name: "${svc}-${env}-${region}"
+    image: "registry.example.com/${svc}:${env}-latest"
+    region
+    replicas: if env == "prod" then 3 else 1
+  }
+  for svc in services
+  for env in envs
+  for region in regions
+]
+
+{ configCount: Array.length (Object.keys configs), deploymentCount: Array.length deployments }

@@ -1,0 +1,18 @@
+// Benchmark: string operations — interpolation, concat, split, replace.
+names = ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot", "golf",
+         "hotel", "india", "juliet", "kilo", "lima", "mike", "november",
+         "oscar", "papa", "quebec", "romeo", "sierra", "tango"]
+
+labels = [{ key: "app-${name}", value: "service-${name}-v1" } for name in names]
+
+joined = String.join ", " (Array.map (l -> "${l.key}=${l.value}") labels)
+
+replaced = String.replace "service" "svc" joined
+
+parts = String.split ", " replaced
+
+uppers = Array.map String.toUpperCase parts
+
+result = String.join "\n" uppers
+
+{ lineCount: Array.length (String.split "\n" result), totalLen: String.length result }

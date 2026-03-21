@@ -1,8 +1,28 @@
-// Application-wide configuration.
+// Application-wide configuration with per-environment overrides.
 {
-  name: "recipe-service"
-  namespace: "recipes"
-  team: "kitchen"
-  registry: "docker.io/zendesk"
-  components: ["web", "worker"]
+  base: {
+    name: "recipe-service"
+    namespace: "recipes"
+    team: "kitchen"
+    registry: "docker.io/zendesk"
+  }
+
+  environments: {
+    development: {
+      namespace: "recipes-dev"
+      defaultImageTag: "dev-latest"
+      defaultReplicas: 1
+    }
+    staging: {
+      namespace: "recipes-staging"
+      defaultImageTag: "staging-latest"
+      defaultReplicas: 2
+    }
+    production: {
+      namespace: "recipes"
+      defaultImageTag: "v1.42.0"
+      defaultReplicas: 3
+      istioGateway: "recipes-gateway"
+    }
+  }
 }

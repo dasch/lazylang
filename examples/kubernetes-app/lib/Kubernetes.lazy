@@ -4,11 +4,9 @@ Object = import "Object"
 // Kubernetes manifest library.
 //
 // Generates Kubernetes manifests from application and component config
-// using a transform pipeline.
-//
-// Usage:
-//   K8s = import "../lib/Kubernetes"
-//   K8s.buildComponent { appConfig, componentConfig }
+// using a transform pipeline. Supports Deployments, Services, HPAs,
+// ConfigMaps, NetworkPolicies, PodDisruptionBudgets, Istio VirtualServices,
+// DestinationRules, and batch Jobs.
 
 // -- Default component config --
 
@@ -17,9 +15,45 @@ defaultComponentConfig = {
   containerPort: null
   command: null
   env: {}
+  configMap: null
   service: null
   hpa: null
+  pdb: null
+  networkPolicy: null
+  istio: null
+  job: null
+  resources: null
+  probes: null
+  imageTag: "latest"
 }
+
+// -- Helpers (must be defined before transforms that use them) --
+
+selectorLabels = appConfig -> componentConfig -> {
+  app: appConfig.name
+  component: componentConfig.name
+}
+
+probeSpec = probes ->
+  liveness =
+    if probes.liveness != null then
+      { livenessProbe: {
+          httpGet: { path: probes.liveness.path, port: probes.liveness.port }
+          initialDelaySeconds: if probes.liveness.initialDelay != null then probes.liveness.initialDelay else 15
+          periodSeconds: if probes.liveness.period != null then probes.liveness.period else 20
+      } }
+    else {}
+
+  readiness =
+    if probes.readiness != null then
+      { readinessProbe: {
+          httpGet: { path: probes.readiness.path, port: probes.readiness.port }
+          initialDelaySeconds: if probes.readiness.initialDelay != null then probes.readiness.initialDelay else 5
+          periodSeconds: if probes.readiness.period != null then probes.readiness.period else 10
+      } }
+    else {}
+
+  liveness & readiness
 
 // -- Transform stages --
 //
@@ -27,29 +61,50 @@ defaultComponentConfig = {
 
 generateManifests = { appConfig, componentConfig, manifests } ->
   container =
-    { name: componentConfig.name, image: "${appConfig.registry}/${appConfig.name}" }
+    { name: componentConfig.name, image: "${appConfig.registry}/${appConfig.name}:${componentConfig.imageTag}" }
     & (if componentConfig.containerPort != null then { ports: [{ containerPort: componentConfig.containerPort }] } else {})
     & (if componentConfig.command != null then { command: componentConfig.command } else {})
     & (if componentConfig.env != {} then { env: [{ name, value } for (name, value) in componentConfig.env] } else {})
+    & (if componentConfig.resources != null then { resources: componentConfig.resources } else {})
+    & (if componentConfig.probes != null then probeSpec componentConfig.probes else {})
+    & (if componentConfig.configMap != null then { envFrom: [{ configMapRef: { name: "${componentConfig.name}-config" } }] } else {})
 
-  deployment = {
-    apiVersion: "apps/v1"
-    kind: "Deployment"
-    metadata: { name: componentConfig.name }
-    spec: {
-      replicas: componentConfig.replicas
-      selector: {
-        matchLabels: {
-          app: appConfig.name
-          component: componentConfig.name
+  deployment =
+    if componentConfig.job == null then
+      [{
+        apiVersion: "apps/v1"
+        kind: "Deployment"
+        metadata: { name: componentConfig.name }
+        spec: {
+          replicas: componentConfig.replicas
+          selector: { matchLabels: selectorLabels appConfig componentConfig }
+          template: {
+            metadata: { labels: {} }
+            spec: { containers: [container] }
+          }
         }
-      }
-      template: {
-        metadata: { labels: {} }
-        spec: { containers: [container] }
-      }
-    }
-  }
+      }]
+    else
+      []
+
+  jobManifests =
+    if componentConfig.job != null then
+      [{
+        apiVersion: "batch/v1"
+        kind: "Job"
+        metadata: { name: componentConfig.name }
+        spec: {
+          backoffLimit: if componentConfig.job.backoffLimit != null then componentConfig.job.backoffLimit else 3
+          template: {
+            spec: {
+              containers: [container]
+              restartPolicy: if componentConfig.job.restartPolicy != null then componentConfig.job.restartPolicy else "Never"
+            }
+          }
+        }
+      }]
+    else
+      []
 
   serviceManifests =
     if componentConfig.service != null then
@@ -58,7 +113,7 @@ generateManifests = { appConfig, componentConfig, manifests } ->
         kind: "Service"
         metadata: { name: componentConfig.name }
         spec: {
-          selector: { app: appConfig.name, component: componentConfig.name }
+          selector: selectorLabels appConfig componentConfig
           ports: [{
             protocol: "TCP"
             port: componentConfig.service.port
@@ -102,7 +157,107 @@ generateManifests = { appConfig, componentConfig, manifests } ->
     else
       []
 
-  manifests ++ [deployment] ++ serviceManifests ++ hpaManifests
+  configMapManifests =
+    if componentConfig.configMap != null then
+      [{
+        apiVersion: "v1"
+        kind: "ConfigMap"
+        metadata: { name: "${componentConfig.name}-config" }
+        data: componentConfig.configMap
+      }]
+    else
+      []
+
+  pdbManifests =
+    if componentConfig.pdb != null then
+      [{
+        apiVersion: "policy/v1"
+        kind: "PodDisruptionBudget"
+        metadata: { name: componentConfig.name }
+        spec: {
+          selector: { matchLabels: selectorLabels appConfig componentConfig }
+          minAvailable: componentConfig.pdb.minAvailable
+        }
+      }]
+    else
+      []
+
+  networkPolicyManifests =
+    if componentConfig.networkPolicy != null then
+      [{
+        apiVersion: "networking.k8s.io/v1"
+        kind: "NetworkPolicy"
+        metadata: { name: "${componentConfig.name}-netpol" }
+        spec: {
+          podSelector: { matchLabels: selectorLabels appConfig componentConfig }
+          policyTypes: componentConfig.networkPolicy.policyTypes
+          ingress:
+            if componentConfig.networkPolicy.allowFrom != null then
+              [{ from: [{ podSelector: { matchLabels: sel } } for sel in componentConfig.networkPolicy.allowFrom]
+                 ports: [{ protocol: "TCP", port: componentConfig.containerPort }]
+              }]
+            else
+              []
+        }
+      }]
+    else
+      []
+
+  manifests ++ deployment ++ jobManifests ++ serviceManifests ++ hpaManifests ++ configMapManifests ++ pdbManifests ++ networkPolicyManifests
+
+generateIstio = { appConfig, componentConfig, manifests } ->
+  virtualServiceManifests =
+    if componentConfig.istio != null then
+      vs = componentConfig.istio
+      [{
+        apiVersion: "networking.istio.io/v1beta1"
+        kind: "VirtualService"
+        metadata: { name: componentConfig.name }
+        spec: {
+          hosts: vs.hosts
+          gateways: if vs.gateway != null then [vs.gateway] else []
+          http: [{
+            match: if vs.matchPrefix != null then [{ uri: { prefix: vs.matchPrefix } }] else []
+            route: [{
+              destination: {
+                host: componentConfig.name
+                port: { number: componentConfig.service.port }
+              }
+            }]
+            timeout: if vs.timeout != null then vs.timeout else "30s"
+            retries: if vs.retries != null then vs.retries else { attempts: 3, perTryTimeout: "10s" }
+          }]
+        }
+      }]
+    else
+      []
+
+  destinationRuleManifests =
+    if componentConfig.istio != null then
+      [{
+        apiVersion: "networking.istio.io/v1beta1"
+        kind: "DestinationRule"
+        metadata: { name: componentConfig.name }
+        spec: {
+          host: componentConfig.name
+          trafficPolicy: {
+            connectionPool: {
+              tcp: { maxConnections: 100 }
+              http: { h2UpgradePolicy: "DEFAULT", http1MaxPendingRequests: 1024, http2MaxRequests: 1024 }
+            }
+            outlierDetection: {
+              consecutive5xxErrors: 5
+              interval: "30s"
+              baseEjectionTime: "30s"
+              maxEjectionPercent: 50
+            }
+          }
+        }
+      }]
+    else
+      []
+
+  manifests ++ virtualServiceManifests ++ destinationRuleManifests
 
 setNamespace = { appConfig, componentConfig, manifests } ->
   [manifest & { metadata: manifest.metadata & { namespace: appConfig.namespace } }
@@ -114,6 +269,7 @@ setStandardLabels = { appConfig, componentConfig, manifests } ->
       "app.kubernetes.io/name": appConfig.name
       "app.kubernetes.io/component": componentConfig.name
       "app.kubernetes.io/managed-by": "lazylang"
+      "app.kubernetes.io/part-of": appConfig.name
     }
 
     setLabelsOn = labels ->
@@ -132,9 +288,15 @@ setStandardLabels = { appConfig, componentConfig, manifests } ->
         else
           withMeta
 
+setAnnotations = { appConfig, componentConfig, manifests } ->
+  annotations = {
+    "app.kubernetes.io/version": componentConfig.imageTag
+  }
+  [manifest & { metadata: manifest.metadata & { annotations } } for manifest in manifests]
+
 // -- Pipeline --
 
-defaultPipeline = [generateManifests, setNamespace, setStandardLabels]
+defaultPipeline = [generateManifests, generateIstio, setNamespace, setStandardLabels, setAnnotations]
 
 runPipeline = pipeline ->
   ctx ->
@@ -159,5 +321,5 @@ runPipeline = pipeline ->
         for (name, config) in components
       }
 
-  transforms: { generateManifests, setNamespace, setStandardLabels }
+  transforms: { generateManifests, generateIstio, setNamespace, setStandardLabels, setAnnotations }
 }

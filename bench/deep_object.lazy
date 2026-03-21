@@ -1,0 +1,22 @@
+// Benchmark: deeply nested object access and construction.
+mkLevel = n -> label ->
+  if n == 0 then { value: label, leaf: true }
+  else {
+    value: label
+    left: mkLevel (n - 1) "${label}-L"
+    right: mkLevel (n - 1) "${label}-R"
+    metadata: {
+      depth: n
+      path: label
+      tags: ["level-${toString n}", "node-${label}"]
+    }
+  }
+
+tree = mkLevel 6 "root"
+
+// Access deep paths
+deep1 = tree.left.left.left.left.left.left.value
+deep2 = tree.right.right.right.right.right.right.value
+mid = tree.left.right.left.right.left.right.value
+
+{ deep1, deep2, mid, rootDepth: tree.metadata.depth }

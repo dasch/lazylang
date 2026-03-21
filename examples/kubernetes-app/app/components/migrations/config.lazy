@@ -1,0 +1,39 @@
+// Database migrations: runs as a Kubernetes Job before deployment.
+{
+  command: ["bundle", "exec", "rake", "db:migrate"]
+
+  env: {
+    RAILS_ENV: "production"
+    DATABASE_URL: "postgres://db:5432/recipes"
+    DISABLE_DATABASE_ENVIRONMENT_CHECK: "1"
+  }
+
+  job: {
+    backoffLimit: 3
+    restartPolicy: "Never"
+  }
+
+  resources: {
+    requests: { cpu: "100m", memory: "256Mi" }
+    limits: { cpu: "500m", memory: "512Mi" }
+  }
+
+  environments: {
+    development: {
+      resources: null
+      env: {
+        RAILS_ENV: "development"
+        DATABASE_URL: "postgres://localhost:5432/recipes_dev"
+        DISABLE_DATABASE_ENVIRONMENT_CHECK: "1"
+      }
+    }
+    staging: {
+      env: {
+        RAILS_ENV: "staging"
+        DATABASE_URL: "postgres://db:5432/recipes_staging"
+        DISABLE_DATABASE_ENVIRONMENT_CHECK: "1"
+      }
+    }
+    production: {}
+  }
+}

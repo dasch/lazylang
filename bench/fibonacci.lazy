@@ -1,0 +1,11 @@
+// Benchmark: recursion depth — fibonacci sequence.
+fib = n ->
+  when n is
+    0 then 0
+    1 then 1
+    otherwise fib (n - 1) + fib (n - 2)
+
+// fib(15) = 610 — stresses recursion. fib(20) takes ~11s due to exponential blowup.
+result = fib 15
+
+{ fib15: result }

@@ -1,9 +1,51 @@
-// Worker component: processes background jobs.
+// Worker component: processes background jobs via Sidekiq.
 {
   replicas: 1
-  command: ["bundle", "exec", "sidekiq"]
+  command: ["bundle", "exec", "sidekiq", "-c", "25"]
 
   env: {
     RAILS_ENV: "production"
+    REDIS_URL: "redis://cache:6379"
+    DATABASE_URL: "postgres://db:5432/recipes"
+    SIDEKIQ_CONCURRENCY: "25"
+  }
+
+  configMap: {
+    LOG_LEVEL: "info"
+    DEAD_JOB_TTL: "7776000"
+    RETRY_LIMIT: "25"
+  }
+
+  resources: {
+    requests: { cpu: "200m", memory: "512Mi" }
+    limits: { cpu: "1000m", memory: "1Gi" }
+  }
+
+  pdb: { minAvailable: 1 }
+
+  environments: {
+    development: {
+      command: ["bundle", "exec", "sidekiq", "-c", "5"]
+      pdb: null
+      resources: null
+      env: {
+        RAILS_ENV: "development"
+        REDIS_URL: "redis://localhost:6379"
+        DATABASE_URL: "postgres://localhost:5432/recipes_dev"
+        SIDEKIQ_CONCURRENCY: "5"
+      }
+      configMap: {
+        LOG_LEVEL: "debug"
+        DEAD_JOB_TTL: "86400"
+        RETRY_LIMIT: "3"
+      }
+    }
+    staging: {
+      replicas: 2
+    }
+    production: {
+      replicas: 3
+      pdb: { minAvailable: 2 }
+    }
   }
 }

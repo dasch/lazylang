@@ -1,0 +1,21 @@
+// Benchmark: stdlib import overhead — imports all modules and uses each.
+Array = import "Array"
+Object = import "Object"
+String = import "String"
+Math = import "Math"
+Float = import "Float"
+Range = import "Range"
+Result = import "Result"
+Tuple = import "Tuple"
+
+// Use every imported module to force evaluation.
+a = Array.length [1, 2, 3]
+b = Object.keys { x: 1, y: 2, z: 3 }
+c = String.length "hello world"
+d = Math.abs (0 - 42)
+e = Float.round 3.7
+f = Range.toArray (1..10)
+g = Result.map (x -> x + 1) (#ok, 42)
+h = Tuple.length (1, 2, 3)
+
+{ a, bLen: Array.length b, c, d, e, fLen: Array.length f, g, h }
