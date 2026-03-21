@@ -465,22 +465,18 @@ fn mergeObjects(arena: std.mem.Allocator, base: ObjectValue, extension: ObjectVa
                 const ext_forced = try force(arena, ext_field.value);
                 if (base_forced == .object and ext_forced == .object) {
                     const merged = try mergeObjects(arena, base_forced.object, ext_forced.object);
-                    const key_copy = try arena.dupe(u8, ext_field.key);
-                    try result_fields.append(arena, .{ .key = key_copy, .value = merged, .is_patch = false, .is_hidden = ext_field.is_hidden or base_field.is_hidden, .doc = ext_field.doc orelse base_field.doc });
+                    try result_fields.append(arena, .{ .key = ext_field.key, .value = merged, .is_patch = false, .is_hidden = ext_field.is_hidden or base_field.is_hidden, .doc = ext_field.doc orelse base_field.doc });
                 } else {
                     // Not both objects, just use extension value
-                    const key_copy = try arena.dupe(u8, ext_field.key);
-                    try result_fields.append(arena, .{ .key = key_copy, .value = ext_field.value, .is_patch = ext_field.is_patch, .is_hidden = ext_field.is_hidden or base_field.is_hidden, .doc = ext_field.doc orelse base_field.doc });
+                    try result_fields.append(arena, .{ .key = ext_field.key, .value = ext_field.value, .is_patch = ext_field.is_patch, .is_hidden = ext_field.is_hidden or base_field.is_hidden, .doc = ext_field.doc orelse base_field.doc });
                 }
             } else {
                 // Shallow replace: use the extension value
-                const key_copy = try arena.dupe(u8, ext_field.key);
-                try result_fields.append(arena, .{ .key = key_copy, .value = ext_field.value, .is_patch = ext_field.is_patch, .is_hidden = ext_field.is_hidden or base_field.is_hidden, .doc = ext_field.doc orelse base_field.doc });
+                try result_fields.append(arena, .{ .key = ext_field.key, .value = ext_field.value, .is_patch = ext_field.is_patch, .is_hidden = ext_field.is_hidden or base_field.is_hidden, .doc = ext_field.doc orelse base_field.doc });
             }
         } else {
             // No override, keep the base field
-            const key_copy = try arena.dupe(u8, base_field.key);
-            try result_fields.append(arena, .{ .key = key_copy, .value = base_field.value, .is_patch = base_field.is_patch, .is_hidden = base_field.is_hidden, .doc = base_field.doc });
+            try result_fields.append(arena, .{ .key = base_field.key, .value = base_field.value, .is_patch = base_field.is_patch, .is_hidden = base_field.is_hidden, .doc = base_field.doc });
         }
     }
 
@@ -507,8 +503,7 @@ fn mergeObjects(arena: std.mem.Allocator, base: ObjectValue, extension: ObjectVa
         };
 
         if (!found_in_base) {
-            const key_copy = try arena.dupe(u8, ext_field.key);
-            try result_fields.append(arena, .{ .key = key_copy, .value = ext_field.value, .is_patch = ext_field.is_patch, .is_hidden = ext_field.is_hidden, .doc = ext_field.doc });
+            try result_fields.append(arena, .{ .key = ext_field.key, .value = ext_field.value, .is_patch = ext_field.is_patch, .is_hidden = ext_field.is_hidden, .doc = ext_field.doc });
         }
     }
 
