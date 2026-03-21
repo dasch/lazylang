@@ -88,46 +88,42 @@ pub fn formatValuePretty(allocator: std.mem.Allocator, value: Value) ![]u8 {
 pub fn formatValueAsJson(allocator: std.mem.Allocator, value: Value) ![]u8 {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
-    return formatValueAsJsonImpl(allocator, arena.allocator(), value);
+    var builder = std.ArrayList(u8){};
+    errdefer builder.deinit(allocator);
+    try writeJsonValue(&builder, allocator, arena.allocator(), value);
+    return builder.toOwnedSlice(allocator);
 }
 
-fn formatValueAsJsonImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator, value: Value) EvalError![]u8 {
-    return switch (value) {
-        .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
-        .float => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
-        .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
-        .null_value => try std.fmt.allocPrint(allocator, "null", .{}),
+fn writeJsonValue(builder: *std.ArrayList(u8), allocator: std.mem.Allocator, arena: std.mem.Allocator, value: Value) EvalError!void {
+    switch (value) {
+        .integer => |v| try builder.appendSlice(allocator, try std.fmt.allocPrint(arena, "{d}", .{v})),
+        .float => |v| try builder.appendSlice(allocator, try std.fmt.allocPrint(arena, "{d}", .{v})),
+        .boolean => |v| try builder.appendSlice(allocator, if (v) "true" else "false"),
+        .null_value => try builder.appendSlice(allocator, "null"),
         .function => return crashNotSerializable("Cannot represent function in JSON output. Functions are not serializable."),
         .native_fn => return crashNotSerializable("Cannot represent native function in JSON output. Functions are not serializable."),
-        .thunk => blk: {
-            const forced = force(arena, value) catch break :blk try std.fmt.allocPrint(allocator, "null", .{});
-            break :blk try formatValueAsJsonImpl(allocator, arena, forced);
+        .thunk => {
+            const forced = force(arena, value) catch {
+                try builder.appendSlice(allocator, "null");
+                return;
+            };
+            try writeJsonValue(builder, allocator, arena, forced);
         },
-        .array, .tuple => blk: {
+        .array, .tuple => {
             // Tuples are represented as arrays in JSON
             const elements = switch (value) {
                 .array => |a| a.elements,
                 .tuple => |t| t.elements,
                 else => unreachable,
             };
-            var builder = std.ArrayList(u8){};
-            errdefer builder.deinit(allocator);
-
             try builder.append(allocator, '[');
             for (elements, 0..) |element, i| {
                 if (i != 0) try builder.appendSlice(allocator, ",");
-                const formatted = try formatValueAsJsonImpl(allocator, arena, element);
-                defer allocator.free(formatted);
-                try builder.appendSlice(allocator, formatted);
+                try writeJsonValue(builder, allocator, arena, element);
             }
             try builder.append(allocator, ']');
-
-            break :blk try builder.toOwnedSlice(allocator);
         },
-        .object => |obj| blk: {
-            var builder = std.ArrayList(u8){};
-            errdefer builder.deinit(allocator);
-
+        .object => |obj| {
             try builder.append(allocator, '{');
             var first_json = true;
             for (obj.fields) |field| {
@@ -135,32 +131,20 @@ fn formatValueAsJsonImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator,
                 if (!first_json) try builder.appendSlice(allocator, ",");
                 first_json = false;
                 try builder.append(allocator, '"');
-                try jsonEscapeString(&builder, allocator, field.key);
+                try jsonEscapeString(builder, allocator, field.key);
                 try builder.appendSlice(allocator, "\":");
-                const formatted = try formatValueAsJsonImpl(allocator, arena, field.value);
-                defer allocator.free(formatted);
-                try builder.appendSlice(allocator, formatted);
+                try writeJsonValue(builder, allocator, arena, field.value);
             }
             try builder.append(allocator, '}');
-
-            break :blk try builder.toOwnedSlice(allocator);
         },
-        .string => |str| blk: {
-            var builder = std.ArrayList(u8){};
-            errdefer builder.deinit(allocator);
-
+        .string => |str| {
             try builder.append(allocator, '"');
-            try jsonEscapeString(&builder, allocator, str);
+            try jsonEscapeString(builder, allocator, str);
             try builder.append(allocator, '"');
-
-            break :blk try builder.toOwnedSlice(allocator);
         },
-        .range => |range| blk: {
+        .range => |range| {
             // Convert range to array for JSON output
             const actual_end = if (range.inclusive) range.end else range.end - 1;
-            var builder = std.ArrayList(u8){};
-            errdefer builder.deinit(allocator);
-
             try builder.append(allocator, '[');
             if (range.start <= actual_end) {
                 var current = range.start;
@@ -168,16 +152,12 @@ fn formatValueAsJsonImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator,
                 while (current <= actual_end) : (current += 1) {
                     if (!first) try builder.appendSlice(allocator, ",");
                     first = false;
-                    const num_str = try std.fmt.allocPrint(allocator, "{d}", .{current});
-                    defer allocator.free(num_str);
-                    try builder.appendSlice(allocator, num_str);
+                    try builder.appendSlice(allocator, try std.fmt.allocPrint(arena, "{d}", .{current}));
                 }
             }
             try builder.append(allocator, ']');
-
-            break :blk try builder.toOwnedSlice(allocator);
         },
-    };
+    }
 }
 
 pub fn jsonEscapeString(builder: *std.ArrayList(u8), allocator: std.mem.Allocator, str: []const u8) !void {
