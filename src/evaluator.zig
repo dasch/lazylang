@@ -1210,20 +1210,16 @@ fn evaluateApplication(
     ctx: *const EvalContext,
 ) EvalError!Value {
     // Check and increment recursion depth
-    if (ctx.recursion_depth) |depth_ptr| {
-        if (depth_ptr.* >= MAX_RECURSION_DEPTH) {
-            if (ctx.error_ctx) |err_ctx| {
-                err_ctx.setErrorLocation(application.function.location.line, application.function.location.column, application.function.location.offset, application.function.location.length);
-                const msg = std.heap.page_allocator.dupe(u8, "Maximum recursion depth exceeded") catch "Maximum recursion depth exceeded";
-                value_mod.setUserCrashMessage(msg);
-            }
-            return error.UserCrash;
+    if (ctx.recursion_depth.* >= MAX_RECURSION_DEPTH) {
+        if (ctx.error_ctx) |err_ctx| {
+            err_ctx.setErrorLocation(application.function.location.line, application.function.location.column, application.function.location.offset, application.function.location.length);
+            const msg = std.heap.page_allocator.dupe(u8, "Maximum recursion depth exceeded") catch "Maximum recursion depth exceeded";
+            value_mod.setUserCrashMessage(msg);
         }
-        depth_ptr.* += 1;
+        return error.UserCrash;
     }
-    defer if (ctx.recursion_depth) |depth_ptr| {
-        depth_ptr.* -= 1;
-    };
+    ctx.recursion_depth.* += 1;
+    defer ctx.recursion_depth.* -= 1;
 
     const function_value = try evaluateExpression(arena, application.function, env, current_dir, ctx);
     const argument_value = try evaluateExpression(arena, application.argument, env, current_dir, ctx);
