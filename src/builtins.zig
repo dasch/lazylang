@@ -277,27 +277,123 @@ pub fn arrayUniq(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalEr
         return eval.Value{ .array = .{ .elements = empty } };
     }
 
-    // Use ArrayList to build result
-    var seen = std.ArrayList(eval.Value){};
-    defer seen.deinit(arena);
+    // Detect the type of the first element to pick a fast path.
+    // We force thunks on the first element to get its actual type.
+    const first = eval.force(arena, array.elements[0]) catch array.elements[0];
 
-    for (array.elements) |elem| {
-        // Check if element is already in seen
+    switch (first) {
+        .integer => {
+            // Fast path: O(n) with hash set for integer arrays.
+            var seen_set = std.AutoHashMap(i64, void).init(arena);
+            defer seen_set.deinit();
+            var result = std.ArrayListUnmanaged(eval.Value){};
+            defer result.deinit(arena);
+
+            for (array.elements) |elem| {
+                const forced = eval.force(arena, elem) catch elem;
+                const val = switch (forced) {
+                    .integer => |i| i,
+                    else => {
+                        // Mixed type array — fall back to linear scan from this point.
+                        // Flush what we have so far, then process remaining elements linearly.
+                        return arrayUniqLinear(arena, array.elements);
+                    },
+                };
+                const gop = try seen_set.getOrPut(val);
+                if (!gop.found_existing) {
+                    try result.append(arena, forced);
+                }
+            }
+            return eval.Value{ .array = .{ .elements = try result.toOwnedSlice(arena) } };
+        },
+        .string => {
+            // Fast path: O(n) with hash set for string arrays.
+            var seen_set = std.StringHashMap(void).init(arena);
+            defer seen_set.deinit();
+            var result = std.ArrayListUnmanaged(eval.Value){};
+            defer result.deinit(arena);
+
+            for (array.elements) |elem| {
+                const forced = eval.force(arena, elem) catch elem;
+                const val = switch (forced) {
+                    .string => |s| s,
+                    else => return arrayUniqLinear(arena, array.elements),
+                };
+                const gop = try seen_set.getOrPut(val);
+                if (!gop.found_existing) {
+                    try result.append(arena, forced);
+                }
+            }
+            return eval.Value{ .array = .{ .elements = try result.toOwnedSlice(arena) } };
+        },
+        .boolean => {
+            // Fast path: at most two distinct values.
+            var seen_true = false;
+            var seen_false = false;
+            var result = std.ArrayListUnmanaged(eval.Value){};
+            defer result.deinit(arena);
+
+            for (array.elements) |elem| {
+                const forced = eval.force(arena, elem) catch elem;
+                const val = switch (forced) {
+                    .boolean => |b| b,
+                    else => return arrayUniqLinear(arena, array.elements),
+                };
+                if (val) {
+                    if (!seen_true) {
+                        seen_true = true;
+                        try result.append(arena, forced);
+                    }
+                } else {
+                    if (!seen_false) {
+                        seen_false = true;
+                        try result.append(arena, forced);
+                    }
+                }
+            }
+            return eval.Value{ .array = .{ .elements = try result.toOwnedSlice(arena) } };
+        },
+        .null_value => {
+            // Fast path: all nulls deduplicate to one.
+            for (array.elements) |elem| {
+                const forced = eval.force(arena, elem) catch elem;
+                switch (forced) {
+                    .null_value => {},
+                    else => return arrayUniqLinear(arena, array.elements),
+                }
+            }
+            const result = try arena.alloc(eval.Value, 1);
+            result[0] = eval.Value{ .null_value = {} };
+            return eval.Value{ .array = .{ .elements = result } };
+        },
+        else => {
+            // Complex or unsupported type: fall back to O(n²) linear scan.
+            return arrayUniqLinear(arena, array.elements);
+        },
+    }
+}
+
+/// Linear-scan dedup for complex or mixed-type arrays. O(n²) but handles all types.
+fn arrayUniqLinear(arena: std.mem.Allocator, elements: []const eval.Value) eval.EvalError!eval.Value {
+    var result = std.ArrayListUnmanaged(eval.Value){};
+    defer result.deinit(arena);
+
+    for (elements) |elem| {
         var found = false;
-        for (seen.items) |seen_elem| {
+        for (result.items) |seen_elem| {
             if (try valuesEqual(arena, elem, seen_elem)) {
                 found = true;
                 break;
             }
         }
-
         if (!found) {
-            try seen.append(arena, elem);
+            try result.append(arena, elem);
         }
     }
 
-    return eval.Value{ .array = .{ .elements = try seen.toOwnedSlice(arena) } };
+    return eval.Value{ .array = .{ .elements = try result.toOwnedSlice(arena) } };
 }
+
 
 fn rangeCreate(arena: std.mem.Allocator, args: []const eval.Value, comptime inclusive: bool) eval.EvalError!eval.Value {
     _ = arena;
