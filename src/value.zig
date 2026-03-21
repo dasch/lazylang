@@ -51,6 +51,9 @@ pub const Environment = struct {
     parent: ?*Environment,
     name: []const u8,
     value: Value,
+    /// Optional hash map for bulk bindings (e.g., stdlib Basics fields).
+    /// When set, lookup checks this map before walking the parent chain.
+    siblings: ?*std.StringHashMapUnmanaged(Value) = null,
 };
 
 /// FunctionValue represents a user-defined function (closure).

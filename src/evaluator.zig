@@ -128,6 +128,9 @@ pub fn valuesEqual(arena: std.mem.Allocator, a: Value, b: Value) EvalError!bool 
 fn lookup(env: ?*Environment, name: []const u8) ?Value {
     var current = env;
     while (current) |scope| {
+        if (scope.siblings) |map| {
+            if (map.get(name)) |v| return v;
+        }
         if (std.mem.eql(u8, scope.name, name)) {
             return scope.value;
         }
@@ -2474,18 +2477,20 @@ pub fn createStdlibEnvironment(
         .object => |obj| obj,
         else => return error.TypeMismatch,
     };
+    // Use a bulk hash map node for Basics fields to avoid 13+ individual chain nodes
+    const basics_map = try arena.create(std.StringHashMapUnmanaged(Value));
+    basics_map.* = .{};
     for (basics_obj.fields) |field| {
         const field_value = try force(arena, field.value);
-        const field_env = try arena.create(Environment);
-        field_env.* = .{
-            .parent = env,
-            .name = field.key,
-            .value = field_value,
-        };
-        env = field_env;
+        try basics_map.put(arena, field.key, field_value);
     }
     const basics_env = try arena.create(Environment);
-    basics_env.* = .{ .parent = env, .name = "Basics", .value = basics_value };
+    basics_env.* = .{
+        .parent = env,
+        .name = "Basics",
+        .value = basics_value,
+        .siblings = basics_map,
+    };
     env = basics_env;
 
     // Other stdlib modules are lazy-loaded: we create thunks with synthetic
@@ -2532,13 +2537,14 @@ pub fn createStdlibEnvironment(
 fn stripBinding(arena: std.mem.Allocator, env: ?*Environment, name_to_strip: []const u8) !?*Environment {
     if (env == null) return null;
 
-    var bindings = std.ArrayList(struct { name: []const u8, value: Value }){};
+    const Binding = struct { name: []const u8, value: Value, siblings: ?*std.StringHashMapUnmanaged(Value) };
+    var bindings = std.ArrayList(Binding){};
     defer bindings.deinit(arena);
 
     var current = env;
     while (current) |node| {
         if (!std.mem.eql(u8, node.name, name_to_strip)) {
-            try bindings.append(arena, .{ .name = node.name, .value = node.value });
+            try bindings.append(arena, .{ .name = node.name, .value = node.value, .siblings = node.siblings });
         }
         current = node.parent;
     }
@@ -2553,6 +2559,7 @@ fn stripBinding(arena: std.mem.Allocator, env: ?*Environment, name_to_strip: []c
             .parent = new_env,
             .name = binding.name,
             .value = binding.value,
+            .siblings = binding.siblings,
         };
         new_env = node;
     }
