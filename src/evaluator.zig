@@ -394,7 +394,28 @@ fn reportPatternMismatch(
     return error.TypeMismatch;
 }
 
-fn findObjectField(obj: ObjectValue, key: []const u8) ?Value {
+const INDEX_THRESHOLD = 8;
+
+/// Returns a pointer to the object's field index, building it if necessary.
+/// The index maps field names to their position in obj.fields.
+/// Only called for objects with at least INDEX_THRESHOLD fields.
+fn getOrBuildIndex(arena: std.mem.Allocator, obj: *ObjectValue) !*std.StringHashMapUnmanaged(usize) {
+    if (obj.field_index) |idx| return idx;
+    const idx = try arena.create(std.StringHashMapUnmanaged(usize));
+    idx.* = .{};
+    for (obj.fields, 0..) |field, i| {
+        try idx.put(arena, field.key, i);
+    }
+    obj.field_index = idx;
+    return idx;
+}
+
+fn findObjectField(arena: std.mem.Allocator, obj: *ObjectValue, key: []const u8) EvalError!?Value {
+    if (obj.fields.len >= INDEX_THRESHOLD) {
+        const idx = try getOrBuildIndex(arena, obj);
+        if (idx.get(key)) |i| return obj.fields[i].value;
+        return null;
+    }
     for (obj.fields) |field| {
         if (std.mem.eql(u8, field.key, key)) {
             return field.value;
@@ -404,54 +425,87 @@ fn findObjectField(obj: ObjectValue, key: []const u8) ?Value {
 }
 
 fn mergeObjects(arena: std.mem.Allocator, base: ObjectValue, extension: ObjectValue) EvalError!Value {
-    // Create a map to track which keys we've seen
     var result_fields = std.ArrayListUnmanaged(ObjectFieldValue){};
 
-    // First, add all fields from base
-    for (base.fields) |base_field| {
-        // Check if this field is overridden in extension
-        var found_override = false;
-        for (extension.fields) |ext_field| {
-            if (std.mem.eql(u8, base_field.key, ext_field.key)) {
-                found_override = true;
-                // Check if we should deep merge or replace
-                if (ext_field.is_patch) {
-                    // Deep merge: both values should be objects
-                    const base_forced = try force(arena, base_field.value);
-                    const ext_forced = try force(arena, ext_field.value);
-                    if (base_forced == .object and ext_forced == .object) {
-                        const merged = try mergeObjects(arena, base_forced.object, ext_forced.object);
-                        const key_copy = try arena.dupe(u8, ext_field.key);
-                        try result_fields.append(arena, .{ .key = key_copy, .value = merged, .is_patch = false, .is_hidden = ext_field.is_hidden or base_field.is_hidden, .doc = ext_field.doc orelse base_field.doc });
-                    } else {
-                        // Not both objects, just use extension value
-                        const key_copy = try arena.dupe(u8, ext_field.key);
-                        try result_fields.append(arena, .{ .key = key_copy, .value = ext_field.value, .is_patch = ext_field.is_patch, .is_hidden = ext_field.is_hidden or base_field.is_hidden, .doc = ext_field.doc orelse base_field.doc });
-                    }
+    // Build indices for O(n+m) merge instead of O(n×m).
+    // We use local mutable copies so getOrBuildIndex can cache the index on them.
+    var base_mut = base;
+    var ext_mut = extension;
+
+    // Build an index for the extension so we can look up each base field in O(1).
+    // For small objects we fall back to linear scan inside findObjectField.
+    const use_ext_index = extension.fields.len >= INDEX_THRESHOLD;
+    const ext_idx: ?*std.StringHashMapUnmanaged(usize) = if (use_ext_index)
+        try getOrBuildIndex(arena, &ext_mut)
+    else
+        null;
+
+    // First, add all fields from base, replacing/merging with extension where needed.
+    for (base_mut.fields) |base_field| {
+        // Look up whether this base key is overridden in extension.
+        const ext_field_opt: ?ObjectFieldValue = if (ext_idx) |idx| blk: {
+            if (idx.get(base_field.key)) |i| break :blk extension.fields[i];
+            break :blk null;
+        } else blk: {
+            var found: ?ObjectFieldValue = null;
+            for (extension.fields) |ef| {
+                if (std.mem.eql(u8, base_field.key, ef.key)) {
+                    found = ef;
+                    break;
+                }
+            }
+            break :blk found;
+        };
+
+        if (ext_field_opt) |ext_field| {
+            // Check if we should deep merge or replace
+            if (ext_field.is_patch) {
+                // Deep merge: both values should be objects
+                const base_forced = try force(arena, base_field.value);
+                const ext_forced = try force(arena, ext_field.value);
+                if (base_forced == .object and ext_forced == .object) {
+                    const merged = try mergeObjects(arena, base_forced.object, ext_forced.object);
+                    const key_copy = try arena.dupe(u8, ext_field.key);
+                    try result_fields.append(arena, .{ .key = key_copy, .value = merged, .is_patch = false, .is_hidden = ext_field.is_hidden or base_field.is_hidden, .doc = ext_field.doc orelse base_field.doc });
                 } else {
-                    // Shallow replace: use the extension value
+                    // Not both objects, just use extension value
                     const key_copy = try arena.dupe(u8, ext_field.key);
                     try result_fields.append(arena, .{ .key = key_copy, .value = ext_field.value, .is_patch = ext_field.is_patch, .is_hidden = ext_field.is_hidden or base_field.is_hidden, .doc = ext_field.doc orelse base_field.doc });
                 }
-                break;
+            } else {
+                // Shallow replace: use the extension value
+                const key_copy = try arena.dupe(u8, ext_field.key);
+                try result_fields.append(arena, .{ .key = key_copy, .value = ext_field.value, .is_patch = ext_field.is_patch, .is_hidden = ext_field.is_hidden or base_field.is_hidden, .doc = ext_field.doc orelse base_field.doc });
             }
-        }
-        if (!found_override) {
+        } else {
             // No override, keep the base field
             const key_copy = try arena.dupe(u8, base_field.key);
             try result_fields.append(arena, .{ .key = key_copy, .value = base_field.value, .is_patch = base_field.is_patch, .is_hidden = base_field.is_hidden, .doc = base_field.doc });
         }
     }
 
-    // Then, add fields from extension that are not in base
+    // Build an index for base to efficiently find which extension fields are new.
+    const use_base_index = base.fields.len >= INDEX_THRESHOLD;
+    const base_idx: ?*std.StringHashMapUnmanaged(usize) = if (use_base_index)
+        try getOrBuildIndex(arena, &base_mut)
+    else
+        null;
+
+    // Then, add fields from extension that are not in base.
     for (extension.fields) |ext_field| {
-        var found_in_base = false;
-        for (base.fields) |base_field| {
-            if (std.mem.eql(u8, base_field.key, ext_field.key)) {
-                found_in_base = true;
-                break;
+        const found_in_base: bool = if (base_idx) |idx|
+            idx.contains(ext_field.key)
+        else blk: {
+            var found = false;
+            for (base.fields) |bf| {
+                if (std.mem.eql(u8, bf.key, ext_field.key)) {
+                    found = true;
+                    break;
+                }
             }
-        }
+            break :blk found;
+        };
+
         if (!found_in_base) {
             const key_copy = try arena.dupe(u8, ext_field.key);
             try result_fields.append(arena, .{ .key = key_copy, .value = ext_field.value, .is_patch = ext_field.is_patch, .is_hidden = ext_field.is_hidden, .doc = ext_field.doc });
@@ -482,7 +536,6 @@ fn mergeObjects(arena: std.mem.Allocator, base: ObjectValue, extension: ObjectVa
     return result;
 }
 
-/// Find field access locations in an expression for a given field name
 fn findFieldAccessInExpression(expr: *Expression, field_name: []const u8) ?error_reporter.SourceLocation {
     return switch (expr.data) {
         .field_access => |fa| {
@@ -1860,7 +1913,8 @@ pub fn evaluateExpression(
 
                         if (field.is_patch) {
                             // Patch: merge with existing field if it exists and is an object
-                            const existing_value = findObjectField(base_obj, static_key);
+                            var base_obj_mut = base_obj;
+                            const existing_value = try findObjectField(arena, &base_obj_mut, static_key);
                             if (existing_value) |existing| {
                                 // Force the existing value if it's a thunk
                                 const forced_existing = try force(arena, existing);
@@ -2089,12 +2143,10 @@ fn accessField(arena: std.mem.Allocator, object_value: Value, field_name: []cons
         },
     };
 
-    // Look for the field
-    for (object.fields) |field| {
-        if (std.mem.eql(u8, field.key, field_name)) {
-            // Force the thunk if the value is a thunk
-            return try force(arena, field.value);
-        }
+    // Look for the field (uses hash index for objects with 8+ fields)
+    var obj_mut = object;
+    if (try findObjectField(arena, &obj_mut, field_name)) |field_value| {
+        return try force(arena, field_value);
     }
 
     // Field not found - populate error context with available fields and location

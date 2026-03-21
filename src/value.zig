@@ -140,6 +140,9 @@ pub const ObjectFieldValue = struct {
 pub const ObjectValue = struct {
     fields: []ObjectFieldValue,
     module_doc: ?[]const u8, // Module-level documentation
+    /// Optional hash map from field name to index in `fields`.
+    /// Built lazily for objects above a threshold size.
+    field_index: ?*std.StringHashMapUnmanaged(usize) = null,
 };
 
 /// EvalError encompasses all possible errors during evaluation.
