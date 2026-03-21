@@ -208,12 +208,14 @@ fn evalSourceWithFormat(
         import_stack.deinit();
     }
 
+    var recursion_depth: u32 = 0;
     const context = EvalContext{
         .allocator = allocator,
         .lazy_paths = lazy_paths,
         .error_ctx = &err_ctx,
         .module_cache = &module_cache,
         .import_stack = &import_stack,
+        .recursion_depth = &recursion_depth,
     };
 
     var parser = Parser.initWithContext(arena.allocator(), source, &err_ctx) catch |err| {
@@ -413,6 +415,8 @@ fn evalSourceWithValue(
     // Allocate EvalContext on the arena so it outlives this function —
     // thunks capture a pointer to it, and in --manifest mode thunks are
     // forced after evalSourceWithValue returns.
+    const recursion_depth2 = try arena.allocator().create(u32);
+    recursion_depth2.* = 0;
     const context = try arena.allocator().create(EvalContext);
     context.* = .{
         .allocator = allocator,
@@ -420,6 +424,7 @@ fn evalSourceWithValue(
         .error_ctx = &err_ctx,
         .module_cache = &module_cache2,
         .import_stack = &import_stack2,
+        .recursion_depth = recursion_depth2,
     };
 
     var parser = try Parser.init(arena.allocator(), owned_source);
@@ -487,7 +492,8 @@ pub fn evalFileValue(
         while (si.next()) |key| allocator.free(key.*);
         import_stack3.deinit();
     }
-    const context = EvalContext{ .allocator = allocator, .lazy_paths = lazy_paths, .module_cache = &module_cache3, .import_stack = &import_stack3 };
+    var recursion_depth3: u32 = 0;
+    const context = EvalContext{ .allocator = allocator, .lazy_paths = lazy_paths, .module_cache = &module_cache3, .import_stack = &import_stack3, .recursion_depth = &recursion_depth3 };
 
     var parser = try Parser.init(arena, contents);
     const expression = try parser.parse();

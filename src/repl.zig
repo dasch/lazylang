@@ -56,9 +56,11 @@ pub fn runReplDirect(
 
     // Initialize evaluation context that persists across inputs
     var global_env: ?*evaluator.Environment = null;
+    var repl_recursion_depth: u32 = 0;
     var eval_ctx = evaluator.EvalContext{
         .allocator = allocator,
         .lazy_paths = &[_][]const u8{},
+        .recursion_depth = &repl_recursion_depth,
     };
 
     // Print welcome message

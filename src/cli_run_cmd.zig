@@ -76,9 +76,11 @@ pub fn runRun(
 
     // Evaluate the expression to get a value
     const directory = std.fs.path.dirname(file_path);
+    var run_recursion_depth: u32 = 0;
     var eval_ctx = evaluator.EvalContext{
         .allocator = allocator,
         .lazy_paths = &[_][]const u8{},
+        .recursion_depth = &run_recursion_depth,
     };
 
     const value = evaluator.evaluateExpression(arena, expression, null, directory, &eval_ctx) catch |err| {

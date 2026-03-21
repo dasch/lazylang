@@ -172,4 +172,5 @@ pub const EvalContext = struct {
     error_ctx: ?*error_context.ErrorContext = null,
     module_cache: ?*ModuleCache = null,
     import_stack: ?*ImportStack = null,
+    recursion_depth: ?*u32 = null,
 };
