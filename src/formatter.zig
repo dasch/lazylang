@@ -37,8 +37,26 @@ const Writer = struct {
     next_comment: usize,
     last_source_line: usize,
     source: []const u8,
+    /// Byte offsets of the start of each line after line 1.
+    /// line_offsets[i] is the byte offset of the start of line i+2
+    /// (i.e. the position right after the i-th newline).
+    /// line_offsets.len == number of newlines in source.
+    line_offsets: []const usize,
 
-    fn init(allocator: std.mem.Allocator, comments: []const Comment, source: []const u8) Writer {
+    fn init(allocator: std.mem.Allocator, comments: []const Comment, source: []const u8) !Writer {
+        // Count newlines first so we allocate exactly the right amount.
+        var newline_count: usize = 0;
+        for (source) |c| {
+            if (c == '\n') newline_count += 1;
+        }
+        const offsets = try allocator.alloc(usize, newline_count);
+        var idx: usize = 0;
+        for (source, 0..) |c, pos| {
+            if (c == '\n') {
+                offsets[idx] = pos + 1;
+                idx += 1;
+            }
+        }
         return .{
             .buf = std.ArrayList(u8){},
             .allocator = allocator,
@@ -48,14 +66,40 @@ const Writer = struct {
             .next_comment = 0,
             .last_source_line = 0,
             .source = source,
+            .line_offsets = offsets,
         };
+    }
+
+    /// Return the byte offset of the start of `line` (1-based).
+    fn lineStartOffset(self: *const Writer, line: usize) usize {
+        if (line <= 1) return 0;
+        const i = line - 2; // line_offsets[i] is start of line i+2
+        if (i >= self.line_offsets.len) return self.source.len;
+        return self.line_offsets[i];
+    }
+
+    /// Return true if any line strictly between from_line and to_line is blank
+    /// (contains only whitespace). Uses precomputed offsets — O(to_line - from_line).
+    fn hasBlankLineBetween(self: *const Writer, from_line: usize, to_line: usize) bool {
+        if (to_line <= from_line + 1) return false;
+        var line = from_line + 1;
+        while (line < to_line) : (line += 1) {
+            const start = self.lineStartOffset(line);
+            const end = self.lineStartOffset(line + 1);
+            // The line content is source[start..end]; the newline itself is at end-1.
+            const content_end = if (end > start and self.source[end - 1] == '\n') end - 1 else end;
+            const content = self.source[start..content_end];
+            const trimmed = std.mem.trimLeft(u8, content, " \t");
+            if (trimmed.len == 0) return true;
+        }
+        return false;
     }
 
     /// Emit a blank line if the source had one before this line
     fn preserveBlankLine(self: *Writer, source_line: usize) !void {
         if (source_line > self.last_source_line + 1 and self.last_source_line > 0) {
             // Source had a gap — check if there was a blank line
-            if (hasBlankLineBetween(self.source, self.last_source_line, source_line)) {
+            if (self.hasBlankLineBetween(self.last_source_line, source_line)) {
                 try self.blankLine();
             }
         }
@@ -165,19 +209,6 @@ const Writer = struct {
         return self.buf.toOwnedSlice(self.allocator);
     }
 };
-
-fn hasBlankLineBetween(source: []const u8, from_line: usize, to_line: usize) bool {
-    var current_line: usize = 1;
-    var lines = std.mem.splitScalar(u8, source, '\n');
-    while (lines.next()) |line| {
-        if (current_line > from_line and current_line < to_line) {
-            const trimmed = std.mem.trimLeft(u8, line, " \t");
-            if (trimmed.len == 0) return true;
-        }
-        current_line += 1;
-    }
-    return false;
-}
 
 fn endsWith2Newlines(s: []const u8) bool {
     return s.len >= 2 and s[s.len - 1] == '\n' and s[s.len - 2] == '\n';
@@ -546,7 +577,7 @@ pub fn formatSource(allocator: std.mem.Allocator, source: []const u8) FormatterE
 
     const comments = try extractComments(arena.allocator(), source);
 
-    var w = Writer.init(arena.allocator(), comments, source);
+    var w = try Writer.init(arena.allocator(), comments, source);
 
     try formatExpr(&w, expression, false);
     try w.emitRemainingComments();
