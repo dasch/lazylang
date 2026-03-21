@@ -1202,167 +1202,6 @@ fn evaluateBinaryOp(
     };
 }
 
-fn evaluateApplication(
-    arena: std.mem.Allocator,
-    application: ast.Application,
-    env: ?*Environment,
-    current_dir: ?[]const u8,
-    ctx: *const EvalContext,
-) EvalError!Value {
-    // Check and increment recursion depth
-    if (ctx.recursion_depth.* >= MAX_RECURSION_DEPTH) {
-        if (ctx.error_ctx) |err_ctx| {
-            err_ctx.setErrorLocation(application.function.location.line, application.function.location.column, application.function.location.offset, application.function.location.length);
-        }
-        const msg = std.heap.page_allocator.dupe(u8, "Maximum recursion depth exceeded") catch "Maximum recursion depth exceeded";
-        value_mod.setUserCrashMessage(msg);
-        return error.UserCrash;
-    }
-    ctx.recursion_depth.* += 1;
-    defer ctx.recursion_depth.* -= 1;
-
-    const function_value = try evaluateExpression(arena, application.function, env, current_dir, ctx);
-    const argument_value = try evaluateExpression(arena, application.argument, env, current_dir, ctx);
-
-    switch (function_value) {
-        .function => |function_ptr| {
-            const bound_env = matchPattern(arena, function_ptr.param, argument_value, function_ptr.env, ctx) catch |err| {
-                // If pattern matching fails, update error location to point to the argument
-                // at the call site, not the parameter in the function definition
-                if (ctx.error_ctx) |err_ctx| {
-                    err_ctx.setErrorLocation(application.argument.location.line, application.argument.location.column, application.argument.location.offset, application.argument.location.length);
-
-                    // If the error is a type mismatch and the function is named, update the operation
-                    if (err == error.TypeMismatch) {
-                        // Check if function expression is an identifier
-                        const function_name = switch (application.function.data) {
-                            .identifier => |name| name,
-                            else => null,
-                        };
-
-                        if (function_name) |name| {
-                            // Update the operation field in the error data if it exists
-                            if (err_ctx.last_error_data == .type_mismatch) {
-                                const old_data = err_ctx.last_error_data.type_mismatch;
-                                // Save ownership flags before clearing them on the live struct
-                                const was_expected_owned = old_data.expected_owned;
-                                const was_found_owned = old_data.found_owned;
-                                // Try to allocate new operation string; if it fails, leave error data as-is
-                                if (std.fmt.allocPrint(err_ctx.allocator, "calling function `{s}`", .{name})) |new_operation| {
-                                    // Clear flags so freeErrorData doesn't free strings we're reusing
-                                    err_ctx.last_error_data.type_mismatch.expected_owned = false;
-                                    err_ctx.last_error_data.type_mismatch.found_owned = false;
-                                    err_ctx.setErrorData(.{ .type_mismatch = .{
-                                        .expected = old_data.expected,
-                                        .found = old_data.found,
-                                        .operation = new_operation,
-                                        .expected_owned = was_expected_owned,
-                                        .found_owned = was_found_owned,
-                                    } });
-                                } else |_| {
-                                    // Allocation failed, keep existing error data
-                                }
-                            }
-                        }
-                    }
-                    // Capture stack trace on error
-                    err_ctx.captureStackTrace() catch {};
-                }
-                return err;
-            };
-
-            // Push stack frame for function call
-            const function_name = switch (application.function.data) {
-                .identifier => |name| name,
-                else => null,
-            };
-
-            if (ctx.error_ctx) |err_ctx| {
-                err_ctx.pushStackFrame(
-                    function_name,
-                    err_ctx.current_file,
-                    application.function.location.line,
-                    application.function.location.column,
-                    application.function.location.offset,
-                    application.function.location.length,
-                    false, // Not a native function
-                ) catch {};
-            }
-
-            // Evaluate function body
-            const result = evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx) catch |err| {
-                // Capture stack trace on error (only if not already captured)
-                if (ctx.error_ctx) |err_ctx| {
-                    if (err_ctx.stack_trace == null) {
-                        err_ctx.captureStackTrace() catch {};
-                    }
-                }
-                // Pop stack frame before returning error
-                if (ctx.error_ctx) |err_ctx| {
-                    err_ctx.popStackFrame();
-                }
-                return err;
-            };
-
-            // Pop stack frame after successful evaluation
-            if (ctx.error_ctx) |err_ctx| {
-                err_ctx.popStackFrame();
-            }
-
-            return result;
-        },
-        .native_fn => |native_fn| {
-            // Push stack frame for native function call
-            const function_name = switch (application.function.data) {
-                .identifier => |name| name,
-                else => null,
-            };
-
-            if (ctx.error_ctx) |err_ctx| {
-                err_ctx.pushStackFrame(
-                    function_name,
-                    err_ctx.current_file,
-                    application.function.location.line,
-                    application.function.location.column,
-                    application.function.location.offset,
-                    application.function.location.length,
-                    true, // Native function
-                ) catch {};
-            }
-
-            // Native functions receive a single argument (could be a tuple for multiple args)
-            const args = [_]Value{argument_value};
-            const result = native_fn(arena, &args) catch |err| {
-                // Capture stack trace on error (only if not already captured)
-                if (ctx.error_ctx) |err_ctx| {
-                    if (err_ctx.stack_trace == null) {
-                        err_ctx.captureStackTrace() catch {};
-                    }
-                }
-                // Pop stack frame before returning error
-                if (ctx.error_ctx) |err_ctx| {
-                    err_ctx.popStackFrame();
-                }
-                return err;
-            };
-
-            // Pop stack frame after successful evaluation
-            if (ctx.error_ctx) |err_ctx| {
-                err_ctx.popStackFrame();
-            }
-
-            return result;
-        },
-        else => {
-            // Point to the function expression that isn't actually a function
-            if (ctx.error_ctx) |err_ctx| {
-                err_ctx.setErrorLocation(application.function.location.line, application.function.location.column, application.function.location.offset, application.function.location.length);
-                err_ctx.captureStackTrace() catch {};
-            }
-            return error.ExpectedFunction;
-        },
-    }
-}
 
 fn evaluateObjectLiteral(
     arena: std.mem.Allocator,
@@ -1495,6 +1334,16 @@ pub fn evaluateExpression(
     // Count tail-call function applications to detect infinite loops.
     // Structural tail positions (let, where, if, when) are not counted.
     var tco_call_count: u32 = 0;
+    var tco_has_pushed_frame: bool = false;
+
+    // Pop the last TCO stack frame when we exit (success or error via errdefer below).
+    defer {
+        if (tco_has_pushed_frame) {
+            if (ctx.error_ctx) |err_ctx| {
+                err_ctx.popStackFrame();
+            }
+        }
+    }
 
     // Capture the stack trace when this evaluateExpression call exits with an error,
     // if no inner call has already captured it. This preserves the call stack for
@@ -1901,7 +1750,7 @@ pub fn evaluateExpression(
                     // Pop the previous frame (if any) and push the new one so error
                     // traces always show the most recent tail-call site.
                     if (ctx.error_ctx) |err_ctx| {
-                        err_ctx.popStackFrame();
+                        if (tco_has_pushed_frame) err_ctx.popStackFrame();
                         const function_name_tco = switch (application.function.data) {
                             .identifier => |name| name,
                             else => null,
@@ -1915,6 +1764,7 @@ pub fn evaluateExpression(
                             application.function.location.length,
                             false,
                         ) catch {};
+                        tco_has_pushed_frame = true;
                     }
 
                     expr = function_ptr.body;
