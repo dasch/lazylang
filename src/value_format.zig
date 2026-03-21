@@ -103,10 +103,7 @@ fn writeJsonValue(builder: *std.ArrayList(u8), allocator: std.mem.Allocator, are
         .function => return crashNotSerializable("Cannot represent function in JSON output. Functions are not serializable."),
         .native_fn => return crashNotSerializable("Cannot represent native function in JSON output. Functions are not serializable."),
         .thunk => {
-            const forced = force(arena, value) catch {
-                try builder.appendSlice(allocator, "null");
-                return;
-            };
+            const forced = try force(arena, value);
             try writeJsonValue(builder, allocator, arena, forced);
         },
         .array, .tuple => {

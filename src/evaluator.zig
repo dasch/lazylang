@@ -1244,17 +1244,20 @@ fn evaluateApplication(
                             // Update the operation field in the error data if it exists
                             if (err_ctx.last_error_data == .type_mismatch) {
                                 const old_data = err_ctx.last_error_data.type_mismatch;
+                                // Save ownership flags before clearing them on the live struct
+                                const was_expected_owned = old_data.expected_owned;
+                                const was_found_owned = old_data.found_owned;
                                 // Try to allocate new operation string; if it fails, leave error data as-is
                                 if (std.fmt.allocPrint(err_ctx.allocator, "calling function `{s}`", .{name})) |new_operation| {
-                                    // Transfer ownership: clear flags before setErrorData frees the old data
+                                    // Clear flags so freeErrorData doesn't free strings we're reusing
                                     err_ctx.last_error_data.type_mismatch.expected_owned = false;
                                     err_ctx.last_error_data.type_mismatch.found_owned = false;
                                     err_ctx.setErrorData(.{ .type_mismatch = .{
                                         .expected = old_data.expected,
                                         .found = old_data.found,
                                         .operation = new_operation,
-                                        .expected_owned = old_data.expected_owned,
-                                        .found_owned = old_data.found_owned,
+                                        .expected_owned = was_expected_owned,
+                                        .found_owned = was_found_owned,
                                     } });
                                 } else |_| {
                                     // Allocation failed, keep existing error data

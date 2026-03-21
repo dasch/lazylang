@@ -279,7 +279,7 @@ pub fn arrayUniq(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalEr
 
     // Detect the type of the first element to pick a fast path.
     // We force thunks on the first element to get its actual type.
-    const first = eval.force(arena, array.elements[0]) catch array.elements[0];
+    const first = try eval.force(arena, array.elements[0]);
 
     switch (first) {
         .integer => {
@@ -290,7 +290,7 @@ pub fn arrayUniq(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalEr
             defer result.deinit(arena);
 
             for (array.elements) |elem| {
-                const forced = eval.force(arena, elem) catch elem;
+                const forced = try eval.force(arena, elem);
                 const val = switch (forced) {
                     .integer => |i| i,
                     else => {
@@ -314,7 +314,7 @@ pub fn arrayUniq(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalEr
             defer result.deinit(arena);
 
             for (array.elements) |elem| {
-                const forced = eval.force(arena, elem) catch elem;
+                const forced = try eval.force(arena, elem);
                 const val = switch (forced) {
                     .string => |s| s,
                     else => return arrayUniqLinear(arena, array.elements),
@@ -334,7 +334,7 @@ pub fn arrayUniq(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalEr
             defer result.deinit(arena);
 
             for (array.elements) |elem| {
-                const forced = eval.force(arena, elem) catch elem;
+                const forced = try eval.force(arena, elem);
                 const val = switch (forced) {
                     .boolean => |b| b,
                     else => return arrayUniqLinear(arena, array.elements),
@@ -356,7 +356,7 @@ pub fn arrayUniq(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalEr
         .null_value => {
             // Fast path: all nulls deduplicate to one.
             for (array.elements) |elem| {
-                const forced = eval.force(arena, elem) catch elem;
+                const forced = try eval.force(arena, elem);
                 switch (forced) {
                     .null_value => {},
                     else => return arrayUniqLinear(arena, array.elements),
