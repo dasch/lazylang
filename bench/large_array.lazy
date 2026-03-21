@@ -1,5 +1,5 @@
 // Benchmark: large array construction and processing.
-xs = Range.toArray (1..200)
+xs = Range.toArray (1..1000)
 
 mapped = Array.map (x -> x * x) xs
 filtered = Array.filter (x -> x > 20000) mapped

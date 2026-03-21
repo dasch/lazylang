@@ -1,5 +1,5 @@
 // Benchmark: array operations — map, filter, fold over moderate-sized arrays.
-xs = Array.map (x -> x * 2) (Range.toArray (1..100))
+xs = Array.map (x -> x * 2) (Range.toArray (1..500))
 ys = Array.filter (x -> x > 100) xs
 sum = Array.fold (acc -> x -> acc + x) 0 ys
 sorted = Array.sort xs
