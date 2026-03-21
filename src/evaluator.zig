@@ -25,6 +25,8 @@ const builtin_env = @import("builtin_env.zig");
 const parser_mod = @import("parser.zig");
 const module_resolver = @import("module_resolver.zig");
 
+const MAX_RECURSION_DEPTH: u32 = 512;
+
 // Re-export types from dependencies
 pub const Expression = ast.Expression;
 pub const Pattern = ast.Pattern;
@@ -49,7 +51,7 @@ const formatValueShort = value_format.formatValueShort;
 const valueToString = value_format.valueToString;
 
 // Value comparison helper (depends on force, so kept here)
-fn valuesEqual(arena: std.mem.Allocator, a: Value, b: Value) EvalError!bool {
+pub fn valuesEqual(arena: std.mem.Allocator, a: Value, b: Value) EvalError!bool {
     const a_forced = try force(arena, a);
     const b_forced = try force(arena, b);
 
@@ -126,6 +128,9 @@ fn valuesEqual(arena: std.mem.Allocator, a: Value, b: Value) EvalError!bool {
 fn lookup(env: ?*Environment, name: []const u8) ?Value {
     var current = env;
     while (current) |scope| {
+        if (scope.siblings) |map| {
+            if (map.get(name)) |v| return v;
+        }
         if (std.mem.eql(u8, scope.name, name)) {
             return scope.value;
         }
@@ -155,41 +160,13 @@ pub fn matchPattern(
             const actual = switch (value) {
                 .integer => |v| v,
                 else => {
-                    if (ctx.error_ctx) |err_ctx| {
-                        err_ctx.setErrorLocation(
-                            pattern.location.line,
-                            pattern.location.column,
-                            pattern.location.offset,
-                            pattern.location.length,
-                        );
-                        const pattern_str = formatPatternValue(std.heap.page_allocator, pattern) catch "integer";
-                        const value_str = formatValueShort(std.heap.page_allocator, value) catch getValueTypeName(value);
-                        err_ctx.setErrorData(.{ .type_mismatch = .{
-                            .expected = pattern_str,
-                            .found = value_str,
-                            .operation = "destructuring",
-                        } });
-                    }
-                    return error.TypeMismatch;
+                    const alloc = if (ctx.error_ctx) |ec| ec.allocator else std.heap.page_allocator;
+                    return reportPatternMismatch(ctx, pattern, fmtPattern(alloc, pattern, "integer"), fmtValue(alloc, value, getValueTypeName(value)));
                 },
             };
             if (expected != actual) {
-                if (ctx.error_ctx) |err_ctx| {
-                    err_ctx.setErrorLocation(
-                        pattern.location.line,
-                        pattern.location.column,
-                        pattern.location.offset,
-                        pattern.location.length,
-                    );
-                    const pattern_str = formatPatternValue(std.heap.page_allocator, pattern) catch "value";
-                    const value_str = formatValueShort(std.heap.page_allocator, value) catch "value";
-                    err_ctx.setErrorData(.{ .type_mismatch = .{
-                        .expected = pattern_str,
-                        .found = value_str,
-                        .operation = "destructuring",
-                    } });
-                }
-                return error.TypeMismatch;
+                const alloc = if (ctx.error_ctx) |ec| ec.allocator else std.heap.page_allocator;
+                return reportPatternMismatch(ctx, pattern, fmtPattern(alloc, pattern, "value"), fmtValue(alloc, value, "value"));
             }
             break :blk base_env;
         },
@@ -197,39 +174,12 @@ pub fn matchPattern(
             const actual = switch (value) {
                 .float => |v| v,
                 else => {
-                    if (ctx.error_ctx) |err_ctx| {
-                        err_ctx.setErrorLocation(
-                            pattern.location.line,
-                            pattern.location.column,
-                            pattern.location.offset,
-                            pattern.location.length,
-                        );
-                        err_ctx.setErrorData(.{ .type_mismatch = .{
-                            .expected = getPatternTypeName(pattern),
-                            .found = getValueTypeName(value),
-                            .operation = "destructuring",
-                        } });
-                    }
-                    return error.TypeMismatch;
+                    return reportPatternMismatch(ctx, pattern, .{ .str = getPatternTypeName(pattern), .owned = false }, .{ .str = getValueTypeName(value), .owned = false });
                 },
             };
             if (expected != actual) {
-                if (ctx.error_ctx) |err_ctx| {
-                    err_ctx.setErrorLocation(
-                        pattern.location.line,
-                        pattern.location.column,
-                        pattern.location.offset,
-                        pattern.location.length,
-                    );
-                    const pattern_str = formatPatternValue(std.heap.page_allocator, pattern) catch "value";
-                    const value_str = formatValueShort(std.heap.page_allocator, value) catch "value";
-                    err_ctx.setErrorData(.{ .type_mismatch = .{
-                        .expected = pattern_str,
-                        .found = value_str,
-                        .operation = "destructuring",
-                    } });
-                }
-                return error.TypeMismatch;
+                const alloc = if (ctx.error_ctx) |ec| ec.allocator else std.heap.page_allocator;
+                return reportPatternMismatch(ctx, pattern, fmtPattern(alloc, pattern, "value"), fmtValue(alloc, value, "value"));
             }
             break :blk base_env;
         },
@@ -237,39 +187,12 @@ pub fn matchPattern(
             const actual = switch (value) {
                 .boolean => |v| v,
                 else => {
-                    if (ctx.error_ctx) |err_ctx| {
-                        err_ctx.setErrorLocation(
-                            pattern.location.line,
-                            pattern.location.column,
-                            pattern.location.offset,
-                            pattern.location.length,
-                        );
-                        err_ctx.setErrorData(.{ .type_mismatch = .{
-                            .expected = getPatternTypeName(pattern),
-                            .found = getValueTypeName(value),
-                            .operation = "destructuring",
-                        } });
-                    }
-                    return error.TypeMismatch;
+                    return reportPatternMismatch(ctx, pattern, .{ .str = getPatternTypeName(pattern), .owned = false }, .{ .str = getValueTypeName(value), .owned = false });
                 },
             };
             if (expected != actual) {
-                if (ctx.error_ctx) |err_ctx| {
-                    err_ctx.setErrorLocation(
-                        pattern.location.line,
-                        pattern.location.column,
-                        pattern.location.offset,
-                        pattern.location.length,
-                    );
-                    const pattern_str = formatPatternValue(std.heap.page_allocator, pattern) catch "value";
-                    const value_str = formatValueShort(std.heap.page_allocator, value) catch "value";
-                    err_ctx.setErrorData(.{ .type_mismatch = .{
-                        .expected = pattern_str,
-                        .found = value_str,
-                        .operation = "destructuring",
-                    } });
-                }
-                return error.TypeMismatch;
+                const alloc = if (ctx.error_ctx) |ec| ec.allocator else std.heap.page_allocator;
+                return reportPatternMismatch(ctx, pattern, fmtPattern(alloc, pattern, "value"), fmtValue(alloc, value, "value"));
             }
             break :blk base_env;
         },
@@ -277,20 +200,7 @@ pub fn matchPattern(
             switch (value) {
                 .null_value => {},
                 else => {
-                    if (ctx.error_ctx) |err_ctx| {
-                        err_ctx.setErrorLocation(
-                            pattern.location.line,
-                            pattern.location.column,
-                            pattern.location.offset,
-                            pattern.location.length,
-                        );
-                        err_ctx.setErrorData(.{ .type_mismatch = .{
-                            .expected = "null",
-                            .found = getValueTypeName(value),
-                            .operation = "destructuring",
-                        } });
-                    }
-                    return error.TypeMismatch;
+                    return reportPatternMismatch(ctx, pattern, .{ .str = "null", .owned = false }, .{ .str = getValueTypeName(value), .owned = false });
                 },
             }
             break :blk base_env;
@@ -299,39 +209,12 @@ pub fn matchPattern(
             const actual = switch (value) {
                 .string => |v| v,
                 else => {
-                    if (ctx.error_ctx) |err_ctx| {
-                        err_ctx.setErrorLocation(
-                            pattern.location.line,
-                            pattern.location.column,
-                            pattern.location.offset,
-                            pattern.location.length,
-                        );
-                        err_ctx.setErrorData(.{ .type_mismatch = .{
-                            .expected = "string",
-                            .found = getValueTypeName(value),
-                            .operation = "destructuring",
-                        } });
-                    }
-                    return error.TypeMismatch;
+                    return reportPatternMismatch(ctx, pattern, .{ .str = "string", .owned = false }, .{ .str = getValueTypeName(value), .owned = false });
                 },
             };
             if (!std.mem.eql(u8, expected, actual)) {
-                if (ctx.error_ctx) |err_ctx| {
-                    err_ctx.setErrorLocation(
-                        pattern.location.line,
-                        pattern.location.column,
-                        pattern.location.offset,
-                        pattern.location.length,
-                    );
-                    const pattern_str = formatPatternValue(std.heap.page_allocator, pattern) catch "value";
-                    const value_str = formatValueShort(std.heap.page_allocator, value) catch "value";
-                    err_ctx.setErrorData(.{ .type_mismatch = .{
-                        .expected = pattern_str,
-                        .found = value_str,
-                        .operation = "destructuring",
-                    } });
-                }
-                return error.TypeMismatch;
+                const alloc = if (ctx.error_ctx) |ec| ec.allocator else std.heap.page_allocator;
+                return reportPatternMismatch(ctx, pattern, fmtPattern(alloc, pattern, "value"), fmtValue(alloc, value, "value"));
             }
             break :blk base_env;
         },
@@ -341,39 +224,12 @@ pub fn matchPattern(
             const actual = switch (value) {
                 .string => |v| v,
                 else => {
-                    if (ctx.error_ctx) |err_ctx| {
-                        err_ctx.setErrorLocation(
-                            pattern.location.line,
-                            pattern.location.column,
-                            pattern.location.offset,
-                            pattern.location.length,
-                        );
-                        err_ctx.setErrorData(.{ .type_mismatch = .{
-                            .expected = "string",
-                            .found = getValueTypeName(value),
-                            .operation = "destructuring",
-                        } });
-                    }
-                    return error.TypeMismatch;
+                    return reportPatternMismatch(ctx, pattern, .{ .str = "string", .owned = false }, .{ .str = getValueTypeName(value), .owned = false });
                 },
             };
             if (!std.mem.eql(u8, expected, actual)) {
-                if (ctx.error_ctx) |err_ctx| {
-                    err_ctx.setErrorLocation(
-                        pattern.location.line,
-                        pattern.location.column,
-                        pattern.location.offset,
-                        pattern.location.length,
-                    );
-                    const pattern_str = formatPatternValue(std.heap.page_allocator, pattern) catch "value";
-                    const value_str = formatValueShort(std.heap.page_allocator, value) catch "value";
-                    err_ctx.setErrorData(.{ .type_mismatch = .{
-                        .expected = pattern_str,
-                        .found = value_str,
-                        .operation = "destructuring",
-                    } });
-                }
-                return error.TypeMismatch;
+                const alloc = if (ctx.error_ctx) |ec| ec.allocator else std.heap.page_allocator;
+                return reportPatternMismatch(ctx, pattern, fmtPattern(alloc, pattern, "value"), fmtValue(alloc, value, "value"));
             }
             break :blk base_env;
         },
@@ -381,40 +237,13 @@ pub fn matchPattern(
             const tuple_value = switch (value) {
                 .tuple => |t| t,
                 else => {
-                    if (ctx.error_ctx) |err_ctx| {
-                        err_ctx.setErrorLocation(
-                            pattern.location.line,
-                            pattern.location.column,
-                            pattern.location.offset,
-                            pattern.location.length,
-                        );
-                        err_ctx.setErrorData(.{ .type_mismatch = .{
-                            .expected = "tuple",
-                            .found = getValueTypeName(value),
-                            .operation = "destructuring",
-                        } });
-                    }
-                    return error.TypeMismatch;
+                    return reportPatternMismatch(ctx, pattern, .{ .str = "tuple", .owned = false }, .{ .str = getValueTypeName(value), .owned = false });
                 },
             };
 
             if (tuple_pattern.elements.len != tuple_value.elements.len) {
-                if (ctx.error_ctx) |err_ctx| {
-                    err_ctx.setErrorLocation(
-                        pattern.location.line,
-                        pattern.location.column,
-                        pattern.location.offset,
-                        pattern.location.length,
-                    );
-                    const pattern_str = formatPatternValue(std.heap.page_allocator, pattern) catch "tuple";
-                    const value_str = formatValueShort(std.heap.page_allocator, value) catch "tuple";
-                    err_ctx.setErrorData(.{ .type_mismatch = .{
-                        .expected = pattern_str,
-                        .found = value_str,
-                        .operation = "destructuring",
-                    } });
-                }
-                return error.TypeMismatch;
+                const alloc = if (ctx.error_ctx) |ec| ec.allocator else std.heap.page_allocator;
+                return reportPatternMismatch(ctx, pattern, fmtPattern(alloc, pattern, "tuple"), fmtValue(alloc, value, "tuple"));
             }
 
             var current_env = base_env;
@@ -427,62 +256,21 @@ pub fn matchPattern(
             const array_value = switch (value) {
                 .array => |a| a,
                 else => {
-                    if (ctx.error_ctx) |err_ctx| {
-                        err_ctx.setErrorLocation(
-                            pattern.location.line,
-                            pattern.location.column,
-                            pattern.location.offset,
-                            pattern.location.length,
-                        );
-                        err_ctx.setErrorData(.{ .type_mismatch = .{
-                            .expected = "array",
-                            .found = getValueTypeName(value),
-                            .operation = "destructuring",
-                        } });
-                    }
-                    return error.TypeMismatch;
+                    return reportPatternMismatch(ctx, pattern, .{ .str = "array", .owned = false }, .{ .str = getValueTypeName(value), .owned = false });
                 },
             };
 
             // If there's no rest pattern, lengths must match exactly
             if (array_pattern.rest == null) {
                 if (array_pattern.elements.len != array_value.elements.len) {
-                    if (ctx.error_ctx) |err_ctx| {
-                        err_ctx.setErrorLocation(
-                            pattern.location.line,
-                            pattern.location.column,
-                            pattern.location.offset,
-                            pattern.location.length,
-                        );
-                        const pattern_str = formatPatternValue(std.heap.page_allocator, pattern) catch "array";
-                        const value_str = formatValueShort(std.heap.page_allocator, value) catch "array";
-                        err_ctx.setErrorData(.{ .type_mismatch = .{
-                            .expected = pattern_str,
-                            .found = value_str,
-                            .operation = "destructuring",
-                        } });
-                    }
-                    return error.TypeMismatch;
+                    const alloc = if (ctx.error_ctx) |ec| ec.allocator else std.heap.page_allocator;
+                    return reportPatternMismatch(ctx, pattern, fmtPattern(alloc, pattern, "array"), fmtValue(alloc, value, "array"));
                 }
             } else {
                 // With rest pattern, array must have at least as many elements as fixed patterns
                 if (array_value.elements.len < array_pattern.elements.len) {
-                    if (ctx.error_ctx) |err_ctx| {
-                        err_ctx.setErrorLocation(
-                            pattern.location.line,
-                            pattern.location.column,
-                            pattern.location.offset,
-                            pattern.location.length,
-                        );
-                        const pattern_str = formatPatternValue(std.heap.page_allocator, pattern) catch "array";
-                        const value_str = formatValueShort(std.heap.page_allocator, value) catch "array";
-                        err_ctx.setErrorData(.{ .type_mismatch = .{
-                            .expected = pattern_str,
-                            .found = value_str,
-                            .operation = "destructuring",
-                        } });
-                    }
-                    return error.TypeMismatch;
+                    const alloc = if (ctx.error_ctx) |ec| ec.allocator else std.heap.page_allocator;
+                    return reportPatternMismatch(ctx, pattern, fmtPattern(alloc, pattern, "array"), fmtValue(alloc, value, "array"));
                 }
             }
 
@@ -516,20 +304,7 @@ pub fn matchPattern(
             const object_value = switch (value) {
                 .object => |o| o,
                 else => {
-                    if (ctx.error_ctx) |err_ctx| {
-                        err_ctx.setErrorLocation(
-                            pattern.location.line,
-                            pattern.location.column,
-                            pattern.location.offset,
-                            pattern.location.length,
-                        );
-                        err_ctx.setErrorData(.{ .type_mismatch = .{
-                            .expected = "object",
-                            .found = getValueTypeName(value),
-                            .operation = "destructuring",
-                        } });
-                    }
-                    return error.TypeMismatch;
+                    return reportPatternMismatch(ctx, pattern, .{ .str = "object", .owned = false }, .{ .str = getValueTypeName(value), .owned = false });
                 },
             };
 
@@ -553,41 +328,28 @@ pub fn matchPattern(
                         current_env = try matchPattern(arena, pattern_field.pattern, default_value, current_env, ctx);
                         continue;
                     }
-                    if (ctx.error_ctx) |err_ctx| {
-                        err_ctx.setErrorLocation(
-                            pattern.location.line,
-                            pattern.location.column,
-                            pattern.location.offset,
-                            pattern.location.length,
-                        );
-                        // List available fields
-                        var available_fields = std.ArrayList([]const u8){};
-                        defer available_fields.deinit(std.heap.page_allocator);
-                        for (object_value.fields) |field| {
-                            available_fields.append(std.heap.page_allocator, field.key) catch {};
+                    const alloc = if (ctx.error_ctx) |ec| ec.allocator else std.heap.page_allocator;
+                    const ps: OwnedStr = if (std.fmt.allocPrint(alloc, "object with field '{s}'", .{pattern_field.key})) |s|
+                        .{ .str = s, .owned = true }
+                    else |_|
+                        .{ .str = "object", .owned = false };
+                    const vs: OwnedStr = if (object_value.fields.len == 0)
+                        if (std.fmt.allocPrint(alloc, "object with no fields", .{})) |s|
+                            OwnedStr{ .str = s, .owned = true }
+                        else |_|
+                            OwnedStr{ .str = "object", .owned = false }
+                    else blk2: {
+                        var fields_str = std.ArrayList(u8){};
+                        defer fields_str.deinit(alloc);
+                        fields_str.appendSlice(alloc, "object with fields: {") catch break :blk2 OwnedStr{ .str = "object", .owned = false };
+                        for (object_value.fields, 0..) |field, i| {
+                            if (i > 0) fields_str.appendSlice(alloc, ", ") catch break :blk2 OwnedStr{ .str = "object", .owned = false };
+                            fields_str.appendSlice(alloc, field.key) catch break :blk2 OwnedStr{ .str = "object", .owned = false };
                         }
-
-                        const pattern_str = std.fmt.allocPrint(std.heap.page_allocator, "object with field '{s}'", .{pattern_field.key}) catch "object";
-                        const value_str = if (object_value.fields.len == 0)
-                            std.fmt.allocPrint(std.heap.page_allocator, "object with no fields", .{}) catch "object"
-                        else blk2: {
-                            var fields_str = std.ArrayList(u8){};
-                            defer fields_str.deinit(std.heap.page_allocator);
-                            fields_str.appendSlice(std.heap.page_allocator, "object with fields: {") catch break :blk2 "object";
-                            for (object_value.fields, 0..) |field, i| {
-                                if (i > 0) fields_str.appendSlice(std.heap.page_allocator, ", ") catch break :blk2 "object";
-                                fields_str.appendSlice(std.heap.page_allocator, field.key) catch break :blk2 "object";
-                            }
-                            fields_str.append(std.heap.page_allocator, '}') catch break :blk2 "object";
-                            break :blk2 fields_str.toOwnedSlice(std.heap.page_allocator) catch "object";
-                        };
-                        err_ctx.setErrorData(.{ .type_mismatch = .{
-                            .expected = pattern_str,
-                            .found = value_str,
-                            .operation = "destructuring",
-                        } });
-                    }
-                    return error.TypeMismatch;
+                        fields_str.append(alloc, '}') catch break :blk2 OwnedStr{ .str = "object", .owned = false };
+                        break :blk2 OwnedStr{ .str = fields_str.toOwnedSlice(alloc) catch break :blk2 OwnedStr{ .str = "object", .owned = false }, .owned = true };
+                    };
+                    return reportPatternMismatch(ctx, pattern, ps, vs);
                 }
             }
             break :blk current_env;
@@ -595,15 +357,65 @@ pub fn matchPattern(
     };
 }
 
-// Helper for error reporting
-fn setPatternMatchError(arena: std.mem.Allocator, pattern_str: []const u8, value_str: []const u8) !void {
-    _ = arena;
-    _ = pattern_str;
-    _ = value_str;
-    // This is a placeholder for now - we're using setErrorData instead
+const OwnedStr = struct { str: []const u8, owned: bool };
+
+fn fmtPattern(allocator: std.mem.Allocator, pattern: *Pattern, fallback: []const u8) OwnedStr {
+    const s = formatPatternValue(allocator, pattern) catch return .{ .str = fallback, .owned = false };
+    return .{ .str = s, .owned = true };
 }
 
-fn findObjectField(obj: ObjectValue, key: []const u8) ?Value {
+fn fmtValue(allocator: std.mem.Allocator, value: Value, fallback: []const u8) OwnedStr {
+    const s = formatValueShort(allocator, value) catch return .{ .str = fallback, .owned = false };
+    return .{ .str = s, .owned = true };
+}
+
+/// Report a type mismatch error during pattern destructuring and return error.TypeMismatch.
+fn reportPatternMismatch(
+    ctx: *const EvalContext,
+    pattern: *Pattern,
+    expected: OwnedStr,
+    found: OwnedStr,
+) EvalError {
+    if (ctx.error_ctx) |err_ctx| {
+        err_ctx.setErrorLocation(
+            pattern.location.line,
+            pattern.location.column,
+            pattern.location.offset,
+            pattern.location.length,
+        );
+        err_ctx.setErrorData(.{ .type_mismatch = .{
+            .expected = expected.str,
+            .found = found.str,
+            .operation = "destructuring",
+            .expected_owned = expected.owned,
+            .found_owned = found.owned,
+        } });
+    }
+    return error.TypeMismatch;
+}
+
+const INDEX_THRESHOLD = 8;
+
+/// Returns a pointer to the object's field index, building it if necessary.
+/// The index maps field names to their position in obj.fields.
+/// Only called for objects with at least INDEX_THRESHOLD fields.
+fn getOrBuildIndex(arena: std.mem.Allocator, obj: *ObjectValue) !*std.StringHashMapUnmanaged(usize) {
+    if (obj.field_index) |idx| return idx;
+    const idx = try arena.create(std.StringHashMapUnmanaged(usize));
+    idx.* = .{};
+    for (obj.fields, 0..) |field, i| {
+        try idx.put(arena, field.key, i);
+    }
+    obj.field_index = idx;
+    return idx;
+}
+
+fn findObjectField(arena: std.mem.Allocator, obj: *ObjectValue, key: []const u8) EvalError!?Value {
+    if (obj.fields.len >= INDEX_THRESHOLD) {
+        const idx = try getOrBuildIndex(arena, obj);
+        if (idx.get(key)) |i| return obj.fields[i].value;
+        return null;
+    }
     for (obj.fields) |field| {
         if (std.mem.eql(u8, field.key, key)) {
             return field.value;
@@ -613,57 +425,85 @@ fn findObjectField(obj: ObjectValue, key: []const u8) ?Value {
 }
 
 fn mergeObjects(arena: std.mem.Allocator, base: ObjectValue, extension: ObjectValue) EvalError!Value {
-    // Create a map to track which keys we've seen
     var result_fields = std.ArrayListUnmanaged(ObjectFieldValue){};
 
-    // First, add all fields from base
-    for (base.fields) |base_field| {
-        // Check if this field is overridden in extension
-        var found_override = false;
-        for (extension.fields) |ext_field| {
-            if (std.mem.eql(u8, base_field.key, ext_field.key)) {
-                found_override = true;
-                // Check if we should deep merge or replace
-                if (ext_field.is_patch) {
-                    // Deep merge: both values should be objects
-                    const base_forced = try force(arena, base_field.value);
-                    const ext_forced = try force(arena, ext_field.value);
-                    if (base_forced == .object and ext_forced == .object) {
-                        const merged = try mergeObjects(arena, base_forced.object, ext_forced.object);
-                        const key_copy = try arena.dupe(u8, ext_field.key);
-                        try result_fields.append(arena, .{ .key = key_copy, .value = merged, .is_patch = false, .is_hidden = ext_field.is_hidden or base_field.is_hidden, .doc = ext_field.doc orelse base_field.doc });
-                    } else {
-                        // Not both objects, just use extension value
-                        const key_copy = try arena.dupe(u8, ext_field.key);
-                        try result_fields.append(arena, .{ .key = key_copy, .value = ext_field.value, .is_patch = ext_field.is_patch, .is_hidden = ext_field.is_hidden or base_field.is_hidden, .doc = ext_field.doc orelse base_field.doc });
-                    }
-                } else {
-                    // Shallow replace: use the extension value
-                    const key_copy = try arena.dupe(u8, ext_field.key);
-                    try result_fields.append(arena, .{ .key = key_copy, .value = ext_field.value, .is_patch = ext_field.is_patch, .is_hidden = ext_field.is_hidden or base_field.is_hidden, .doc = ext_field.doc orelse base_field.doc });
+    // Build indices for O(n+m) merge instead of O(n×m).
+    // We use local mutable copies so getOrBuildIndex can cache the index on them.
+    var base_mut = base;
+    var ext_mut = extension;
+
+    // Build an index for the extension so we can look up each base field in O(1).
+    // For small objects we fall back to linear scan inside findObjectField.
+    const use_ext_index = extension.fields.len >= INDEX_THRESHOLD;
+    const ext_idx: ?*std.StringHashMapUnmanaged(usize) = if (use_ext_index)
+        try getOrBuildIndex(arena, &ext_mut)
+    else
+        null;
+
+    // First, add all fields from base, replacing/merging with extension where needed.
+    for (base_mut.fields) |base_field| {
+        // Look up whether this base key is overridden in extension.
+        const ext_field_opt: ?ObjectFieldValue = if (ext_idx) |idx| blk: {
+            if (idx.get(base_field.key)) |i| break :blk extension.fields[i];
+            break :blk null;
+        } else blk: {
+            var found: ?ObjectFieldValue = null;
+            for (extension.fields) |ef| {
+                if (std.mem.eql(u8, base_field.key, ef.key)) {
+                    found = ef;
+                    break;
                 }
-                break;
             }
-        }
-        if (!found_override) {
+            break :blk found;
+        };
+
+        if (ext_field_opt) |ext_field| {
+            // Check if we should deep merge or replace
+            if (ext_field.is_patch) {
+                // Deep merge: both values should be objects
+                const base_forced = try force(arena, base_field.value);
+                const ext_forced = try force(arena, ext_field.value);
+                if (base_forced == .object and ext_forced == .object) {
+                    const merged = try mergeObjects(arena, base_forced.object, ext_forced.object);
+                    try result_fields.append(arena, .{ .key = ext_field.key, .value = merged, .is_patch = false, .is_hidden = ext_field.is_hidden or base_field.is_hidden, .doc = ext_field.doc orelse base_field.doc });
+                } else {
+                    // Not both objects, just use extension value
+                    try result_fields.append(arena, .{ .key = ext_field.key, .value = ext_field.value, .is_patch = ext_field.is_patch, .is_hidden = ext_field.is_hidden or base_field.is_hidden, .doc = ext_field.doc orelse base_field.doc });
+                }
+            } else {
+                // Shallow replace: use the extension value
+                try result_fields.append(arena, .{ .key = ext_field.key, .value = ext_field.value, .is_patch = ext_field.is_patch, .is_hidden = ext_field.is_hidden or base_field.is_hidden, .doc = ext_field.doc orelse base_field.doc });
+            }
+        } else {
             // No override, keep the base field
-            const key_copy = try arena.dupe(u8, base_field.key);
-            try result_fields.append(arena, .{ .key = key_copy, .value = base_field.value, .is_patch = base_field.is_patch, .is_hidden = base_field.is_hidden, .doc = base_field.doc });
+            try result_fields.append(arena, .{ .key = base_field.key, .value = base_field.value, .is_patch = base_field.is_patch, .is_hidden = base_field.is_hidden, .doc = base_field.doc });
         }
     }
 
-    // Then, add fields from extension that are not in base
+    // Build an index for base to efficiently find which extension fields are new.
+    const use_base_index = base.fields.len >= INDEX_THRESHOLD;
+    const base_idx: ?*std.StringHashMapUnmanaged(usize) = if (use_base_index)
+        try getOrBuildIndex(arena, &base_mut)
+    else
+        null;
+
+    // Then, add fields from extension that are not in base.
     for (extension.fields) |ext_field| {
-        var found_in_base = false;
-        for (base.fields) |base_field| {
-            if (std.mem.eql(u8, base_field.key, ext_field.key)) {
-                found_in_base = true;
-                break;
+        const found_in_base: bool = if (base_idx) |idx|
+            idx.contains(ext_field.key)
+        else blk: {
+            var found = false;
+            for (base.fields) |bf| {
+                if (std.mem.eql(u8, bf.key, ext_field.key)) {
+                    found = true;
+                    break;
+                }
             }
-        }
+            break :blk found;
+        };
+
         if (!found_in_base) {
-            const key_copy = try arena.dupe(u8, ext_field.key);
-            try result_fields.append(arena, .{ .key = key_copy, .value = ext_field.value, .is_patch = ext_field.is_patch, .is_hidden = ext_field.is_hidden, .doc = ext_field.doc });
+            try result_fields.append(arena, .{ .key = ext_field.key, .value = ext_field.value, .is_patch = ext_field.is_patch, .is_hidden = ext_field.is_hidden, .doc = ext_field.doc });
         }
     }
 
@@ -691,7 +531,6 @@ fn mergeObjects(arena: std.mem.Allocator, base: ObjectValue, extension: ObjectVa
     return result;
 }
 
-/// Find field access locations in an expression for a given field name
 fn findFieldAccessInExpression(expr: *Expression, field_name: []const u8) ?error_reporter.SourceLocation {
     return switch (expr.data) {
         .field_access => |fa| {
@@ -812,6 +651,12 @@ pub fn force(arena: std.mem.Allocator, value: Value) EvalError!Value {
                     // If this thunk has a self reference, bind `self` and all sibling
                     // field names in the environment so fields can reference each other.
                     const eval_env = if (thunk.self_value) |self_val| blk: {
+                        // Use cached sibling env if available to avoid rebuilding N env nodes
+                        // every time a field is accessed.
+                        if (thunk.cached_sibling_env) |cached_env| {
+                            break :blk cached_env;
+                        }
+
                         // Start with `self` binding
                         var current_env = try arena.create(Environment);
                         current_env.* = .{
@@ -842,6 +687,8 @@ pub fn force(arena: std.mem.Allocator, value: Value) EvalError!Value {
                             },
                             else => {},
                         }
+                        // Cache so subsequent forces of this thunk reuse the same env chain.
+                        thunk.cached_sibling_env = current_env;
                         break :blk current_env;
                     } else thunk.env;
                     const result = try evaluateExpression(arena, thunk.expr, eval_env, thunk.current_dir, thunk.ctx);
@@ -932,6 +779,706 @@ fn findFirstFieldAccess(expr: *Expression) ?error_reporter.SourceLocation {
     };
 }
 
+
+fn evaluateBinaryOp(
+    arena: std.mem.Allocator,
+    binary: ast.Binary,
+    env: ?*Environment,
+    current_dir: ?[]const u8,
+    ctx: *const EvalContext,
+) EvalError!Value {
+    const left_value = try evaluateExpression(arena, binary.left, env, current_dir, ctx);
+    const right_value = try evaluateExpression(arena, binary.right, env, current_dir, ctx);
+
+    return switch (binary.op) {
+        .add, .subtract, .multiply, .divide => {
+            // String concatenation: "hello" + "world"
+            if (binary.op == .add) {
+                if (left_value == .string and right_value == .string) {
+                    const left_str = left_value.string;
+                    const right_str = right_value.string;
+                    const concatenated = try std.fmt.allocPrint(arena, "{s}{s}", .{ left_str, right_str });
+                    return Value{ .string = concatenated };
+                }
+            }
+
+            // Check if either operand is a float
+            const is_float_op = (left_value == .float or right_value == .float);
+
+            if (is_float_op) {
+                // At least one operand is float, promote to float arithmetic
+                const left_float = switch (left_value) {
+                    .integer => |v| @as(f64, @floatFromInt(v)),
+                    .float => |v| v,
+                    else => {
+                        if (ctx.error_ctx) |err_ctx| {
+                            const op_name = switch (binary.op) {
+                                .add => "addition",
+                                .subtract => "subtraction",
+                                .multiply => "multiplication",
+                                .divide => "division",
+                                else => unreachable,
+                            };
+                            err_ctx.setErrorLocation(binary.left.location.line, binary.left.location.column, binary.left.location.offset, binary.left.location.length);
+                            err_ctx.setErrorData(.{ .type_mismatch = .{
+                                .expected = "number (integer or float)",
+                                .found = getValueTypeName(left_value),
+                                .operation = op_name,
+                            } });
+                        }
+                        return error.TypeMismatch;
+                    },
+                };
+                const right_float = switch (right_value) {
+                    .integer => |v| @as(f64, @floatFromInt(v)),
+                    .float => |v| v,
+                    else => {
+                        if (ctx.error_ctx) |err_ctx| {
+                            const op_name = switch (binary.op) {
+                                .add => "addition",
+                                .subtract => "subtraction",
+                                .multiply => "multiplication",
+                                .divide => "division",
+                                else => unreachable,
+                            };
+                            err_ctx.setErrorLocation(binary.right.location.line, binary.right.location.column, binary.right.location.offset, binary.right.location.length);
+                            err_ctx.setErrorData(.{ .type_mismatch = .{
+                                .expected = "number (integer or float)",
+                                .found = getValueTypeName(right_value),
+                                .operation = op_name,
+                            } });
+                        }
+                        return error.TypeMismatch;
+                    },
+                };
+
+                const float_result = switch (binary.op) {
+                    .add => left_float + right_float,
+                    .subtract => left_float - right_float,
+                    .multiply => left_float * right_float,
+                    .divide => divide: {
+                        if (right_float == 0.0) {
+                            if (ctx.error_ctx) |err_ctx| {
+                                // Point to the divisor (right operand)
+                                err_ctx.setErrorLocation(binary.right.location.line, binary.right.location.column, binary.right.location.offset, binary.right.location.length);
+                            }
+                            return error.DivisionByZero;
+                        }
+                        break :divide left_float / right_float;
+                    },
+                    else => unreachable,
+                };
+                return Value{ .float = float_result };
+            } else {
+                // Both operands are integers
+                const left_int = switch (left_value) {
+                    .integer => |v| v,
+                    else => {
+                        if (ctx.error_ctx) |err_ctx| {
+                            const op_name = switch (binary.op) {
+                                .add => "addition",
+                                .subtract => "subtraction",
+                                .multiply => "multiplication",
+                                .divide => "division",
+                                else => unreachable,
+                            };
+                            err_ctx.setErrorLocation(binary.left.location.line, binary.left.location.column, binary.left.location.offset, binary.left.location.length);
+                            err_ctx.setErrorData(.{ .type_mismatch = .{
+                                .expected = "integer",
+                                .found = getValueTypeName(left_value),
+                                .operation = op_name,
+                            } });
+                        }
+                        return error.TypeMismatch;
+                    },
+                };
+                const right_int = switch (right_value) {
+                    .integer => |v| v,
+                    else => {
+                        if (ctx.error_ctx) |err_ctx| {
+                            const op_name = switch (binary.op) {
+                                .add => "addition",
+                                .subtract => "subtraction",
+                                .multiply => "multiplication",
+                                .divide => "division",
+                                else => unreachable,
+                            };
+                            err_ctx.setErrorLocation(binary.right.location.line, binary.right.location.column, binary.right.location.offset, binary.right.location.length);
+                            err_ctx.setErrorData(.{ .type_mismatch = .{
+                                .expected = "integer",
+                                .found = getValueTypeName(right_value),
+                                .operation = op_name,
+                            } });
+                        }
+                        return error.TypeMismatch;
+                    },
+                };
+
+                const int_result = switch (binary.op) {
+                    .add => try std.math.add(i64, left_int, right_int),
+                    .subtract => try std.math.sub(i64, left_int, right_int),
+                    .multiply => try std.math.mul(i64, left_int, right_int),
+                    .divide => divide: {
+                        if (right_int == 0) {
+                            if (ctx.error_ctx) |err_ctx| {
+                                // Point to the divisor (right operand)
+                                err_ctx.setErrorLocation(binary.right.location.line, binary.right.location.column, binary.right.location.offset, binary.right.location.length);
+                            }
+                            return error.DivisionByZero;
+                        }
+                        break :divide @divTrunc(left_int, right_int);
+                    },
+                    else => unreachable,
+                };
+                return Value{ .integer = int_result };
+            }
+        },
+        .logical_and => {
+            const left_bool = switch (left_value) {
+                .boolean => |v| v,
+                else => return error.TypeMismatch,
+            };
+            const right_bool = switch (right_value) {
+                .boolean => |v| v,
+                else => return error.TypeMismatch,
+            };
+            return Value{ .boolean = left_bool and right_bool };
+        },
+        .logical_or => {
+            const left_bool = switch (left_value) {
+                .boolean => |v| v,
+                else => return error.TypeMismatch,
+            };
+            const right_bool = switch (right_value) {
+                .boolean => |v| v,
+                else => return error.TypeMismatch,
+            };
+            return Value{ .boolean = left_bool or right_bool };
+        },
+        .equal, .not_equal => {
+            const bool_result = switch (binary.op) {
+                .equal => try valuesEqual(arena, left_value, right_value),
+                .not_equal => !try valuesEqual(arena, left_value, right_value),
+                else => unreachable,
+            };
+            return Value{ .boolean = bool_result };
+        },
+        .less_than, .greater_than, .less_or_equal, .greater_or_equal => {
+            // Check if either operand is a float
+            const is_float_op = (left_value == .float or right_value == .float);
+
+            const bool_result = if (is_float_op) float_cmp: {
+                // At least one operand is float, promote to float comparison
+                const left_float = switch (left_value) {
+                    .integer => |v| @as(f64, @floatFromInt(v)),
+                    .float => |v| v,
+                    else => {
+                        if (ctx.error_ctx) |err_ctx| {
+                            const op_name = switch (binary.op) {
+                                .less_than => "comparison (<)",
+                                .greater_than => "comparison (>)",
+                                .less_or_equal => "comparison (<=)",
+                                .greater_or_equal => "comparison (>=)",
+                                else => unreachable,
+                            };
+                            err_ctx.setErrorData(.{ .type_mismatch = .{
+                                .expected = "number (integer or float)",
+                                .found = getValueTypeName(left_value),
+                                .operation = op_name,
+                            } });
+                        }
+                        return error.TypeMismatch;
+                    },
+                };
+                const right_float = switch (right_value) {
+                    .integer => |v| @as(f64, @floatFromInt(v)),
+                    .float => |v| v,
+                    else => {
+                        if (ctx.error_ctx) |err_ctx| {
+                            const op_name = switch (binary.op) {
+                                .less_than => "comparison (<)",
+                                .greater_than => "comparison (>)",
+                                .less_or_equal => "comparison (<=)",
+                                .greater_or_equal => "comparison (>=)",
+                                else => unreachable,
+                            };
+                            err_ctx.setErrorData(.{ .type_mismatch = .{
+                                .expected = "number (integer or float)",
+                                .found = getValueTypeName(right_value),
+                                .operation = op_name,
+                            } });
+                        }
+                        return error.TypeMismatch;
+                    },
+                };
+
+                break :float_cmp switch (binary.op) {
+                    .less_than => left_float < right_float,
+                    .greater_than => left_float > right_float,
+                    .less_or_equal => left_float <= right_float,
+                    .greater_or_equal => left_float >= right_float,
+                    else => unreachable,
+                };
+            } else int_cmp: {
+                // Both operands are integers
+                const left_int = switch (left_value) {
+                    .integer => |v| v,
+                    else => {
+                        if (ctx.error_ctx) |err_ctx| {
+                            const op_name = switch (binary.op) {
+                                .less_than => "comparison (<)",
+                                .greater_than => "comparison (>)",
+                                .less_or_equal => "comparison (<=)",
+                                .greater_or_equal => "comparison (>=)",
+                                else => unreachable,
+                            };
+                            err_ctx.setErrorData(.{ .type_mismatch = .{
+                                .expected = "integer",
+                                .found = getValueTypeName(left_value),
+                                .operation = op_name,
+                            } });
+                        }
+                        return error.TypeMismatch;
+                    },
+                };
+                const right_int = switch (right_value) {
+                    .integer => |v| v,
+                    else => {
+                        if (ctx.error_ctx) |err_ctx| {
+                            const op_name = switch (binary.op) {
+                                .less_than => "comparison (<)",
+                                .greater_than => "comparison (>)",
+                                .less_or_equal => "comparison (<=)",
+                                .greater_or_equal => "comparison (>=)",
+                                else => unreachable,
+                            };
+                            err_ctx.setErrorData(.{ .type_mismatch = .{
+                                .expected = "integer",
+                                .found = getValueTypeName(right_value),
+                                .operation = op_name,
+                            } });
+                        }
+                        return error.TypeMismatch;
+                    },
+                };
+
+                break :int_cmp switch (binary.op) {
+                    .less_than => left_int < right_int,
+                    .greater_than => left_int > right_int,
+                    .less_or_equal => left_int <= right_int,
+                    .greater_or_equal => left_int >= right_int,
+                    else => unreachable,
+                };
+            };
+            return Value{ .boolean = bool_result };
+        },
+        .pipeline => {
+            // Pipeline operator: x \ f evaluates to f(x)
+            // The left side is the value, the right side is the function
+            switch (right_value) {
+                .function => |function_ptr| {
+                    const bound_env = matchPattern(arena, function_ptr.param, left_value, function_ptr.env, ctx) catch |err| {
+                        if (ctx.error_ctx) |err_ctx| {
+                            err_ctx.captureStackTrace() catch {};
+                        }
+                        return err;
+                    };
+
+                    // Push stack frame for pipeline function call
+                    const function_name = switch (binary.right.data) {
+                        .identifier => |name| name,
+                        else => null,
+                    };
+
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.pushStackFrame(
+                            function_name,
+                            err_ctx.current_file,
+                            binary.right.location.line,
+                            binary.right.location.column,
+                            binary.right.location.offset,
+                            binary.right.location.length,
+                            false,
+                        ) catch {};
+                    }
+
+                    const result = evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx) catch |err| {
+                        if (ctx.error_ctx) |err_ctx| {
+                            if (err_ctx.stack_trace == null) {
+                                err_ctx.captureStackTrace() catch {};
+                            }
+                        }
+                        if (ctx.error_ctx) |err_ctx| {
+                            err_ctx.popStackFrame();
+                        }
+                        return err;
+                    };
+
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.popStackFrame();
+                    }
+
+                    return result;
+                },
+                .native_fn => |native_fn| {
+                    // Push stack frame for native function call
+                    const function_name = switch (binary.right.data) {
+                        .identifier => |name| name,
+                        else => null,
+                    };
+
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.pushStackFrame(
+                            function_name,
+                            err_ctx.current_file,
+                            binary.right.location.line,
+                            binary.right.location.column,
+                            binary.right.location.offset,
+                            binary.right.location.length,
+                            true,
+                        ) catch {};
+                    }
+
+                    const args = [_]Value{left_value};
+                    const result = native_fn(arena, &args) catch |err| {
+                        if (ctx.error_ctx) |err_ctx| {
+                            if (err_ctx.stack_trace == null) {
+                                err_ctx.captureStackTrace() catch {};
+                            }
+                        }
+                        if (ctx.error_ctx) |err_ctx| {
+                            err_ctx.popStackFrame();
+                        }
+                        return err;
+                    };
+
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.popStackFrame();
+                    }
+
+                    return result;
+                },
+                else => {
+                    // Point to the right operand (function) that isn't actually a function
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.setErrorLocation(binary.right.location.line, binary.right.location.column, binary.right.location.offset, binary.right.location.length);
+                        err_ctx.captureStackTrace() catch {};
+                    }
+                    return error.ExpectedFunction;
+                },
+            }
+        },
+        .merge => {
+            // Object merge operator: obj1 & obj2
+            const left_obj = switch (left_value) {
+                .object => |o| o,
+                else => return error.TypeMismatch,
+            };
+            const right_obj = switch (right_value) {
+                .object => |o| o,
+                else => return error.TypeMismatch,
+            };
+
+            // Merge the two objects
+            return try mergeObjects(arena, left_obj, right_obj);
+        },
+        .concatenate => {
+            // Array concatenation operator: arr1 ++ arr2
+            const left_arr = switch (left_value) {
+                .array => |a| a,
+                else => return error.TypeMismatch,
+            };
+            const right_arr = switch (right_value) {
+                .array => |a| a,
+                else => return error.TypeMismatch,
+            };
+
+            const combined = try arena.alloc(Value, left_arr.elements.len + right_arr.elements.len);
+            @memcpy(combined[0..left_arr.elements.len], left_arr.elements);
+            @memcpy(combined[left_arr.elements.len..], right_arr.elements);
+
+            return Value{ .array = .{ .elements = combined } };
+        },
+    };
+}
+
+fn evaluateApplication(
+    arena: std.mem.Allocator,
+    application: ast.Application,
+    env: ?*Environment,
+    current_dir: ?[]const u8,
+    ctx: *const EvalContext,
+) EvalError!Value {
+    // Check and increment recursion depth
+    if (ctx.recursion_depth.* >= MAX_RECURSION_DEPTH) {
+        if (ctx.error_ctx) |err_ctx| {
+            err_ctx.setErrorLocation(application.function.location.line, application.function.location.column, application.function.location.offset, application.function.location.length);
+        }
+        const msg = std.heap.page_allocator.dupe(u8, "Maximum recursion depth exceeded") catch "Maximum recursion depth exceeded";
+        value_mod.setUserCrashMessage(msg);
+        return error.UserCrash;
+    }
+    ctx.recursion_depth.* += 1;
+    defer ctx.recursion_depth.* -= 1;
+
+    const function_value = try evaluateExpression(arena, application.function, env, current_dir, ctx);
+    const argument_value = try evaluateExpression(arena, application.argument, env, current_dir, ctx);
+
+    switch (function_value) {
+        .function => |function_ptr| {
+            const bound_env = matchPattern(arena, function_ptr.param, argument_value, function_ptr.env, ctx) catch |err| {
+                // If pattern matching fails, update error location to point to the argument
+                // at the call site, not the parameter in the function definition
+                if (ctx.error_ctx) |err_ctx| {
+                    err_ctx.setErrorLocation(application.argument.location.line, application.argument.location.column, application.argument.location.offset, application.argument.location.length);
+
+                    // If the error is a type mismatch and the function is named, update the operation
+                    if (err == error.TypeMismatch) {
+                        // Check if function expression is an identifier
+                        const function_name = switch (application.function.data) {
+                            .identifier => |name| name,
+                            else => null,
+                        };
+
+                        if (function_name) |name| {
+                            // Update the operation field in the error data if it exists
+                            if (err_ctx.last_error_data == .type_mismatch) {
+                                const old_data = err_ctx.last_error_data.type_mismatch;
+                                // Save ownership flags before clearing them on the live struct
+                                const was_expected_owned = old_data.expected_owned;
+                                const was_found_owned = old_data.found_owned;
+                                // Try to allocate new operation string; if it fails, leave error data as-is
+                                if (std.fmt.allocPrint(err_ctx.allocator, "calling function `{s}`", .{name})) |new_operation| {
+                                    // Clear flags so freeErrorData doesn't free strings we're reusing
+                                    err_ctx.last_error_data.type_mismatch.expected_owned = false;
+                                    err_ctx.last_error_data.type_mismatch.found_owned = false;
+                                    err_ctx.setErrorData(.{ .type_mismatch = .{
+                                        .expected = old_data.expected,
+                                        .found = old_data.found,
+                                        .operation = new_operation,
+                                        .expected_owned = was_expected_owned,
+                                        .found_owned = was_found_owned,
+                                    } });
+                                } else |_| {
+                                    // Allocation failed, keep existing error data
+                                }
+                            }
+                        }
+                    }
+                    // Capture stack trace on error
+                    err_ctx.captureStackTrace() catch {};
+                }
+                return err;
+            };
+
+            // Push stack frame for function call
+            const function_name = switch (application.function.data) {
+                .identifier => |name| name,
+                else => null,
+            };
+
+            if (ctx.error_ctx) |err_ctx| {
+                err_ctx.pushStackFrame(
+                    function_name,
+                    err_ctx.current_file,
+                    application.function.location.line,
+                    application.function.location.column,
+                    application.function.location.offset,
+                    application.function.location.length,
+                    false, // Not a native function
+                ) catch {};
+            }
+
+            // Evaluate function body
+            const result = evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx) catch |err| {
+                // Capture stack trace on error (only if not already captured)
+                if (ctx.error_ctx) |err_ctx| {
+                    if (err_ctx.stack_trace == null) {
+                        err_ctx.captureStackTrace() catch {};
+                    }
+                }
+                // Pop stack frame before returning error
+                if (ctx.error_ctx) |err_ctx| {
+                    err_ctx.popStackFrame();
+                }
+                return err;
+            };
+
+            // Pop stack frame after successful evaluation
+            if (ctx.error_ctx) |err_ctx| {
+                err_ctx.popStackFrame();
+            }
+
+            return result;
+        },
+        .native_fn => |native_fn| {
+            // Push stack frame for native function call
+            const function_name = switch (application.function.data) {
+                .identifier => |name| name,
+                else => null,
+            };
+
+            if (ctx.error_ctx) |err_ctx| {
+                err_ctx.pushStackFrame(
+                    function_name,
+                    err_ctx.current_file,
+                    application.function.location.line,
+                    application.function.location.column,
+                    application.function.location.offset,
+                    application.function.location.length,
+                    true, // Native function
+                ) catch {};
+            }
+
+            // Native functions receive a single argument (could be a tuple for multiple args)
+            const args = [_]Value{argument_value};
+            const result = native_fn(arena, &args) catch |err| {
+                // Capture stack trace on error (only if not already captured)
+                if (ctx.error_ctx) |err_ctx| {
+                    if (err_ctx.stack_trace == null) {
+                        err_ctx.captureStackTrace() catch {};
+                    }
+                }
+                // Pop stack frame before returning error
+                if (ctx.error_ctx) |err_ctx| {
+                    err_ctx.popStackFrame();
+                }
+                return err;
+            };
+
+            // Pop stack frame after successful evaluation
+            if (ctx.error_ctx) |err_ctx| {
+                err_ctx.popStackFrame();
+            }
+
+            return result;
+        },
+        else => {
+            // Point to the function expression that isn't actually a function
+            if (ctx.error_ctx) |err_ctx| {
+                err_ctx.setErrorLocation(application.function.location.line, application.function.location.column, application.function.location.offset, application.function.location.length);
+                err_ctx.captureStackTrace() catch {};
+            }
+            return error.ExpectedFunction;
+        },
+    }
+}
+
+fn evaluateObjectLiteral(
+    arena: std.mem.Allocator,
+    object: ast.ObjectLiteral,
+    env: ?*Environment,
+    current_dir: ?[]const u8,
+    ctx: *const EvalContext,
+) EvalError!Value {
+    // Allocate a mutable cell for `self` — thunks will read from it when forced
+    const self_cell = try arena.create(Value);
+    self_cell.* = .null_value; // placeholder until object is constructed
+
+    // First pass: evaluate dynamic keys and count total fields
+    var fields_list = std.ArrayList(ObjectFieldValue){};
+    defer fields_list.deinit(arena);
+
+    for (object.fields) |field| {
+        // Check conditional inclusion (if/unless)
+        switch (field.condition) {
+            .none => {},
+            .if_cond => |cond_expr| {
+                const cond_val = try evaluateExpression(arena, cond_expr, env, current_dir, ctx);
+                switch (cond_val) {
+                    .boolean => |b| if (!b) continue,
+                    else => return error.TypeMismatch,
+                }
+            },
+            .unless_cond => |cond_expr| {
+                const cond_val = try evaluateExpression(arena, cond_expr, env, current_dir, ctx);
+                switch (cond_val) {
+                    .boolean => |b| if (b) continue,
+                    else => return error.TypeMismatch,
+                }
+            },
+        }
+
+        switch (field.key) {
+            .static => |static_key| {
+                const key_copy = try arena.dupe(u8, static_key);
+                // Wrap field value in a thunk for lazy evaluation
+                const thunk = try arena.create(Thunk);
+                thunk.* = .{
+                    .expr = field.value,
+                    .env = env,
+                    .current_dir = current_dir,
+                    .ctx = ctx,
+                    .state = .unevaluated,
+                    .field_key_location = field.key_location,
+                    .self_value = self_cell,
+                };
+                try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch, .is_hidden = field.is_hidden, .doc = field.doc });
+            },
+            .dynamic => |key_expr| {
+                // Evaluate the key expression
+                const key_value = try evaluateExpression(arena, key_expr, env, current_dir, ctx);
+
+                switch (key_value) {
+                    .null_value => {
+                        // null key: skip this field
+                        continue;
+                    },
+                    .string => |key_string| {
+                        // Single string key
+                        const key_copy = try arena.dupe(u8, key_string);
+                        const thunk = try arena.create(Thunk);
+                        thunk.* = .{
+                            .expr = field.value,
+                            .env = env,
+                            .current_dir = current_dir,
+                            .ctx = ctx,
+                            .state = .unevaluated,
+                            .field_key_location = field.key_location,
+                            .self_value = self_cell,
+                        };
+                        try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch, .is_hidden = field.is_hidden, .doc = field.doc });
+                    },
+                    .array => |arr| {
+                        // Array of keys: create multiple fields with same value
+                        for (arr.elements) |elem| {
+                            switch (elem) {
+                                .null_value => {
+                                    // Skip null elements in array
+                                    continue;
+                                },
+                                .string => |key_string| {
+                                    const key_copy = try arena.dupe(u8, key_string);
+                                    const thunk = try arena.create(Thunk);
+                                    thunk.* = .{
+                                        .expr = field.value,
+                                        .env = env,
+                                        .current_dir = current_dir,
+                                        .ctx = ctx,
+                                        .state = .unevaluated,
+                                        .field_key_location = field.key_location,
+                                        .self_value = self_cell,
+                                    };
+                                    try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch, .is_hidden = field.is_hidden, .doc = field.doc });
+                                },
+                                else => return error.TypeMismatch,
+                            }
+                        }
+                    },
+                    else => return error.TypeMismatch,
+                }
+            },
+        }
+    }
+
+    const fields = try fields_list.toOwnedSlice(arena);
+    const obj_value = Value{ .object = .{ .fields = fields, .module_doc = object.module_doc } };
+    // Fill in the self cell so thunks can access `self`
+    self_cell.* = obj_value;
+    return obj_value;
+}
+
+
 pub fn evaluateExpression(
     arena: std.mem.Allocator,
     expr: *Expression,
@@ -944,7 +1491,7 @@ pub fn evaluateExpression(
         .float => |value| .{ .float = value },
         .boolean => |value| .{ .boolean = value },
         .null_literal => .null_value,
-        .symbol => |value| .{ .string = try arena.dupe(u8, if (value.len > 0 and value[0] == '#') value[1..] else value) },
+        .symbol => |value| .{ .string = if (value.len > 0 and value[0] == '#') value[1..] else value },
         .identifier => |name| blk: {
             const resolved = lookup(env, name) orelse {
                 // Set error location and data for unknown identifier
@@ -962,7 +1509,7 @@ pub fn evaluateExpression(
             // Automatically force thunks when looking up identifiers
             break :blk try force(arena, resolved);
         },
-        .string_literal => |value| .{ .string = try arena.dupe(u8, value) },
+        .string_literal => |value| .{ .string = value },
         .string_interpolation => |interp| blk: {
             var result = std.ArrayListUnmanaged(u8){};
             for (interp.parts) |part| {
@@ -1117,422 +1664,7 @@ pub fn evaluateExpression(
             };
             break :blk result;
         },
-        .binary => |binary| blk: {
-            const left_value = try evaluateExpression(arena, binary.left, env, current_dir, ctx);
-            const right_value = try evaluateExpression(arena, binary.right, env, current_dir, ctx);
-
-            const result = switch (binary.op) {
-                .add, .subtract, .multiply, .divide => blk2: {
-                    // String concatenation: "hello" + "world"
-                    if (binary.op == .add) {
-                        if (left_value == .string and right_value == .string) {
-                            const left_str = left_value.string;
-                            const right_str = right_value.string;
-                            const concatenated = try std.fmt.allocPrint(arena, "{s}{s}", .{ left_str, right_str });
-                            break :blk2 Value{ .string = concatenated };
-                        }
-                    }
-
-                    // Check if either operand is a float
-                    const is_float_op = (left_value == .float or right_value == .float);
-
-                    if (is_float_op) {
-                        // At least one operand is float, promote to float arithmetic
-                        const left_float = switch (left_value) {
-                            .integer => |v| @as(f64, @floatFromInt(v)),
-                            .float => |v| v,
-                            else => {
-                                if (ctx.error_ctx) |err_ctx| {
-                                    const op_name = switch (binary.op) {
-                                        .add => "addition",
-                                        .subtract => "subtraction",
-                                        .multiply => "multiplication",
-                                        .divide => "division",
-                                        else => unreachable,
-                                    };
-                                    err_ctx.setErrorLocation(binary.left.location.line, binary.left.location.column, binary.left.location.offset, binary.left.location.length);
-                                    err_ctx.setErrorData(.{ .type_mismatch = .{
-                                        .expected = "number (integer or float)",
-                                        .found = getValueTypeName(left_value),
-                                        .operation = op_name,
-                                    } });
-                                }
-                                return error.TypeMismatch;
-                            },
-                        };
-                        const right_float = switch (right_value) {
-                            .integer => |v| @as(f64, @floatFromInt(v)),
-                            .float => |v| v,
-                            else => {
-                                if (ctx.error_ctx) |err_ctx| {
-                                    const op_name = switch (binary.op) {
-                                        .add => "addition",
-                                        .subtract => "subtraction",
-                                        .multiply => "multiplication",
-                                        .divide => "division",
-                                        else => unreachable,
-                                    };
-                                    err_ctx.setErrorLocation(binary.right.location.line, binary.right.location.column, binary.right.location.offset, binary.right.location.length);
-                                    err_ctx.setErrorData(.{ .type_mismatch = .{
-                                        .expected = "number (integer or float)",
-                                        .found = getValueTypeName(right_value),
-                                        .operation = op_name,
-                                    } });
-                                }
-                                return error.TypeMismatch;
-                            },
-                        };
-
-                        const float_result = switch (binary.op) {
-                            .add => left_float + right_float,
-                            .subtract => left_float - right_float,
-                            .multiply => left_float * right_float,
-                            .divide => blk3: {
-                                if (right_float == 0.0) {
-                                    if (ctx.error_ctx) |err_ctx| {
-                                        // Point to the divisor (right operand)
-                                        err_ctx.setErrorLocation(binary.right.location.line, binary.right.location.column, binary.right.location.offset, binary.right.location.length);
-                                    }
-                                    return error.DivisionByZero;
-                                }
-                                break :blk3 left_float / right_float;
-                            },
-                            else => unreachable,
-                        };
-                        break :blk2 Value{ .float = float_result };
-                    } else {
-                        // Both operands are integers
-                        const left_int = switch (left_value) {
-                            .integer => |v| v,
-                            else => {
-                                if (ctx.error_ctx) |err_ctx| {
-                                    const op_name = switch (binary.op) {
-                                        .add => "addition",
-                                        .subtract => "subtraction",
-                                        .multiply => "multiplication",
-                                        .divide => "division",
-                                        else => unreachable,
-                                    };
-                                    err_ctx.setErrorLocation(binary.left.location.line, binary.left.location.column, binary.left.location.offset, binary.left.location.length);
-                                    err_ctx.setErrorData(.{ .type_mismatch = .{
-                                        .expected = "integer",
-                                        .found = getValueTypeName(left_value),
-                                        .operation = op_name,
-                                    } });
-                                }
-                                return error.TypeMismatch;
-                            },
-                        };
-                        const right_int = switch (right_value) {
-                            .integer => |v| v,
-                            else => {
-                                if (ctx.error_ctx) |err_ctx| {
-                                    const op_name = switch (binary.op) {
-                                        .add => "addition",
-                                        .subtract => "subtraction",
-                                        .multiply => "multiplication",
-                                        .divide => "division",
-                                        else => unreachable,
-                                    };
-                                    err_ctx.setErrorLocation(binary.right.location.line, binary.right.location.column, binary.right.location.offset, binary.right.location.length);
-                                    err_ctx.setErrorData(.{ .type_mismatch = .{
-                                        .expected = "integer",
-                                        .found = getValueTypeName(right_value),
-                                        .operation = op_name,
-                                    } });
-                                }
-                                return error.TypeMismatch;
-                            },
-                        };
-
-                        const int_result = switch (binary.op) {
-                            .add => try std.math.add(i64, left_int, right_int),
-                            .subtract => try std.math.sub(i64, left_int, right_int),
-                            .multiply => try std.math.mul(i64, left_int, right_int),
-                            .divide => blk4: {
-                                if (right_int == 0) {
-                                    if (ctx.error_ctx) |err_ctx| {
-                                        // Point to the divisor (right operand)
-                                        err_ctx.setErrorLocation(binary.right.location.line, binary.right.location.column, binary.right.location.offset, binary.right.location.length);
-                                    }
-                                    return error.DivisionByZero;
-                                }
-                                break :blk4 @divTrunc(left_int, right_int);
-                            },
-                            else => unreachable,
-                        };
-                        break :blk2 Value{ .integer = int_result };
-                    }
-                },
-                .logical_and => blk2: {
-                    const left_bool = switch (left_value) {
-                        .boolean => |v| v,
-                        else => return error.TypeMismatch,
-                    };
-                    const right_bool = switch (right_value) {
-                        .boolean => |v| v,
-                        else => return error.TypeMismatch,
-                    };
-                    break :blk2 Value{ .boolean = left_bool and right_bool };
-                },
-                .logical_or => blk2: {
-                    const left_bool = switch (left_value) {
-                        .boolean => |v| v,
-                        else => return error.TypeMismatch,
-                    };
-                    const right_bool = switch (right_value) {
-                        .boolean => |v| v,
-                        else => return error.TypeMismatch,
-                    };
-                    break :blk2 Value{ .boolean = left_bool or right_bool };
-                },
-                .equal, .not_equal => blk2: {
-                    const bool_result = switch (binary.op) {
-                        .equal => try valuesEqual(arena, left_value, right_value),
-                        .not_equal => !try valuesEqual(arena, left_value, right_value),
-                        else => unreachable,
-                    };
-                    break :blk2 Value{ .boolean = bool_result };
-                },
-                .less_than, .greater_than, .less_or_equal, .greater_or_equal => blk2: {
-                    // Check if either operand is a float
-                    const is_float_op = (left_value == .float or right_value == .float);
-
-                    const bool_result = if (is_float_op) blk3: {
-                        // At least one operand is float, promote to float comparison
-                        const left_float = switch (left_value) {
-                            .integer => |v| @as(f64, @floatFromInt(v)),
-                            .float => |v| v,
-                            else => {
-                                if (ctx.error_ctx) |err_ctx| {
-                                    const op_name = switch (binary.op) {
-                                        .less_than => "comparison (<)",
-                                        .greater_than => "comparison (>)",
-                                        .less_or_equal => "comparison (<=)",
-                                        .greater_or_equal => "comparison (>=)",
-                                        else => unreachable,
-                                    };
-                                    err_ctx.setErrorData(.{ .type_mismatch = .{
-                                        .expected = "number (integer or float)",
-                                        .found = getValueTypeName(left_value),
-                                        .operation = op_name,
-                                    } });
-                                }
-                                return error.TypeMismatch;
-                            },
-                        };
-                        const right_float = switch (right_value) {
-                            .integer => |v| @as(f64, @floatFromInt(v)),
-                            .float => |v| v,
-                            else => {
-                                if (ctx.error_ctx) |err_ctx| {
-                                    const op_name = switch (binary.op) {
-                                        .less_than => "comparison (<)",
-                                        .greater_than => "comparison (>)",
-                                        .less_or_equal => "comparison (<=)",
-                                        .greater_or_equal => "comparison (>=)",
-                                        else => unreachable,
-                                    };
-                                    err_ctx.setErrorData(.{ .type_mismatch = .{
-                                        .expected = "number (integer or float)",
-                                        .found = getValueTypeName(right_value),
-                                        .operation = op_name,
-                                    } });
-                                }
-                                return error.TypeMismatch;
-                            },
-                        };
-
-                        break :blk3 switch (binary.op) {
-                            .less_than => left_float < right_float,
-                            .greater_than => left_float > right_float,
-                            .less_or_equal => left_float <= right_float,
-                            .greater_or_equal => left_float >= right_float,
-                            else => unreachable,
-                        };
-                    } else blk3: {
-                        // Both operands are integers
-                        const left_int = switch (left_value) {
-                            .integer => |v| v,
-                            else => {
-                                if (ctx.error_ctx) |err_ctx| {
-                                    const op_name = switch (binary.op) {
-                                        .less_than => "comparison (<)",
-                                        .greater_than => "comparison (>)",
-                                        .less_or_equal => "comparison (<=)",
-                                        .greater_or_equal => "comparison (>=)",
-                                        else => unreachable,
-                                    };
-                                    err_ctx.setErrorData(.{ .type_mismatch = .{
-                                        .expected = "integer",
-                                        .found = getValueTypeName(left_value),
-                                        .operation = op_name,
-                                    } });
-                                }
-                                return error.TypeMismatch;
-                            },
-                        };
-                        const right_int = switch (right_value) {
-                            .integer => |v| v,
-                            else => {
-                                if (ctx.error_ctx) |err_ctx| {
-                                    const op_name = switch (binary.op) {
-                                        .less_than => "comparison (<)",
-                                        .greater_than => "comparison (>)",
-                                        .less_or_equal => "comparison (<=)",
-                                        .greater_or_equal => "comparison (>=)",
-                                        else => unreachable,
-                                    };
-                                    err_ctx.setErrorData(.{ .type_mismatch = .{
-                                        .expected = "integer",
-                                        .found = getValueTypeName(right_value),
-                                        .operation = op_name,
-                                    } });
-                                }
-                                return error.TypeMismatch;
-                            },
-                        };
-
-                        break :blk3 switch (binary.op) {
-                            .less_than => left_int < right_int,
-                            .greater_than => left_int > right_int,
-                            .less_or_equal => left_int <= right_int,
-                            .greater_or_equal => left_int >= right_int,
-                            else => unreachable,
-                        };
-                    };
-                    break :blk2 Value{ .boolean = bool_result };
-                },
-                .pipeline => blk2: {
-                    // Pipeline operator: x \ f evaluates to f(x)
-                    // The left side is the value, the right side is the function
-                    switch (right_value) {
-                        .function => |function_ptr| {
-                            const bound_env = matchPattern(arena, function_ptr.param, left_value, function_ptr.env, ctx) catch |err| {
-                                if (ctx.error_ctx) |err_ctx| {
-                                    err_ctx.captureStackTrace() catch {};
-                                }
-                                return err;
-                            };
-
-                            // Push stack frame for pipeline function call
-                            const function_name = switch (binary.right.data) {
-                                .identifier => |name| name,
-                                else => null,
-                            };
-
-                            if (ctx.error_ctx) |err_ctx| {
-                                err_ctx.pushStackFrame(
-                                    function_name,
-                                    err_ctx.current_file,
-                                    binary.right.location.line,
-                                    binary.right.location.column,
-                                    binary.right.location.offset,
-                                    binary.right.location.length,
-                                    false,
-                                ) catch {};
-                            }
-
-                            const result = evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx) catch |err| {
-                                if (ctx.error_ctx) |err_ctx| {
-                                    if (err_ctx.stack_trace == null) {
-                                        err_ctx.captureStackTrace() catch {};
-                                    }
-                                }
-                                if (ctx.error_ctx) |err_ctx| {
-                                    err_ctx.popStackFrame();
-                                }
-                                return err;
-                            };
-
-                            if (ctx.error_ctx) |err_ctx| {
-                                err_ctx.popStackFrame();
-                            }
-
-                            break :blk2 result;
-                        },
-                        .native_fn => |native_fn| {
-                            // Push stack frame for native function call
-                            const function_name = switch (binary.right.data) {
-                                .identifier => |name| name,
-                                else => null,
-                            };
-
-                            if (ctx.error_ctx) |err_ctx| {
-                                err_ctx.pushStackFrame(
-                                    function_name,
-                                    err_ctx.current_file,
-                                    binary.right.location.line,
-                                    binary.right.location.column,
-                                    binary.right.location.offset,
-                                    binary.right.location.length,
-                                    true,
-                                ) catch {};
-                            }
-
-                            const args = [_]Value{left_value};
-                            const result = native_fn(arena, &args) catch |err| {
-                                if (ctx.error_ctx) |err_ctx| {
-                                    if (err_ctx.stack_trace == null) {
-                                        err_ctx.captureStackTrace() catch {};
-                                    }
-                                }
-                                if (ctx.error_ctx) |err_ctx| {
-                                    err_ctx.popStackFrame();
-                                }
-                                return err;
-                            };
-
-                            if (ctx.error_ctx) |err_ctx| {
-                                err_ctx.popStackFrame();
-                            }
-
-                            break :blk2 result;
-                        },
-                        else => {
-                            // Point to the right operand (function) that isn't actually a function
-                            if (ctx.error_ctx) |err_ctx| {
-                                err_ctx.setErrorLocation(binary.right.location.line, binary.right.location.column, binary.right.location.offset, binary.right.location.length);
-                                err_ctx.captureStackTrace() catch {};
-                            }
-                            return error.ExpectedFunction;
-                        },
-                    }
-                },
-                .merge => blk2: {
-                    // Object merge operator: obj1 & obj2
-                    const left_obj = switch (left_value) {
-                        .object => |o| o,
-                        else => return error.TypeMismatch,
-                    };
-                    const right_obj = switch (right_value) {
-                        .object => |o| o,
-                        else => return error.TypeMismatch,
-                    };
-
-                    // Merge the two objects
-                    break :blk2 try mergeObjects(arena, left_obj, right_obj);
-                },
-                .concatenate => blk2: {
-                    // Array concatenation operator: arr1 ++ arr2
-                    const left_arr = switch (left_value) {
-                        .array => |a| a,
-                        else => return error.TypeMismatch,
-                    };
-                    const right_arr = switch (right_value) {
-                        .array => |a| a,
-                        else => return error.TypeMismatch,
-                    };
-
-                    const combined = try arena.alloc(Value, left_arr.elements.len + right_arr.elements.len);
-                    @memcpy(combined[0..left_arr.elements.len], left_arr.elements);
-                    @memcpy(combined[left_arr.elements.len..], right_arr.elements);
-
-                    break :blk2 Value{ .array = .{ .elements = combined } };
-                },
-            };
-            break :blk result;
-        },
+        .binary => |binary| try evaluateBinaryOp(arena, binary, env, current_dir, ctx),
         .if_expr => |if_expr| blk: {
             const condition_value = try evaluateExpression(arena, if_expr.condition, env, current_dir, ctx);
             const condition_bool = switch (condition_value) {
@@ -1646,141 +1778,7 @@ pub fn evaluateExpression(
 
             return error.TypeMismatch;
         },
-        .application => |application| blk: {
-            const function_value = try evaluateExpression(arena, application.function, env, current_dir, ctx);
-            const argument_value = try evaluateExpression(arena, application.argument, env, current_dir, ctx);
-
-            switch (function_value) {
-                .function => |function_ptr| {
-                    const bound_env = matchPattern(arena, function_ptr.param, argument_value, function_ptr.env, ctx) catch |err| {
-                        // If pattern matching fails, update error location to point to the argument
-                        // at the call site, not the parameter in the function definition
-                        if (ctx.error_ctx) |err_ctx| {
-                            err_ctx.setErrorLocation(application.argument.location.line, application.argument.location.column, application.argument.location.offset, application.argument.location.length);
-
-                            // If the error is a type mismatch and the function is named, update the operation
-                            if (err == error.TypeMismatch) {
-                                // Check if function expression is an identifier
-                                const function_name = switch (application.function.data) {
-                                    .identifier => |name| name,
-                                    else => null,
-                                };
-
-                                if (function_name) |name| {
-                                    // Update the operation field in the error data if it exists
-                                    if (err_ctx.last_error_data == .type_mismatch) {
-                                        const old_data = err_ctx.last_error_data.type_mismatch;
-                                        // Try to allocate new operation string; if it fails, leave error data as-is
-                                        if (std.fmt.allocPrint(err_ctx.allocator, "calling function `{s}`", .{name})) |new_operation| {
-                                            err_ctx.setErrorData(.{ .type_mismatch = .{
-                                                .expected = old_data.expected,
-                                                .found = old_data.found,
-                                                .operation = new_operation,
-                                            } });
-                                        } else |_| {
-                                            // Allocation failed, keep existing error data
-                                        }
-                                    }
-                                }
-                            }
-                            // Capture stack trace on error
-                            err_ctx.captureStackTrace() catch {};
-                        }
-                        return err;
-                    };
-
-                    // Push stack frame for function call
-                    const function_name = switch (application.function.data) {
-                        .identifier => |name| name,
-                        else => null,
-                    };
-
-                    if (ctx.error_ctx) |err_ctx| {
-                        err_ctx.pushStackFrame(
-                            function_name,
-                            err_ctx.current_file,
-                            application.function.location.line,
-                            application.function.location.column,
-                            application.function.location.offset,
-                            application.function.location.length,
-                            false, // Not a native function
-                        ) catch {};
-                    }
-
-                    // Evaluate function body
-                    const result = evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx) catch |err| {
-                        // Capture stack trace on error (only if not already captured)
-                        if (ctx.error_ctx) |err_ctx| {
-                            if (err_ctx.stack_trace == null) {
-                                err_ctx.captureStackTrace() catch {};
-                            }
-                        }
-                        // Pop stack frame before returning error
-                        if (ctx.error_ctx) |err_ctx| {
-                            err_ctx.popStackFrame();
-                        }
-                        return err;
-                    };
-
-                    // Pop stack frame after successful evaluation
-                    if (ctx.error_ctx) |err_ctx| {
-                        err_ctx.popStackFrame();
-                    }
-
-                    break :blk result;
-                },
-                .native_fn => |native_fn| {
-                    // Push stack frame for native function call
-                    const function_name = switch (application.function.data) {
-                        .identifier => |name| name,
-                        else => null,
-                    };
-
-                    if (ctx.error_ctx) |err_ctx| {
-                        err_ctx.pushStackFrame(
-                            function_name,
-                            err_ctx.current_file,
-                            application.function.location.line,
-                            application.function.location.column,
-                            application.function.location.offset,
-                            application.function.location.length,
-                            true, // Native function
-                        ) catch {};
-                    }
-
-                    // Native functions receive a single argument (could be a tuple for multiple args)
-                    const args = [_]Value{argument_value};
-                    const result = native_fn(arena, &args) catch |err| {
-                        // Capture stack trace on error (only if not already captured)
-                        if (ctx.error_ctx) |err_ctx| {
-                            if (err_ctx.stack_trace == null) {
-                                err_ctx.captureStackTrace() catch {};
-                            }
-                        }
-                        // Pop stack frame before returning error
-                        if (ctx.error_ctx) |err_ctx| {
-                            err_ctx.popStackFrame();
-                        }
-                        return err;
-                    };
-
-                    // Pop stack frame after successful evaluation
-                    if (ctx.error_ctx) |err_ctx| {
-                        err_ctx.popStackFrame();
-                    }
-
-                    break :blk result;
-                },
-                else => {
-                    // Point to the function expression that isn't actually a function
-                    if (ctx.error_ctx) |err_ctx| {
-                        err_ctx.setErrorLocation(application.function.location.line, application.function.location.column, application.function.location.offset, application.function.location.length);
-                        err_ctx.captureStackTrace() catch {};
-                    }
-                    return error.ExpectedFunction;
-                },
-            }
-        },
+        .application => |application| try evaluateApplication(arena, application, env, current_dir, ctx),
         .array => |array| blk: {
             // First pass: evaluate all elements and count total size
             var temp_values = std.ArrayList(Value){};
@@ -1854,113 +1852,7 @@ pub fn evaluateExpression(
 
             break :blk Value{ .range = .{ .start = start_int, .end = end_int, .inclusive = range.inclusive } };
         },
-        .object => |object| blk: {
-            // Allocate a mutable cell for `self` — thunks will read from it when forced
-            const self_cell = try arena.create(Value);
-            self_cell.* = .null_value; // placeholder until object is constructed
-
-            // First pass: evaluate dynamic keys and count total fields
-            var fields_list = std.ArrayList(ObjectFieldValue){};
-            defer fields_list.deinit(arena);
-
-            for (object.fields) |field| {
-                // Check conditional inclusion (if/unless)
-                switch (field.condition) {
-                    .none => {},
-                    .if_cond => |cond_expr| {
-                        const cond_val = try evaluateExpression(arena, cond_expr, env, current_dir, ctx);
-                        switch (cond_val) {
-                            .boolean => |b| if (!b) continue,
-                            else => return error.TypeMismatch,
-                        }
-                    },
-                    .unless_cond => |cond_expr| {
-                        const cond_val = try evaluateExpression(arena, cond_expr, env, current_dir, ctx);
-                        switch (cond_val) {
-                            .boolean => |b| if (b) continue,
-                            else => return error.TypeMismatch,
-                        }
-                    },
-                }
-
-                switch (field.key) {
-                    .static => |static_key| {
-                        const key_copy = try arena.dupe(u8, static_key);
-                        // Wrap field value in a thunk for lazy evaluation
-                        const thunk = try arena.create(Thunk);
-                        thunk.* = .{
-                            .expr = field.value,
-                            .env = env,
-                            .current_dir = current_dir,
-                            .ctx = ctx,
-                            .state = .unevaluated,
-                            .field_key_location = field.key_location,
-                            .self_value = self_cell,
-                        };
-                        try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch, .is_hidden = field.is_hidden, .doc = field.doc });
-                    },
-                    .dynamic => |key_expr| {
-                        // Evaluate the key expression
-                        const key_value = try evaluateExpression(arena, key_expr, env, current_dir, ctx);
-
-                        switch (key_value) {
-                            .null_value => {
-                                // null key: skip this field
-                                continue;
-                            },
-                            .string => |key_string| {
-                                // Single string key
-                                const key_copy = try arena.dupe(u8, key_string);
-                                const thunk = try arena.create(Thunk);
-                                thunk.* = .{
-                                    .expr = field.value,
-                                    .env = env,
-                                    .current_dir = current_dir,
-                                    .ctx = ctx,
-                                    .state = .unevaluated,
-                                    .field_key_location = field.key_location,
-                                    .self_value = self_cell,
-                                };
-                                try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch, .is_hidden = field.is_hidden, .doc = field.doc });
-                            },
-                            .array => |arr| {
-                                // Array of keys: create multiple fields with same value
-                                for (arr.elements) |elem| {
-                                    switch (elem) {
-                                        .null_value => {
-                                            // Skip null elements in array
-                                            continue;
-                                        },
-                                        .string => |key_string| {
-                                            const key_copy = try arena.dupe(u8, key_string);
-                                            const thunk = try arena.create(Thunk);
-                                            thunk.* = .{
-                                                .expr = field.value,
-                                                .env = env,
-                                                .current_dir = current_dir,
-                                                .ctx = ctx,
-                                                .state = .unevaluated,
-                                                .field_key_location = field.key_location,
-                                                .self_value = self_cell,
-                                            };
-                                            try fields_list.append(arena, .{ .key = key_copy, .value = .{ .thunk = thunk }, .is_patch = field.is_patch, .is_hidden = field.is_hidden, .doc = field.doc });
-                                        },
-                                        else => return error.TypeMismatch,
-                                    }
-                                }
-                            },
-                            else => return error.TypeMismatch,
-                        }
-                    },
-                }
-            }
-
-            const fields = try fields_list.toOwnedSlice(arena);
-            const obj_value = Value{ .object = .{ .fields = fields, .module_doc = object.module_doc } };
-            // Fill in the self cell so thunks can access `self`
-            self_cell.* = obj_value;
-            break :blk obj_value;
-        },
+        .object => |object| try evaluateObjectLiteral(arena, object, env, current_dir, ctx),
         .object_extend => |extend| blk: {
             // Evaluate the base expression
             const base_value = try evaluateExpression(arena, extend.base, env, current_dir, ctx);
@@ -2015,7 +1907,9 @@ pub fn evaluateExpression(
 
                         if (field.is_patch) {
                             // Patch: merge with existing field if it exists and is an object
-                            const existing_value = findObjectField(base_obj, static_key);
+                            const existing_value: ?Value = for (base_obj.fields) |bf| {
+                                if (std.mem.eql(u8, bf.key, static_key)) break bf.value;
+                            } else null;
                             if (existing_value) |existing| {
                                 // Force the existing value if it's a thunk
                                 const forced_existing = try force(arena, existing);
@@ -2247,7 +2141,6 @@ fn accessField(arena: std.mem.Allocator, object_value: Value, field_name: []cons
     // Look for the field
     for (object.fields) |field| {
         if (std.mem.eql(u8, field.key, field_name)) {
-            // Force the thunk if the value is a thunk
             return try force(arena, field.value);
         }
     }
@@ -2482,35 +2375,39 @@ fn importModule(
     current_dir: ?[]const u8,
     ctx: *const EvalContext,
 ) EvalError!Value {
-    var module_file = try module_resolver.openImportFile(ctx, import_path, current_dir);
-    defer module_file.file.close();
-    defer ctx.allocator.free(module_file.path);
+    // First resolve the path without opening the file
+    const resolved_path = try module_resolver.resolveImportPath(ctx, import_path, current_dir);
+    defer ctx.allocator.free(resolved_path);
 
-    // Check module cache
+    // Check module cache BEFORE opening the file
     if (ctx.module_cache) |cache| {
-        if (cache.get(module_file.path)) |cached_value| {
+        if (cache.get(resolved_path)) |cached_value| {
             return cached_value;
         }
     }
 
-    // Check for circular imports
+    // Check for circular imports before opening the file
     if (ctx.import_stack) |stack| {
-        if (stack.contains(module_file.path)) {
-            const msg = std.fmt.allocPrint(std.heap.page_allocator, "Circular import detected: {s}", .{module_file.path}) catch "Circular import detected";
+        if (stack.contains(resolved_path)) {
+            const msg = std.fmt.allocPrint(std.heap.page_allocator, "Circular import detected: {s}", .{resolved_path}) catch "Circular import detected";
             value_mod.setUserCrashMessage(msg);
             return error.UserCrash;
         }
         // Mark this module as being imported; defer cleanup so it runs on all paths (including errors)
-        const path_copy = try ctx.allocator.dupe(u8, module_file.path);
+        const path_copy = try ctx.allocator.dupe(u8, resolved_path);
         try stack.put(path_copy, {});
     }
     defer if (ctx.import_stack) |stack| {
-        if (stack.fetchRemove(module_file.path)) |entry| {
+        if (stack.fetchRemove(resolved_path)) |entry| {
             ctx.allocator.free(entry.key);
         }
     };
 
-    const contents = try module_file.file.readToEndAlloc(arena, std.math.maxInt(usize));
+    // Open the file only after cache miss and circular-import check
+    var file = try std.fs.cwd().openFile(resolved_path, .{});
+    defer file.close();
+
+    const contents = try file.readToEndAlloc(arena, std.math.maxInt(usize));
 
     // Save the current file so we can restore it after import
     // Make an owned copy since setCurrentFile will free the old current_file
@@ -2520,30 +2417,30 @@ fn importModule(
             saved_file = try ctx.allocator.dupe(u8, err_ctx.current_file);
         }
     }
-    defer if (saved_file) |file| ctx.allocator.free(file);
+    defer if (saved_file) |f| ctx.allocator.free(f);
 
     var parser = try Parser.init(arena, contents);
     if (ctx.error_ctx) |err_ctx| {
-        err_ctx.setCurrentFile(module_file.path);
+        err_ctx.setCurrentFile(resolved_path);
         parser.setErrorContext(err_ctx);
     }
     const expression = parser.parse() catch |err| {
         // Only register source on parse error
         if (ctx.error_ctx) |err_ctx| {
-            err_ctx.registerSource(module_file.path, contents) catch {};
+            err_ctx.registerSource(resolved_path, contents) catch {};
             // Restore the previous file - important to update BOTH current_file and source_filename
             // because source_filename may have been set during error reporting
-            if (saved_file) |file| {
-                err_ctx.setCurrentFile(file);
+            if (saved_file) |sf| {
+                err_ctx.setCurrentFile(sf);
                 // Also restore source_filename if it was set to the module file
                 if (err_ctx.source_filename_owned and err_ctx.source_filename.len > 0) {
                     err_ctx.allocator.free(err_ctx.source_filename);
                 }
-                if (err_ctx.allocator.dupe(u8, file)) |owned| {
+                if (err_ctx.allocator.dupe(u8, sf)) |owned| {
                     err_ctx.source_filename = owned;
                     err_ctx.source_filename_owned = true;
                 } else |_| {
-                    err_ctx.source_filename = file;
+                    err_ctx.source_filename = sf;
                     err_ctx.source_filename_owned = false;
                 }
             } else {
@@ -2559,23 +2456,23 @@ fn importModule(
     };
 
     const env = try builtin_env.createBuiltinEnvironment(arena);
-    const module_dir = std.fs.path.dirname(module_file.path);
+    const module_dir = std.fs.path.dirname(resolved_path);
     const result = evaluateExpression(arena, expression, env, module_dir, ctx) catch |err| {
         // Only register source on evaluation error
         if (ctx.error_ctx) |err_ctx| {
-            err_ctx.registerSource(module_file.path, contents) catch {};
+            err_ctx.registerSource(resolved_path, contents) catch {};
             // Restore the previous file - important to update BOTH current_file and source_filename
-            if (saved_file) |file| {
-                err_ctx.setCurrentFile(file);
+            if (saved_file) |sf| {
+                err_ctx.setCurrentFile(sf);
                 // Also restore source_filename if it was set to the module file
                 if (err_ctx.source_filename_owned and err_ctx.source_filename.len > 0) {
                     err_ctx.allocator.free(err_ctx.source_filename);
                 }
-                if (err_ctx.allocator.dupe(u8, file)) |owned| {
+                if (err_ctx.allocator.dupe(u8, sf)) |owned| {
                     err_ctx.source_filename = owned;
                     err_ctx.source_filename_owned = true;
                 } else |_| {
-                    err_ctx.source_filename = file;
+                    err_ctx.source_filename = sf;
                     err_ctx.source_filename_owned = false;
                 }
             } else {
@@ -2592,8 +2489,8 @@ fn importModule(
 
     // Restore the previous file
     if (ctx.error_ctx) |err_ctx| {
-        if (saved_file) |file| {
-            err_ctx.setCurrentFile(file);
+        if (saved_file) |sf| {
+            err_ctx.setCurrentFile(sf);
         } else {
             err_ctx.setCurrentFile("");
         }
@@ -2601,7 +2498,7 @@ fn importModule(
 
     // Cache the result (import stack cleanup handled by defer above)
     if (ctx.module_cache) |cache| {
-        const cache_key = try ctx.allocator.dupe(u8, module_file.path);
+        const cache_key = try ctx.allocator.dupe(u8, resolved_path);
         errdefer ctx.allocator.free(cache_key);
         try cache.put(cache_key, result);
     }
@@ -2618,44 +2515,60 @@ pub fn createStdlibEnvironment(
     // Start with builtin environment
     var env = try builtin_env.createBuiltinEnvironment(arena);
 
-    // Import standard library modules (if available)
-    const stdlib_modules = [_][]const u8{ "Array", "Basics", "Float", "Math", "Object", "Range", "Result", "String", "Tuple" };
-    for (stdlib_modules) |module_name| {
-        // Try to import the module, but continue if it's not found
-        const module_value = importModule(arena, module_name, current_dir, ctx) catch |err| {
-            if (err == error.ModuleNotFound) {
-                // Module not found, skip it
-                continue;
-            }
-            return err;
+    // Basics must be loaded eagerly because its fields are spread into
+    // the environment as unqualified names (isString, toString, crash, etc.)
+    const basics_value = importModule(arena, "Basics", current_dir, ctx) catch |err| {
+        if (err == error.ModuleNotFound) return env;
+        return err;
+    };
+    const basics_obj = switch (basics_value) {
+        .object => |obj| obj,
+        else => return error.TypeMismatch,
+    };
+    // Use a bulk hash map node for Basics fields to avoid 13+ individual chain nodes
+    const basics_map = try arena.create(std.StringHashMapUnmanaged(Value));
+    basics_map.* = .{};
+    for (basics_obj.fields) |field| {
+        const field_value = try force(arena, field.value);
+        try basics_map.put(arena, field.key, field_value);
+    }
+    const basics_env = try arena.create(Environment);
+    basics_env.* = .{
+        .parent = env,
+        .name = "Basics",
+        .value = basics_value,
+        .siblings = basics_map,
+    };
+    env = basics_env;
+
+    // Other stdlib modules are lazy-loaded: we create thunks with synthetic
+    // import expressions so the module is only parsed and evaluated on first access.
+    const lazy_modules = [_][]const u8{ "Array", "Float", "Math", "Object", "Range", "Result", "String", "Tuple" };
+    for (lazy_modules) |module_name| {
+        const import_expr = try arena.create(Expression);
+        import_expr.* = .{
+            .data = .{ .import_expr = .{
+                .path = module_name,
+                .path_location = .{ .line = 0, .column = 0, .offset = 0, .length = 0 },
+            } },
+            .location = .{ .line = 0, .column = 0, .offset = 0, .length = 0 },
         };
 
-        // Special handling for Basics: expose all fields unqualified
-        if (std.mem.eql(u8, module_name, "Basics")) {
-            const basics_obj = switch (module_value) {
-                .object => |obj| obj,
-                else => return error.TypeMismatch,
-            };
+        const thunk = try arena.create(value_mod.Thunk);
+        thunk.* = .{
+            .expr = import_expr,
+            .env = env,
+            .current_dir = current_dir,
+            .ctx = ctx,
+            .state = .unevaluated,
+            .field_key_location = null,
+        };
 
-            // Add each field from Basics to the environment
-            for (basics_obj.fields) |field| {
-                const field_value = try force(arena, field.value);
-                const field_env = try arena.create(Environment);
-                field_env.* = .{
-                    .parent = env,
-                    .name = field.key,
-                    .value = field_value,
-                };
-                env = field_env;
-            }
-        }
-
-        // Add the module itself to the environment
         const new_env = try arena.create(Environment);
         new_env.* = .{
             .parent = env,
             .name = module_name,
-            .value = module_value,
+            .value = .{ .thunk = thunk },
         };
         env = new_env;
     }
@@ -2672,13 +2585,14 @@ pub fn createStdlibEnvironment(
 fn stripBinding(arena: std.mem.Allocator, env: ?*Environment, name_to_strip: []const u8) !?*Environment {
     if (env == null) return null;
 
-    var bindings = std.ArrayList(struct { name: []const u8, value: Value }){};
+    const Binding = struct { name: []const u8, value: Value, siblings: ?*std.StringHashMapUnmanaged(Value) };
+    var bindings = std.ArrayList(Binding){};
     defer bindings.deinit(arena);
 
     var current = env;
     while (current) |node| {
         if (!std.mem.eql(u8, node.name, name_to_strip)) {
-            try bindings.append(arena, .{ .name = node.name, .value = node.value });
+            try bindings.append(arena, .{ .name = node.name, .value = node.value, .siblings = node.siblings });
         }
         current = node.parent;
     }
@@ -2693,6 +2607,7 @@ fn stripBinding(arena: std.mem.Allocator, env: ?*Environment, name_to_strip: []c
             .parent = new_env,
             .name = binding.name,
             .value = binding.value,
+            .siblings = binding.siblings,
         };
         new_env = node;
     }

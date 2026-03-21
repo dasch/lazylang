@@ -1,0 +1,75 @@
+// API Gateway: Envoy-based ingress proxy.
+{
+  containerPort: 8080
+
+  env: {
+    ENVOY_LOG_LEVEL: "info"
+    UPSTREAM_WEB: "web:80"
+  }
+
+  configMap: {
+    ACCESS_LOG_FORMAT: "json"
+    CORS_ALLOWED_ORIGINS: "https://recipes.example.com"
+    RATE_LIMIT_PER_SECOND: "100"
+    CIRCUIT_BREAKER_THRESHOLD: "50"
+  }
+
+  resources: {
+    requests: { cpu: "50m", memory: "128Mi" }
+    limits: { cpu: "250m", memory: "256Mi" }
+  }
+
+  probes: {
+    liveness: { path: "/healthz", port: 8080, initialDelay: 5, period: 10 }
+    readiness: { path: "/ready", port: 8080, initialDelay: 3, period: 5 }
+  }
+
+  service: { port: 80 }
+
+  hpa: {
+    minReplicas: 2
+    maxReplicas: 10
+    cpuUtilization: 60
+  }
+
+  pdb: { minAvailable: 1 }
+
+  networkPolicy: {
+    policyTypes: ["Ingress", "Egress"]
+    allowFrom: null
+  }
+
+  environments: {
+    development: {
+      hpa: null
+      pdb: null
+      networkPolicy: null
+      resources: null
+      probes: null
+      env: {
+        ENVOY_LOG_LEVEL: "debug"
+        UPSTREAM_WEB: "localhost:3000"
+      }
+      configMap: {
+        ACCESS_LOG_FORMAT: "text"
+        CORS_ALLOWED_ORIGINS: "*"
+        RATE_LIMIT_PER_SECOND: "10000"
+        CIRCUIT_BREAKER_THRESHOLD: "1000"
+      }
+    }
+    staging: {
+      hpa: { minReplicas: 1, maxReplicas: 5, cpuUtilization: 70 }
+    }
+    production: {
+      hpa: { minReplicas: 3, maxReplicas: 15, cpuUtilization: 55 }
+      pdb: { minAvailable: 2 }
+      istio: {
+        hosts: ["recipes.example.com"]
+        matchPrefix: "/"
+        gateway: null
+        timeout: "15s"
+        retries: { attempts: 2, perTryTimeout: "5s" }
+      }
+    }
+  }
+}

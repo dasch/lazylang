@@ -265,7 +265,31 @@ pub const Tokenizer = struct {
                 else => break,
             }
         }
-        return self.makeToken(.identifier, start, start_line, start_column);
+        const lexeme = self.source[start..self.index];
+        const kind = keywordKind(lexeme) orelse .identifier;
+        return self.makeToken(kind, start, start_line, start_column);
+    }
+
+    fn keywordKind(lexeme: []const u8) ?ast.TokenKind {
+        const keywords = std.StaticStringMap(ast.TokenKind).initComptime(.{
+            .{ "if", .keyword_if },
+            .{ "then", .keyword_then },
+            .{ "else", .keyword_else },
+            .{ "when", .keyword_when },
+            .{ "is", .keyword_is },
+            .{ "for", .keyword_for },
+            .{ "in", .keyword_in },
+            .{ "where", .keyword_where },
+            .{ "do", .keyword_do },
+            .{ "otherwise", .keyword_otherwise },
+            .{ "unless", .keyword_unless },
+            .{ "matches", .keyword_matches },
+            .{ "import", .keyword_import },
+            .{ "assert", .keyword_assert },
+            .{ "self", .keyword_self },
+            .{ "and", .keyword_and },
+        });
+        return keywords.get(lexeme);
     }
 
     fn consumeSymbol(self: *Tokenizer) ast.Token {

@@ -26,8 +26,18 @@ const ObjectValue = eval.ObjectValue;
 const ObjectFieldValue = eval.ObjectFieldValue;
 const EvalError = eval.EvalError;
 const force = eval.force;
-const getValueTypeName = eval.getValueTypeName;
 const setUserCrashMessage = eval.setUserCrashMessage;
+
+/// Returns a UserCrash error with a message indicating that a function cannot
+/// be serialized to the given output format.
+pub fn crashNotSerializable(comptime msg: []const u8) EvalError {
+    const message_copy = std.heap.page_allocator.dupe(u8, msg) catch {
+        setUserCrashMessage(@constCast("Cannot serialize function"));
+        return error.UserCrash;
+    };
+    setUserCrashMessage(message_copy);
+    return error.UserCrash;
+}
 
 pub fn formatValueShort(allocator: std.mem.Allocator, value: Value) ![]u8 {
     return switch (value) {
@@ -78,66 +88,39 @@ pub fn formatValuePretty(allocator: std.mem.Allocator, value: Value) ![]u8 {
 pub fn formatValueAsJson(allocator: std.mem.Allocator, value: Value) ![]u8 {
     var arena = std.heap.ArenaAllocator.init(allocator);
     defer arena.deinit();
-    return formatValueAsJsonImpl(allocator, arena.allocator(), value);
+    var builder = std.ArrayList(u8){};
+    errdefer builder.deinit(allocator);
+    try writeJsonValue(&builder, allocator, arena.allocator(), value);
+    return builder.toOwnedSlice(allocator);
 }
 
-fn formatValueAsJsonImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator, value: Value) EvalError![]u8 {
-    return switch (value) {
-        .integer => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
-        .float => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
-        .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
-        .null_value => try std.fmt.allocPrint(allocator, "null", .{}),
-        .function => {
-            const message = "Cannot represent function in JSON output. Functions are not serializable.";
-            const message_copy = try std.heap.page_allocator.dupe(u8, message);
-            setUserCrashMessage(message_copy);
-            return error.UserCrash;
+fn writeJsonValue(builder: *std.ArrayList(u8), allocator: std.mem.Allocator, arena: std.mem.Allocator, value: Value) EvalError!void {
+    switch (value) {
+        .integer => |v| try builder.appendSlice(allocator, try std.fmt.allocPrint(arena, "{d}", .{v})),
+        .float => |v| try builder.appendSlice(allocator, try std.fmt.allocPrint(arena, "{d}", .{v})),
+        .boolean => |v| try builder.appendSlice(allocator, if (v) "true" else "false"),
+        .null_value => try builder.appendSlice(allocator, "null"),
+        .function => return crashNotSerializable("Cannot represent function in JSON output. Functions are not serializable."),
+        .native_fn => return crashNotSerializable("Cannot represent native function in JSON output. Functions are not serializable."),
+        .thunk => {
+            const forced = try force(arena, value);
+            try writeJsonValue(builder, allocator, arena, forced);
         },
-        .native_fn => {
-            const message = "Cannot represent native function in JSON output. Functions are not serializable.";
-            const message_copy = try std.heap.page_allocator.dupe(u8, message);
-            setUserCrashMessage(message_copy);
-            return error.UserCrash;
-        },
-        .thunk => blk: {
-            const forced = force(arena, value) catch break :blk try std.fmt.allocPrint(allocator, "null", .{});
-            break :blk try formatValueAsJsonImpl(allocator, arena, forced);
-        },
-        .array => |arr| blk: {
-            var builder = std.ArrayList(u8){};
-            errdefer builder.deinit(allocator);
-
-            try builder.append(allocator, '[');
-            for (arr.elements, 0..) |element, i| {
-                if (i != 0) try builder.appendSlice(allocator, ",");
-                const formatted = try formatValueAsJsonImpl(allocator, arena, element);
-                defer allocator.free(formatted);
-                try builder.appendSlice(allocator, formatted);
-            }
-            try builder.append(allocator, ']');
-
-            break :blk try builder.toOwnedSlice(allocator);
-        },
-        .tuple => |tup| blk: {
+        .array, .tuple => {
             // Tuples are represented as arrays in JSON
-            var builder = std.ArrayList(u8){};
-            errdefer builder.deinit(allocator);
-
+            const elements = switch (value) {
+                .array => |a| a.elements,
+                .tuple => |t| t.elements,
+                else => unreachable,
+            };
             try builder.append(allocator, '[');
-            for (tup.elements, 0..) |element, i| {
+            for (elements, 0..) |element, i| {
                 if (i != 0) try builder.appendSlice(allocator, ",");
-                const formatted = try formatValueAsJsonImpl(allocator, arena, element);
-                defer allocator.free(formatted);
-                try builder.appendSlice(allocator, formatted);
+                try writeJsonValue(builder, allocator, arena, element);
             }
             try builder.append(allocator, ']');
-
-            break :blk try builder.toOwnedSlice(allocator);
         },
-        .object => |obj| blk: {
-            var builder = std.ArrayList(u8){};
-            errdefer builder.deinit(allocator);
-
+        .object => |obj| {
             try builder.append(allocator, '{');
             var first_json = true;
             for (obj.fields) |field| {
@@ -145,32 +128,20 @@ fn formatValueAsJsonImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator,
                 if (!first_json) try builder.appendSlice(allocator, ",");
                 first_json = false;
                 try builder.append(allocator, '"');
-                try jsonEscapeString(&builder, allocator, field.key);
+                try jsonEscapeString(builder, allocator, field.key);
                 try builder.appendSlice(allocator, "\":");
-                const formatted = try formatValueAsJsonImpl(allocator, arena, field.value);
-                defer allocator.free(formatted);
-                try builder.appendSlice(allocator, formatted);
+                try writeJsonValue(builder, allocator, arena, field.value);
             }
             try builder.append(allocator, '}');
-
-            break :blk try builder.toOwnedSlice(allocator);
         },
-        .string => |str| blk: {
-            var builder = std.ArrayList(u8){};
-            errdefer builder.deinit(allocator);
-
+        .string => |str| {
             try builder.append(allocator, '"');
-            try jsonEscapeString(&builder, allocator, str);
+            try jsonEscapeString(builder, allocator, str);
             try builder.append(allocator, '"');
-
-            break :blk try builder.toOwnedSlice(allocator);
         },
-        .range => |range| blk: {
+        .range => |range| {
             // Convert range to array for JSON output
             const actual_end = if (range.inclusive) range.end else range.end - 1;
-            var builder = std.ArrayList(u8){};
-            errdefer builder.deinit(allocator);
-
             try builder.append(allocator, '[');
             if (range.start <= actual_end) {
                 var current = range.start;
@@ -178,19 +149,15 @@ fn formatValueAsJsonImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator,
                 while (current <= actual_end) : (current += 1) {
                     if (!first) try builder.appendSlice(allocator, ",");
                     first = false;
-                    const num_str = try std.fmt.allocPrint(allocator, "{d}", .{current});
-                    defer allocator.free(num_str);
-                    try builder.appendSlice(allocator, num_str);
+                    try builder.appendSlice(allocator, try std.fmt.allocPrint(arena, "{d}", .{current}));
                 }
             }
             try builder.append(allocator, ']');
-
-            break :blk try builder.toOwnedSlice(allocator);
         },
-    };
+    }
 }
 
-fn jsonEscapeString(builder: *std.ArrayList(u8), allocator: std.mem.Allocator, str: []const u8) !void {
+pub fn jsonEscapeString(builder: *std.ArrayList(u8), allocator: std.mem.Allocator, str: []const u8) !void {
     for (str) |c| {
         switch (c) {
             '"' => try builder.appendSlice(allocator, "\\\""),
@@ -224,86 +191,27 @@ fn formatValueAsYamlImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator,
         .float => |v| try std.fmt.allocPrint(allocator, "{d}", .{v}),
         .boolean => |v| try std.fmt.allocPrint(allocator, "{s}", .{if (v) "true" else "false"}),
         .null_value => try std.fmt.allocPrint(allocator, "null", .{}),
-        .function => {
-            const message = "Cannot represent function in YAML output. Functions are not serializable.";
-            const message_copy = try std.heap.page_allocator.dupe(u8, message);
-            setUserCrashMessage(message_copy);
-            return error.UserCrash;
-        },
-        .native_fn => {
-            const message = "Cannot represent native function in YAML output. Functions are not serializable.";
-            const message_copy = try std.heap.page_allocator.dupe(u8, message);
-            setUserCrashMessage(message_copy);
-            return error.UserCrash;
-        },
+        .function => return crashNotSerializable("Cannot represent function in YAML output. Functions are not serializable."),
+        .native_fn => return crashNotSerializable("Cannot represent native function in YAML output. Functions are not serializable."),
         .thunk => blk: {
             const forced = force(arena, value) catch break :blk try std.fmt.allocPrint(allocator, "null", .{});
             break :blk try formatValueAsYamlImpl(allocator, arena, forced, indent);
         },
-        .array => |arr| blk: {
-            if (arr.elements.len == 0) {
-                break :blk try std.fmt.allocPrint(allocator, "[]", .{});
-            }
-
-            var builder = std.ArrayList(u8){};
-            errdefer builder.deinit(allocator);
-
-            for (arr.elements) |element| {
-                if (builder.items.len > 0) {
-                    try builder.append(allocator, '\n');
-                }
-                for (0..indent) |_| {
-                    try builder.appendSlice(allocator, "  ");
-                }
-                try builder.appendSlice(allocator, "- ");
-
-                const formatted = try formatValueAsYamlImpl(allocator, arena, element, indent + 1);
-                defer allocator.free(formatted);
-
-                // If the formatted value contains newlines, append as-is (already properly indented)
-                if (std.mem.indexOf(u8, formatted, "\n")) |_| {
-                    // Child was formatted with indent+1, so lines are already indented
-                    // First line goes after "- ", subsequent lines already have correct indentation
-                    var is_first = true;
-                    var iter = std.mem.splitScalar(u8, formatted, '\n');
-                    while (iter.next()) |line| {
-                        if (is_first) {
-                            // Strip leading indent from first line (it goes inline with "- ")
-                            const spaces_to_strip = (indent + 1) * 2;
-                            const stripped = if (line.len >= spaces_to_strip and std.mem.allEqual(u8, line[0..spaces_to_strip], ' '))
-                                line[spaces_to_strip..]
-                            else
-                                line;
-                            try builder.appendSlice(allocator, stripped);
-                            is_first = false;
-                        } else {
-                            try builder.append(allocator, '\n');
-                            try builder.appendSlice(allocator, line);
-                        }
-                    }
-                } else {
-                    // Single-line value: strip leading indentation (it goes inline with "- ")
-                    const spaces_to_strip = (indent + 1) * 2;
-                    const stripped = if (formatted.len >= spaces_to_strip and std.mem.allEqual(u8, formatted[0..spaces_to_strip], ' '))
-                        formatted[spaces_to_strip..]
-                    else
-                        formatted;
-                    try builder.appendSlice(allocator, stripped);
-                }
-            }
-
-            break :blk try builder.toOwnedSlice(allocator);
-        },
-        .tuple => |tup| blk: {
+        .array, .tuple => blk: {
             // Tuples are represented as arrays in YAML
-            if (tup.elements.len == 0) {
+            const elements = switch (value) {
+                .array => |a| a.elements,
+                .tuple => |t| t.elements,
+                else => unreachable,
+            };
+            if (elements.len == 0) {
                 break :blk try std.fmt.allocPrint(allocator, "[]", .{});
             }
 
             var builder = std.ArrayList(u8){};
             errdefer builder.deinit(allocator);
 
-            for (tup.elements) |element| {
+            for (elements) |element| {
                 if (builder.items.len > 0) {
                     try builder.append(allocator, '\n');
                 }
@@ -311,6 +219,7 @@ fn formatValueAsYamlImpl(allocator: std.mem.Allocator, arena: std.mem.Allocator,
                     try builder.appendSlice(allocator, "  ");
                 }
                 try builder.appendSlice(allocator, "- ");
+
                 const formatted = try formatValueAsYamlImpl(allocator, arena, element, indent + 1);
                 defer allocator.free(formatted);
 

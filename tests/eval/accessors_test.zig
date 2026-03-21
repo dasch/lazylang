@@ -1,4 +1,3 @@
-const std = @import("std");
 const common = @import("common.zig");
 const expectEvaluates = common.expectEvaluates;
 

@@ -553,12 +553,7 @@ fn encodeValue(value: eval.Value, buf: *std.ArrayList(u8), indent: usize, arena:
             const forced = try eval.force(arena, value);
             try encodeValue(forced, buf, indent, arena);
         },
-        .function, .native_fn => {
-            const message = "Cannot represent function in YAML output. Functions are not serializable.";
-            const message_copy = try std.heap.page_allocator.dupe(u8, message);
-            eval.setUserCrashMessage(message_copy);
-            return error.UserCrash;
-        },
+        .function, .native_fn => return eval.crashNotSerializable("Cannot represent function in YAML output. Functions are not serializable."),
         .range => |r| {
             // Convert range to array for YAML output
             const actual_end = if (r.inclusive) r.end else r.end - 1;

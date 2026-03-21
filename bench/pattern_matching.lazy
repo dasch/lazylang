@@ -1,0 +1,28 @@
+// Benchmark: pattern matching — extensive when/is usage.
+classify = n ->
+  when n is
+    0 then "zero"
+    1 then "one"
+    otherwise
+      if n < 0 then "negative"
+      else if n < 10 then "small"
+      else if n < 100 then "medium"
+      else if n < 1000 then "large"
+      else "huge"
+
+processItem = item ->
+  when item is
+    { type: "user", name, age } then { kind: "user", display: "${name} (${toString age})" }
+    { type: "product", name, price } then { kind: "product", display: "${name}: $${toString price}" }
+    { type: "order", items } then { kind: "order", display: "order with ${toString (Array.length items)} items" }
+    otherwise { kind: "unknown", display: "?" }
+
+users = Array.map (i -> { type: "user", name: "user-${toString i}", age: 20 + i }) (Range.toArray (1..50))
+products = Array.map (i -> { type: "product", name: "product-${toString i}", price: i * 10 }) (Range.toArray (1..50))
+orders = Array.map (i -> { type: "order", items: Range.toArray (1..i) }) (Range.toArray (1..50))
+items = users ++ products ++ orders
+
+classified = Array.map classify (Range.toArray (0..200))
+processed = Array.map processItem items
+
+{ classifiedCount: Array.length classified, processedCount: Array.length processed }

@@ -137,6 +137,22 @@ pub const Parser = struct {
             .symbol => "symbol",
             .string => "string",
             .eof => "end of file",
+            .keyword_if => "'if'",
+            .keyword_then => "'then'",
+            .keyword_else => "'else'",
+            .keyword_when => "'when'",
+            .keyword_is => "'is'",
+            .keyword_for => "'for'",
+            .keyword_in => "'in'",
+            .keyword_where => "'where'",
+            .keyword_do => "'do'",
+            .keyword_otherwise => "'otherwise'",
+            .keyword_unless => "'unless'",
+            .keyword_matches => "'matches'",
+            .keyword_import => "'import'",
+            .keyword_assert => "'assert'",
+            .keyword_self => "'self'",
+            .keyword_and => "'and'",
         };
     }
 
@@ -237,7 +253,7 @@ pub const Parser = struct {
         var expr = try self.parseBinary(0);
 
         // Check for 'where' clause
-        if (self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "where")) {
+        if (self.current.kind == .keyword_where) {
             const where_token = self.current; // Capture for location
             try self.advance();
 
@@ -432,7 +448,7 @@ pub const Parser = struct {
         const expr = try self.parseBinary(3);
 
         // Check for where clause
-        if (self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "where")) {
+        if (self.current.kind == .keyword_where) {
             const where_token = self.current;
             try self.advance();
 
@@ -585,7 +601,7 @@ pub const Parser = struct {
                     var field_list = std.ArrayList([]const u8){};
                     defer field_list.deinit(self.arena);
                     while (self.current.kind != .r_brace) {
-                        if (self.current.kind != .identifier) {
+                        if (!isIdentifierLike(self.current.kind)) {
                             self.recordError();
                             return error.UnexpectedToken;
                         }
@@ -600,8 +616,8 @@ pub const Parser = struct {
                         .location = expr.location,
                     };
                     expr = node;
-                } else if (self.current.kind == .identifier) {
-                    // Field access: expr.field
+                } else if (isIdentifierLike(self.current.kind)) {
+                    // Field access: expr.field (keywords are valid field names too)
                     const field_name = self.current.lexeme;
                     const field_token = self.current;
                     try self.advance();
@@ -647,38 +663,36 @@ pub const Parser = struct {
             // past the function's column position.
             if (self.current.preceded_by_newline and self.current.column <= app_column) break;
             switch (self.current.kind) {
-                .identifier => {
+                .keyword_do => {
                     // Handle 'do' keyword specially - it introduces a block argument
-                    if (std.mem.eql(u8, self.current.lexeme, "do")) {
-                        try self.advance();
-                        // Parse the following expression(s) as a block
-                        const argument = try self.parseLambda();
-                        const node = try self.allocateExpression();
-                        node.* = .{
-                            .data = .{ .application = .{ .function = expr, .argument = argument, .is_do = true } },
-                            .location = expr.location, // Use function's location
-                        };
-                        expr = node;
-                        just_applied = true;
-                        // After a 'do' block, stop looking for more arguments
-                        break;
-                    }
-
-                    // Don't consume keywords as function arguments
-                    if (std.mem.eql(u8, self.current.lexeme, "then") or
-                        std.mem.eql(u8, self.current.lexeme, "else") or
-                        std.mem.eql(u8, self.current.lexeme, "is") or
-                        std.mem.eql(u8, self.current.lexeme, "matches") or
-                        std.mem.eql(u8, self.current.lexeme, "otherwise") or
-                        std.mem.eql(u8, self.current.lexeme, "where") or
-                        std.mem.eql(u8, self.current.lexeme, "for") or
-                        std.mem.eql(u8, self.current.lexeme, "in") or
-                        std.mem.eql(u8, self.current.lexeme, "when") or
-                        std.mem.eql(u8, self.current.lexeme, "if") or
-                        std.mem.eql(u8, self.current.lexeme, "unless"))
-                    {
-                        break;
-                    }
+                    try self.advance();
+                    // Parse the following expression(s) as a block
+                    const argument = try self.parseLambda();
+                    const node = try self.allocateExpression();
+                    node.* = .{
+                        .data = .{ .application = .{ .function = expr, .argument = argument, .is_do = true } },
+                        .location = expr.location, // Use function's location
+                    };
+                    expr = node;
+                    just_applied = true;
+                    // After a 'do' block, stop looking for more arguments
+                    break;
+                },
+                // Don't consume keywords as function arguments
+                .keyword_then,
+                .keyword_else,
+                .keyword_is,
+                .keyword_matches,
+                .keyword_otherwise,
+                .keyword_where,
+                .keyword_for,
+                .keyword_in,
+                .keyword_when,
+                .keyword_if,
+                .keyword_unless,
+                .keyword_and,
+                => break,
+                .identifier, .keyword_self => {
                     const argument = try self.parsePostfix();
                     const node = try self.allocateExpression();
                     node.* = .{
@@ -691,7 +705,7 @@ pub const Parser = struct {
                 .dot => {
                     // Space before dot = field accessor as function argument: `map .field people`
                     // No space before dot is handled by parsePostfix (tight binding)
-                    if (self.current.preceded_by_whitespace and self.lookahead.kind == .identifier) {
+                    if (self.current.preceded_by_whitespace and isIdentifierLike(self.lookahead.kind)) {
                         const argument = try self.parsePrimary();
                         const node = try self.allocateExpression();
                         node.* = .{
@@ -832,24 +846,199 @@ pub const Parser = struct {
                 }
                 return node;
             },
-            .identifier => {
-                if (std.mem.eql(u8, self.current.lexeme, "import")) {
-                    const import_token = self.current; // Capture for location
-                    try self.advance();
-                    if (self.current.kind != .string) return error.ExpectedExpression;
-                    const path = self.current.lexeme;
-                    const path_token = self.current; // Capture string location
-                    try self.advance();
-                    return try self.makeExpression(.{ .import_expr = .{
-                        .path = path,
-                        .path_location = .{
-                            .line = path_token.line,
-                            .column = path_token.column,
-                            .offset = path_token.offset,
-                            .length = path_token.lexeme.len,
-                        },
-                    } }, import_token);
+            .keyword_import => {
+                const import_token = self.current; // Capture for location
+                try self.advance();
+                if (self.current.kind != .string) return error.ExpectedExpression;
+                const path = self.current.lexeme;
+                const path_token = self.current; // Capture string location
+                try self.advance();
+                return try self.makeExpression(.{ .import_expr = .{
+                    .path = path,
+                    .path_location = .{
+                        .line = path_token.line,
+                        .column = path_token.column,
+                        .offset = path_token.offset,
+                        .length = path_token.lexeme.len,
+                    },
+                } }, import_token);
+            },
+            .keyword_if => {
+                const if_token = self.current; // Capture for location
+                try self.advance();
+                const condition = try self.parseBinary(0);
+
+                if (self.current.kind != .keyword_then) {
+                    self.recordError();
+                    return error.UnexpectedToken;
                 }
+                try self.advance();
+
+                const then_expr = try self.parseLambda();
+
+                var else_expr: ?*Expression = null;
+                if (self.current.kind == .keyword_else) {
+                    try self.advance();
+                    else_expr = try self.parseLambda();
+                }
+
+                return try self.makeExpression(.{ .if_expr = .{
+                    .condition = condition,
+                    .then_expr = then_expr,
+                    .else_expr = else_expr,
+                } }, if_token);
+            },
+            .keyword_assert => {
+                const assert_token = self.current;
+                try self.advance();
+                const condition = try self.parseBinary(0);
+
+                // Expect colon and message
+                if (self.current.kind != .colon) {
+                    self.recordError();
+                    return error.UnexpectedToken;
+                }
+                try self.advance();
+                const message = try self.parseLambda();
+
+                // Consume separator (semicolon or newline)
+                if (self.current.kind == .semicolon) {
+                    try self.advance();
+                }
+
+                // Parse body expression
+                const body = try self.parseLambda();
+
+                return try self.makeExpression(.{ .assert_expr = .{
+                    .condition = condition,
+                    .message = message,
+                    .body = body,
+                } }, assert_token);
+            },
+            .keyword_when => {
+                const when_token = self.current;
+                try self.advance();
+                const value = try self.parseBinary(0);
+
+                // Determine if this is `when x is` (structural) or `when x matches` (predicate)
+                const is_predicate = self.current.kind == .keyword_matches;
+                const is_structural = self.current.kind == .keyword_is;
+
+                if (!is_predicate and !is_structural) {
+                    self.recordError();
+                    return error.UnexpectedToken;
+                }
+                try self.advance();
+
+                if (is_predicate) {
+                    // Parse predicate branches: each is an expression (function) then result
+                    var pred_branches = std.ArrayListUnmanaged(ast.PredicateBranch){};
+                    var pred_otherwise: ?*Expression = null;
+                    var pred_indent: ?usize = null;
+
+                    while (true) {
+                        if (self.current.kind == .keyword_otherwise) {
+                            try self.advance();
+                            pred_otherwise = try self.parseLambda();
+                            break;
+                        }
+                        if (self.current.kind == .eof or self.current.kind == .semicolon) break;
+                        if (pred_indent) |indent| {
+                            if (self.current.preceded_by_newline and self.current.column < indent) break;
+                        }
+                        if (pred_indent == null and self.current.preceded_by_newline) {
+                            pred_indent = self.current.column;
+                        }
+
+                        // Parse predicate expression
+                        const predicate = try self.parseApplication();
+
+                        // Expect "then"
+                        if (self.current.kind != .keyword_then) {
+                            self.recordError();
+                            return error.UnexpectedToken;
+                        }
+                        try self.advance();
+                        const branch_expr = try self.parseLambda();
+
+                        try pred_branches.append(self.arena, .{
+                            .predicate = predicate,
+                            .expression = branch_expr,
+                        });
+                    }
+
+                    return try self.makeExpression(.{ .when_predicate = .{
+                        .value = value,
+                        .branches = try pred_branches.toOwnedSlice(self.arena),
+                        .otherwise = pred_otherwise,
+                    } }, when_token);
+                }
+
+                // Structural matching: `when x is`
+                var branches = std.ArrayListUnmanaged(MatchBranch){};
+                var otherwise_expr: ?*Expression = null;
+                var branch_indent: ?usize = null; // Track indentation of first branch
+
+                while (true) {
+                    // Check for "otherwise"
+                    if (self.current.kind == .keyword_otherwise) {
+                        try self.advance();
+                        otherwise_expr = try self.parseLambda();
+                        break;
+                    }
+
+                    // Check if we're done (EOF or semicolon)
+                    if (self.current.kind == .eof or self.current.kind == .semicolon) {
+                        break;
+                    }
+
+                    // Check for dedentation: if we've seen branches and current token is on a new line
+                    // with less indentation than the first branch, we're done
+                    if (branch_indent) |indent| {
+                        if (self.current.preceded_by_newline and self.current.column < indent) {
+                            break;
+                        }
+                    }
+
+                    // Capture indentation of first branch
+                    if (branch_indent == null and self.current.preceded_by_newline) {
+                        branch_indent = self.current.column;
+                    }
+
+                    // Parse pattern
+                    const pattern = try self.parsePattern();
+
+                    // Check for optional `and` guard
+                    var guard: ?*Expression = null;
+                    if (self.current.kind == .keyword_and) {
+                        try self.advance();
+                        guard = try self.parseBinary(0);
+                    }
+
+                    // Expect "then"
+                    if (self.current.kind != .keyword_then) {
+                        self.recordError();
+                        return error.UnexpectedToken;
+                    }
+                    try self.advance();
+
+                    // Parse expression (use parseLambda to support multi-line bodies like if/then/else)
+                    const branch_expr = try self.parseLambda();
+
+                    try branches.append(self.arena, .{
+                        .pattern = pattern,
+                        .expression = branch_expr,
+                        .guard = guard,
+                    });
+                }
+
+                return try self.makeExpression(.{ .when_matches = .{
+                    .value = value,
+                    .branches = try branches.toOwnedSlice(self.arena),
+                    .otherwise = otherwise_expr,
+                } }, when_token);
+            },
+            .identifier => {
                 if (std.mem.eql(u8, self.current.lexeme, "true")) {
                     const token = self.current;
                     try self.advance();
@@ -865,182 +1054,15 @@ pub const Parser = struct {
                     try self.advance();
                     return try self.makeExpression(.null_literal, token);
                 }
-                if (std.mem.eql(u8, self.current.lexeme, "if")) {
-                    const if_token = self.current; // Capture for location
-                    try self.advance();
-                    const condition = try self.parseBinary(0);
-
-                    if (self.current.kind != .identifier or !std.mem.eql(u8, self.current.lexeme, "then")) {
-                        self.recordError();
-                        return error.UnexpectedToken;
-                    }
-                    try self.advance();
-
-                    const then_expr = try self.parseLambda();
-
-                    var else_expr: ?*Expression = null;
-                    if (self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "else")) {
-                        try self.advance();
-                        else_expr = try self.parseLambda();
-                    }
-
-                    return try self.makeExpression(.{ .if_expr = .{
-                        .condition = condition,
-                        .then_expr = then_expr,
-                        .else_expr = else_expr,
-                    } }, if_token);
-                }
-                if (std.mem.eql(u8, self.current.lexeme, "assert")) {
-                    const assert_token = self.current;
-                    try self.advance();
-                    const condition = try self.parseBinary(0);
-
-                    // Expect colon and message
-                    if (self.current.kind != .colon) {
-                        self.recordError();
-                        return error.UnexpectedToken;
-                    }
-                    try self.advance();
-                    const message = try self.parseLambda();
-
-                    // Consume separator (semicolon or newline)
-                    if (self.current.kind == .semicolon) {
-                        try self.advance();
-                    }
-
-                    // Parse body expression
-                    const body = try self.parseLambda();
-
-                    return try self.makeExpression(.{ .assert_expr = .{
-                        .condition = condition,
-                        .message = message,
-                        .body = body,
-                    } }, assert_token);
-                }
-                if (std.mem.eql(u8, self.current.lexeme, "when")) {
-                    const when_token = self.current;
-                    try self.advance();
-                    const value = try self.parseBinary(0);
-
-                    // Determine if this is `when x is` (structural) or `when x matches` (predicate)
-                    const is_predicate = self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "matches");
-                    const is_structural = self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "is");
-
-                    if (!is_predicate and !is_structural) {
-                        self.recordError();
-                        return error.UnexpectedToken;
-                    }
-                    try self.advance();
-
-                    if (is_predicate) {
-                        // Parse predicate branches: each is an expression (function) then result
-                        var pred_branches = std.ArrayListUnmanaged(ast.PredicateBranch){};
-                        var pred_otherwise: ?*Expression = null;
-                        var pred_indent: ?usize = null;
-
-                        while (true) {
-                            if (self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "otherwise")) {
-                                try self.advance();
-                                pred_otherwise = try self.parseLambda();
-                                break;
-                            }
-                            if (self.current.kind == .eof or self.current.kind == .semicolon) break;
-                            if (pred_indent) |indent| {
-                                if (self.current.preceded_by_newline and self.current.column < indent) break;
-                            }
-                            if (pred_indent == null and self.current.preceded_by_newline) {
-                                pred_indent = self.current.column;
-                            }
-
-                            // Parse predicate expression
-                            const predicate = try self.parseApplication();
-
-                            // Expect "then"
-                            if (self.current.kind != .identifier or !std.mem.eql(u8, self.current.lexeme, "then")) {
-                                self.recordError();
-                                return error.UnexpectedToken;
-                            }
-                            try self.advance();
-                            const branch_expr = try self.parseLambda();
-
-                            try pred_branches.append(self.arena, .{
-                                .predicate = predicate,
-                                .expression = branch_expr,
-                            });
-                        }
-
-                        return try self.makeExpression(.{ .when_predicate = .{
-                            .value = value,
-                            .branches = try pred_branches.toOwnedSlice(self.arena),
-                            .otherwise = pred_otherwise,
-                        } }, when_token);
-                    }
-
-                    // Structural matching: `when x is`
-                    var branches = std.ArrayListUnmanaged(MatchBranch){};
-                    var otherwise_expr: ?*Expression = null;
-                    var branch_indent: ?usize = null; // Track indentation of first branch
-
-                    while (true) {
-                        // Check for "otherwise"
-                        if (self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "otherwise")) {
-                            try self.advance();
-                            otherwise_expr = try self.parseLambda();
-                            break;
-                        }
-
-                        // Check if we're done (EOF or semicolon)
-                        if (self.current.kind == .eof or self.current.kind == .semicolon) {
-                            break;
-                        }
-
-                        // Check for dedentation: if we've seen branches and current token is on a new line
-                        // with less indentation than the first branch, we're done
-                        if (branch_indent) |indent| {
-                            if (self.current.preceded_by_newline and self.current.column < indent) {
-                                break;
-                            }
-                        }
-
-                        // Capture indentation of first branch
-                        if (branch_indent == null and self.current.preceded_by_newline) {
-                            branch_indent = self.current.column;
-                        }
-
-                        // Parse pattern
-                        const pattern = try self.parsePattern();
-
-                        // Check for optional `and` guard
-                        var guard: ?*Expression = null;
-                        if (self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "and")) {
-                            try self.advance();
-                            guard = try self.parseBinary(0);
-                        }
-
-                        // Expect "then"
-                        if (self.current.kind != .identifier or !std.mem.eql(u8, self.current.lexeme, "then")) {
-                            self.recordError();
-                            return error.UnexpectedToken;
-                        }
-                        try self.advance();
-
-                        // Parse expression (use parseLambda to support multi-line bodies like if/then/else)
-                        const branch_expr = try self.parseLambda();
-
-                        try branches.append(self.arena, .{
-                            .pattern = pattern,
-                            .expression = branch_expr,
-                            .guard = guard,
-                        });
-                    }
-
-                    return try self.makeExpression(.{ .when_matches = .{
-                        .value = value,
-                        .branches = try branches.toOwnedSlice(self.arena),
-                        .otherwise = otherwise_expr,
-                    } }, when_token);
-                }
                 const ident_token = self.current; // Capture for location
+                const name = self.current.lexeme;
+                try self.advance();
+                return try self.makeExpression(.{ .identifier = name }, ident_token);
+            },
+            // Keywords used as identifiers in expression position are treated as identifier references
+            // (e.g. `self` as a variable name, or keywords used as object field shorthand)
+            .keyword_self => {
+                const ident_token = self.current;
                 const name = self.current.lexeme;
                 try self.advance();
                 return try self.makeExpression(.{ .identifier = name }, ident_token);
@@ -1078,8 +1100,8 @@ pub const Parser = struct {
                 var field_list = std.ArrayList([]const u8){};
                 defer field_list.deinit(self.arena);
 
-                // First field is required
-                if (self.current.kind != .identifier) {
+                // First field is required (keywords are valid field names)
+                if (!isIdentifierLike(self.current.kind)) {
                     self.recordError();
                     return error.UnexpectedToken;
                 }
@@ -1089,7 +1111,7 @@ pub const Parser = struct {
                 // Parse chained fields
                 while (self.current.kind == .dot and !self.current.preceded_by_newline) {
                     try self.advance();
-                    if (self.current.kind != .identifier) {
+                    if (!isIdentifierLike(self.current.kind)) {
                         self.recordError();
                         return error.UnexpectedToken;
                     }
@@ -1128,7 +1150,7 @@ pub const Parser = struct {
         const first_element = try self.parseLambda();
 
         // Check if this is a comprehension by looking for 'for' keyword (only if not a spread)
-        const is_comprehension = !is_first_spread and self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "for");
+        const is_comprehension = !is_first_spread and self.current.kind == .keyword_for;
 
         if (is_comprehension) {
             return self.parseArrayComprehension(first_element);
@@ -1138,24 +1160,20 @@ pub const Parser = struct {
         var elements = std.ArrayListUnmanaged(ArrayElement){};
 
         // Check for trailing if/unless on first element
-        if (!is_first_spread and self.current.kind == .identifier) {
-            if (std.mem.eql(u8, self.current.lexeme, "if")) {
-                try self.advance(); // consume 'if'
-                const condition = try self.parseBinary(0);
-                try elements.append(self.arena, .{ .conditional_if = .{
-                    .expr = first_element,
-                    .condition = condition,
-                } });
-            } else if (std.mem.eql(u8, self.current.lexeme, "unless")) {
-                try self.advance(); // consume 'unless'
-                const condition = try self.parseBinary(0);
-                try elements.append(self.arena, .{ .conditional_unless = .{
-                    .expr = first_element,
-                    .condition = condition,
-                } });
-            } else {
-                try elements.append(self.arena, .{ .normal = first_element });
-            }
+        if (!is_first_spread and self.current.kind == .keyword_if) {
+            try self.advance(); // consume 'if'
+            const condition = try self.parseBinary(0);
+            try elements.append(self.arena, .{ .conditional_if = .{
+                .expr = first_element,
+                .condition = condition,
+            } });
+        } else if (!is_first_spread and self.current.kind == .keyword_unless) {
+            try self.advance(); // consume 'unless'
+            const condition = try self.parseBinary(0);
+            try elements.append(self.arena, .{ .conditional_unless = .{
+                .expr = first_element,
+                .condition = condition,
+            } });
         } else if (is_first_spread) {
             try elements.append(self.arena, .{ .spread = first_element });
         } else {
@@ -1182,24 +1200,20 @@ pub const Parser = struct {
             const element = try self.parseLambda();
 
             // Check for trailing if/unless
-            if (!is_spread and self.current.kind == .identifier) {
-                if (std.mem.eql(u8, self.current.lexeme, "if")) {
-                    try self.advance(); // consume 'if'
-                    const condition = try self.parseBinary(0);
-                    try elements.append(self.arena, .{ .conditional_if = .{
-                        .expr = element,
-                        .condition = condition,
-                    } });
-                } else if (std.mem.eql(u8, self.current.lexeme, "unless")) {
-                    try self.advance(); // consume 'unless'
-                    const condition = try self.parseBinary(0);
-                    try elements.append(self.arena, .{ .conditional_unless = .{
-                        .expr = element,
-                        .condition = condition,
-                    } });
-                } else {
-                    try elements.append(self.arena, .{ .normal = element });
-                }
+            if (!is_spread and self.current.kind == .keyword_if) {
+                try self.advance(); // consume 'if'
+                const condition = try self.parseBinary(0);
+                try elements.append(self.arena, .{ .conditional_if = .{
+                    .expr = element,
+                    .condition = condition,
+                } });
+            } else if (!is_spread and self.current.kind == .keyword_unless) {
+                try self.advance(); // consume 'unless'
+                const condition = try self.parseBinary(0);
+                try elements.append(self.arena, .{ .conditional_unless = .{
+                    .expr = element,
+                    .condition = condition,
+                } });
             } else if (is_spread) {
                 try elements.append(self.arena, .{ .spread = element });
             } else {
@@ -1217,14 +1231,14 @@ pub const Parser = struct {
         var clauses = std.ArrayListUnmanaged(ForClause){};
 
         // Parse for clauses
-        while (self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "for")) {
+        while (self.current.kind == .keyword_for) {
             try self.advance(); // consume 'for'
 
             // Parse pattern
             const pattern = try self.parsePattern();
 
             // Expect 'in'
-            if (self.current.kind != .identifier or !std.mem.eql(u8, self.current.lexeme, "in")) {
+            if (self.current.kind != .keyword_in) {
                 self.recordError();
                 return error.UnexpectedToken;
             }
@@ -1238,7 +1252,7 @@ pub const Parser = struct {
 
         // Parse optional 'when' filter
         var filter: ?*Expression = null;
-        if (self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "when")) {
+        if (self.current.kind == .keyword_when) {
             try self.advance(); // consume 'when'
             filter = try self.parseBinary(0);
         }
@@ -1281,7 +1295,7 @@ pub const Parser = struct {
             const value_expr = try self.parseLambda();
 
             // Check if this is a comprehension
-            const is_comprehension = self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "for");
+            const is_comprehension = self.current.kind == .keyword_for;
 
             if (is_comprehension) {
                 return self.parseObjectComprehension(key_expr, value_expr);
@@ -1320,8 +1334,8 @@ pub const Parser = struct {
                         .doc = null,
                         .key_location = next_key_expr.location,
                     });
-                } else if (self.current.kind == .identifier) {
-                    // Static field
+                } else if (isIdentifierLike(self.current.kind)) {
+                    // Static field (keywords are valid field names too)
                     const field_token = self.current; // Capture for location
                     const doc = self.current.doc_comments;
                     const static_key = self.current.lexeme;
@@ -1402,7 +1416,7 @@ pub const Parser = struct {
                 return error.UnexpectedToken;
             }
 
-            if (self.current.kind != .identifier) {
+            if (!isIdentifierLike(self.current.kind)) {
                 // Clear any pending doc comments if we don't find an identifier
                 self.tokenizer.clearDocComments();
                 self.recordError();
@@ -1477,16 +1491,14 @@ pub const Parser = struct {
 
     /// Parse an optional trailing if/unless condition on an object field.
     fn parseFieldCondition(self: *Parser) ParseError!ast.ObjectFieldCondition {
-        if (self.current.kind == .identifier) {
-            if (std.mem.eql(u8, self.current.lexeme, "if")) {
-                try self.advance(); // consume 'if'
-                const cond = try self.parseLambda();
-                return .{ .if_cond = cond };
-            } else if (std.mem.eql(u8, self.current.lexeme, "unless")) {
-                try self.advance(); // consume 'unless'
-                const cond = try self.parseLambda();
-                return .{ .unless_cond = cond };
-            }
+        if (self.current.kind == .keyword_if) {
+            try self.advance(); // consume 'if'
+            const cond = try self.parseLambda();
+            return .{ .if_cond = cond };
+        } else if (self.current.kind == .keyword_unless) {
+            try self.advance(); // consume 'unless'
+            const cond = try self.parseLambda();
+            return .{ .unless_cond = cond };
         }
         return .none;
     }
@@ -1528,14 +1540,14 @@ pub const Parser = struct {
         var clauses = std.ArrayListUnmanaged(ForClause){};
 
         // Parse for clauses
-        while (self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "for")) {
+        while (self.current.kind == .keyword_for) {
             try self.advance(); // consume 'for'
 
             // Parse pattern
             const pattern = try self.parsePattern();
 
             // Expect 'in'
-            if (self.current.kind != .identifier or !std.mem.eql(u8, self.current.lexeme, "in")) {
+            if (self.current.kind != .keyword_in) {
                 self.recordError();
                 return error.UnexpectedToken;
             }
@@ -1549,7 +1561,7 @@ pub const Parser = struct {
 
         // Parse optional 'when' filter
         var filter: ?*Expression = null;
-        if (self.current.kind == .identifier and std.mem.eql(u8, self.current.lexeme, "when")) {
+        if (self.current.kind == .keyword_when) {
             try self.advance(); // consume 'when'
             filter = try self.parseBinary(0);
         }
@@ -1730,7 +1742,16 @@ pub const Parser = struct {
             .l_paren => return self.parseTuplePattern(),
             .l_bracket => return self.parseArrayPattern(),
             .l_brace => return self.parseObjectPattern(),
-            else => return error.UnexpectedToken,
+            else => {
+                // Allow keyword tokens as identifier patterns (e.g. `self`)
+                if (self.current.kind.isKeyword()) {
+                    const token = self.current;
+                    const name = self.current.lexeme;
+                    try self.advance();
+                    return try self.createPattern(.{ .identifier = name }, token);
+                }
+                return error.UnexpectedToken;
+            },
         }
     }
 
@@ -1773,7 +1794,7 @@ pub const Parser = struct {
             if (self.current.kind == .dot_dot_dot) {
                 try self.advance();
                 // Expect an identifier after ...
-                if (self.current.kind != .identifier) {
+                if (!isIdentifierLike(self.current.kind)) {
                     self.recordError();
                     return error.UnexpectedToken;
                 }
@@ -1810,7 +1831,7 @@ pub const Parser = struct {
         var fields = std.ArrayListUnmanaged(ObjectPatternField){};
 
         while (self.current.kind != .r_brace) {
-            if (self.current.kind != .identifier) {
+            if (!isIdentifierLike(self.current.kind)) {
                 self.recordError();
                 return error.UnexpectedToken;
             }
@@ -1992,6 +2013,13 @@ pub const Parser = struct {
         return self.makeExpression(data, self.current);
     }
 };
+
+/// Returns true if a token kind can be used as an identifier name —
+/// either a plain identifier or any keyword (keywords are valid field names,
+/// variable names in patterns, etc.).
+fn isIdentifierLike(kind: TokenKind) bool {
+    return kind == .identifier or kind.isKeyword();
+}
 
 fn getPrecedence(kind: TokenKind) ?u32 {
     return switch (kind) {

@@ -1,17 +1,66 @@
-// Entry point: builds Kubernetes manifests for all components.
+// Entry point: builds Kubernetes manifests for all components across all environments.
 //
 // Run with:
 //   ./bin/lazy eval examples/kubernetes-app/app/build.lazy
 //   ./bin/lazy eval --manifest --yaml examples/kubernetes-app/app/build.lazy
 
 K8s = import "../lib/Kubernetes"
-appConfig = import "./application"
+appSpec = import "./application"
+Object = import "Object"
 
 // Each component must be explicitly imported (no dynamic imports).
-// Merge with defaults and add the component name.
-components = {
-  web: K8s.defaultComponentConfig & (import "./components/web/config") & { name: "web" }
-  worker: K8s.defaultComponentConfig & (import "./components/worker/config") & { name: "worker" }
+componentConfigs = {
+  web: import "./components/web/config"
+  worker: import "./components/worker/config"
+  "api-gateway": import "./components/api-gateway/config"
+  cache: import "./components/cache/config"
+  migrations: import "./components/migrations/config"
 }
 
-K8s.buildAll appConfig components
+// Build manifests for a single environment.
+buildEnv = envName ->
+  envOverrides = appSpec.environments[envName]
+  appConfig = appSpec.base & { namespace: envOverrides.namespace, registry: appSpec.base.registry }
+
+  components = {
+    [name]:
+      K8s.defaultComponentConfig
+        & config
+        & (when Object.get envName config.environments is
+            (#ok, overrides) then overrides
+            otherwise {})
+        & { name
+            imageTag: envOverrides.defaultImageTag
+            replicas:
+              when Object.get envName config.environments is
+                (#ok, overrides) then
+                  when Object.get "replicas" overrides is
+                    (#ok, r) then r
+                    otherwise
+                      when Object.get "replicas" config is
+                        (#ok, r) then r
+                        otherwise envOverrides.defaultReplicas
+                otherwise
+                  when Object.get "replicas" config is
+                    (#ok, r) then r
+                    otherwise envOverrides.defaultReplicas
+          }
+        & (when Object.get "istioGateway" envOverrides is
+            (#ok, gw) then
+              when Object.get envName config.environments is
+                (#ok, overrides) then
+                  when Object.get "istio" overrides is
+                    (#ok, istio) then { istio: istio & { gateway: gw } }
+                    otherwise {}
+                otherwise {}
+            otherwise {})
+    for (name, config) in componentConfigs
+  }
+
+  K8s.buildAll appConfig components
+
+// Generate for all environments.
+{
+  [envName]: buildEnv envName
+  for envName in ["development", "staging", "production"]
+}

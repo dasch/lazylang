@@ -1,0 +1,32 @@
+// Benchmark: object merge chains — simulates config layering.
+base = {
+  server: { host: "localhost", port: 3000, workers: 1, timeout: 30, keepAlive: true }
+  database: { host: "localhost", port: 5432, pool: 5, name: "app", user: "app", ssl: false }
+  cache: { host: "localhost", port: 6379, db: 0, maxMemory: "256mb", policy: "allkeys-lru" }
+  logging: { level: "debug", format: "text", output: "stdout", rotation: null }
+  features: { darkMode: false, newUI: false, betaAPI: false, metrics: false }
+}
+
+staging = base & {
+  server: base.server & { host: "staging.example.com", workers: 4 }
+  database: base.database & { host: "db.staging.example.com", pool: 10, ssl: true }
+  cache: base.cache & { host: "cache.staging.example.com" }
+  logging: base.logging & { level: "info", format: "json" }
+  features: base.features & { metrics: true }
+}
+
+production = staging & {
+  server: staging.server & { host: "app.example.com", workers: 16, timeout: 60 }
+  database: staging.database & { host: "db.example.com", pool: 50, name: "app_prod" }
+  cache: staging.cache & { host: "cache.example.com", maxMemory: "4gb" }
+  logging: staging.logging & { level: "warn", rotation: { maxSize: "100mb", maxFiles: 10 } }
+  features: staging.features & { darkMode: true, newUI: true, betaAPI: true }
+}
+
+// Build configs for multiple services
+configs = [
+  production & { server: production.server & { port: 3000 + i } }
+  for i in Range.toArray (0..20)
+]
+
+{ configCount: Array.length configs, lastPort: (Array.last configs).server.port }

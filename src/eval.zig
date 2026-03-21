@@ -75,6 +75,8 @@ pub const formatValueAsJson = value_format.formatValueAsJson;
 pub const formatValueAsYaml = value_format.formatValueAsYaml;
 pub const formatValueShort = value_format.formatValueShort;
 pub const valueToString = value_format.valueToString;
+pub const jsonEscapeString = value_format.jsonEscapeString;
+pub const crashNotSerializable = value_format.crashNotSerializable;
 
 // Re-export AST types
 pub const TokenKind = ast.TokenKind;
@@ -131,17 +133,8 @@ pub const forceDeep = evaluator.forceDeep;
 pub const evaluateExpression = evaluator.evaluateExpression;
 pub const importModule = evaluator.importModule;
 pub const createStdlibEnvironment = evaluator.createStdlibEnvironment;
+pub const valuesEqual = evaluator.valuesEqual;
 
-fn lookup(env: ?*Environment, name: []const u8) ?Value {
-    var current = env;
-    while (current) |scope| {
-        if (std.mem.eql(u8, scope.name, name)) {
-            return scope.value;
-        }
-        current = scope.parent;
-    }
-    return null;
-}
 
 pub const EvalOutput = struct {
     allocator: std.mem.Allocator,
@@ -215,12 +208,14 @@ fn evalSourceWithFormat(
         import_stack.deinit();
     }
 
+    var recursion_depth: u32 = 0;
     const context = EvalContext{
         .allocator = allocator,
         .lazy_paths = lazy_paths,
         .error_ctx = &err_ctx,
         .module_cache = &module_cache,
         .import_stack = &import_stack,
+        .recursion_depth = &recursion_depth,
     };
 
     var parser = Parser.initWithContext(arena.allocator(), source, &err_ctx) catch |err| {
@@ -420,6 +415,8 @@ fn evalSourceWithValue(
     // Allocate EvalContext on the arena so it outlives this function —
     // thunks capture a pointer to it, and in --manifest mode thunks are
     // forced after evalSourceWithValue returns.
+    const recursion_depth2 = try arena.allocator().create(u32);
+    recursion_depth2.* = 0;
     const context = try arena.allocator().create(EvalContext);
     context.* = .{
         .allocator = allocator,
@@ -427,6 +424,7 @@ fn evalSourceWithValue(
         .error_ctx = &err_ctx,
         .module_cache = &module_cache2,
         .import_stack = &import_stack2,
+        .recursion_depth = recursion_depth2,
     };
 
     var parser = try Parser.init(arena.allocator(), owned_source);
@@ -494,7 +492,8 @@ pub fn evalFileValue(
         while (si.next()) |key| allocator.free(key.*);
         import_stack3.deinit();
     }
-    const context = EvalContext{ .allocator = allocator, .lazy_paths = lazy_paths, .module_cache = &module_cache3, .import_stack = &import_stack3 };
+    var recursion_depth3: u32 = 0;
+    const context = EvalContext{ .allocator = allocator, .lazy_paths = lazy_paths, .module_cache = &module_cache3, .import_stack = &import_stack3, .recursion_depth = &recursion_depth3 };
 
     var parser = try Parser.init(arena, contents);
     const expression = try parser.parse();

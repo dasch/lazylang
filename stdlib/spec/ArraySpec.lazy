@@ -114,6 +114,33 @@ describe #Array [
 
     it "handles array with no duplicates" do
       mustEq [1, 2, 3] (Array.uniq [1, 2, 3])
+
+    it "removes duplicate booleans" do
+      mustEq [true, false] (Array.uniq [true, false, true, false, true])
+
+    it "preserves first occurrence order for integers" do
+      mustEq [3, 1, 2] (Array.uniq [3, 1, 2, 3, 1])
+
+    it "preserves first occurrence order for strings" do
+      mustEq ["c", "a", "b"] (Array.uniq ["c", "a", "b", "c", "a"])
+
+    it "handles large integer array efficiently" do
+      range = Array.concat [Range.toArray (1..100), Range.toArray (1..100)]
+      mustEq 100 (Array.length (Array.uniq range))
+
+    it "handles large string array efficiently" do
+      strs =
+        Array.concat [["foo", "bar", "baz", "qux", "quux"], ["foo", "bar", "baz", "qux", "quux"]]
+      mustEq ["foo", "bar", "baz", "qux", "quux"] (Array.uniq strs)
+
+    it "handles single-element array" do
+      mustEq [42] (Array.uniq [42])
+
+    it "handles all-same integers" do
+      mustEq [7] (Array.uniq [7, 7, 7, 7, 7])
+
+    it "handles all-same strings" do
+      mustEq ["x"] (Array.uniq ["x", "x", "x"])
   ]
 
   describe #all [

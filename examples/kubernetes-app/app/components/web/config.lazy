@@ -1,20 +1,77 @@
 // Web component: serves HTTP traffic.
 {
   containerPort: 3000
-  replicas: 2
 
   env: {
     RAILS_ENV: "production"
     PORT: "3000"
+    REDIS_URL: "redis://cache:6379"
+    DATABASE_URL: "postgres://db:5432/recipes"
   }
 
-  service: {
-    port: 80
+  configMap: {
+    LOG_LEVEL: "info"
+    RATE_LIMIT: "1000"
+    FEATURE_FLAGS: "new-ui,dark-mode"
+    CDN_HOST: "https://cdn.recipes.example.com"
+    SENTRY_DSN: "https://examplePublicKey@o0.ingest.sentry.io/0"
   }
+
+  resources: {
+    requests: { cpu: "100m", memory: "256Mi" }
+    limits: { cpu: "500m", memory: "512Mi" }
+  }
+
+  probes: {
+    liveness: { path: "/healthz", port: 3000, initialDelay: 15, period: 20 }
+    readiness: { path: "/ready", port: 3000, initialDelay: 5, period: 10 }
+  }
+
+  service: { port: 80 }
 
   hpa: {
     minReplicas: 2
-    maxReplicas: 10
+    maxReplicas: 20
     cpuUtilization: 75
+  }
+
+  pdb: { minAvailable: 1 }
+
+  networkPolicy: {
+    policyTypes: ["Ingress"]
+    allowFrom: [
+      { app: "recipe-service", component: "api-gateway" }
+    ]
+  }
+
+  environments: {
+    development: {
+      hpa: null
+      pdb: null
+      networkPolicy: null
+      resources: null
+      probes: null
+      configMap: {
+        LOG_LEVEL: "debug"
+        RATE_LIMIT: "10000"
+        FEATURE_FLAGS: "new-ui,dark-mode,experimental"
+        CDN_HOST: "http://localhost:3001"
+        SENTRY_DSN: ""
+      }
+    }
+    staging: {
+      hpa: { minReplicas: 1, maxReplicas: 5, cpuUtilization: 80 }
+    }
+    production: {
+      hpa: { minReplicas: 3, maxReplicas: 20, cpuUtilization: 70 }
+      pdb: { minAvailable: 2 }
+      istio: {
+        hosts: ["recipes.example.com", "api.recipes.example.com"]
+        matchPrefix: "/"
+        gateway: null
+        timeout: "30s"
+        retries: { attempts: 3, perTryTimeout: "10s" }
+      }
+    }
   }
 }

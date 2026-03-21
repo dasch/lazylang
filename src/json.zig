@@ -125,27 +125,7 @@ fn encodeValue(value: eval.Value, buf: *std.ArrayList(u8), indent: usize, arena:
         },
         .string => |s| {
             try buf.append(arena, '"');
-            // Escape special characters
-            for (s) |c| {
-                switch (c) {
-                    '"' => try buf.appendSlice(arena, "\\\""),
-                    '\\' => try buf.appendSlice(arena, "\\\\"),
-                    '\n' => try buf.appendSlice(arena, "\\n"),
-                    '\r' => try buf.appendSlice(arena, "\\r"),
-                    '\t' => try buf.appendSlice(arena, "\\t"),
-                    0x08 => try buf.appendSlice(arena, "\\b"),
-                    0x0C => try buf.appendSlice(arena, "\\f"),
-                    else => {
-                        if (c < 0x20) {
-                            // Control characters: use \uXXXX
-                            const escaped = try std.fmt.allocPrint(arena, "\\u{x:0>4}", .{c});
-                            try buf.appendSlice(arena, escaped);
-                        } else {
-                            try buf.append(arena, c);
-                        }
-                    },
-                }
-            }
+            try eval.jsonEscapeString(buf, arena, s);
             try buf.append(arena, '"');
         },
         .array => |arr| {
@@ -208,12 +188,7 @@ fn encodeValue(value: eval.Value, buf: *std.ArrayList(u8), indent: usize, arena:
             const forced = try eval.force(arena, value);
             try encodeValue(forced, buf, indent, arena);
         },
-        .function, .native_fn => {
-            const message = "Cannot represent function in JSON output. Functions are not serializable.";
-            const message_copy = try std.heap.page_allocator.dupe(u8, message);
-            eval.setUserCrashMessage(message_copy);
-            return error.UserCrash;
-        },
+        .function, .native_fn => return eval.crashNotSerializable("Cannot represent function in JSON output. Functions are not serializable."),
         .range => |r| {
             // Convert range to array for JSON output
             const actual_end = if (r.inclusive) r.end else r.end - 1;

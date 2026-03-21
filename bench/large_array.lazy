@@ -1,0 +1,9 @@
+// Benchmark: large array construction and processing.
+xs = Range.toArray (1..1000)
+
+mapped = Array.map (x -> x * x) xs
+filtered = Array.filter (x -> x > 20000) mapped
+sorted = Array.sort (Array.reverse mapped)
+zipped = Array.zip mapped (Array.reverse mapped)
+
+{ total: Array.fold (a -> x -> a + x) 0 filtered, zippedLen: Array.length zipped }

@@ -51,6 +51,9 @@ pub const Environment = struct {
     parent: ?*Environment,
     name: []const u8,
     value: Value,
+    /// Optional hash map for bulk bindings (e.g., stdlib Basics fields).
+    /// When set, lookup checks this map before walking the parent chain.
+    siblings: ?*std.StringHashMapUnmanaged(Value) = null,
 };
 
 /// FunctionValue represents a user-defined function (closure).
@@ -84,6 +87,7 @@ pub const Thunk = struct {
     state: ThunkState,
     field_key_location: ?error_reporter.SourceLocation, // For object field thunks, to show cyclic reference span
     self_value: ?*Value = null, // Mutable cell pointing to the containing object (for `self` references)
+    cached_sibling_env: ?*Environment = null, // Cached env chain to avoid rebuilding on each force
 };
 
 /// Value is the runtime representation of all Lazylang values.
@@ -136,6 +140,9 @@ pub const ObjectFieldValue = struct {
 pub const ObjectValue = struct {
     fields: []ObjectFieldValue,
     module_doc: ?[]const u8, // Module-level documentation
+    /// Optional hash map from field name to index in `fields`.
+    /// Built lazily for objects above a threshold size.
+    field_index: ?*std.StringHashMapUnmanaged(usize) = null,
 };
 
 /// EvalError encompasses all possible errors during evaluation.
@@ -171,4 +178,7 @@ pub const EvalContext = struct {
     error_ctx: ?*error_context.ErrorContext = null,
     module_cache: ?*ModuleCache = null,
     import_stack: ?*ImportStack = null,
+    recursion_depth: *u32 = &dummy_depth,
+
+    var dummy_depth: u32 = 0;
 };
