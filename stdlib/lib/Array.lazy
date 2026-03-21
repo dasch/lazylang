@@ -110,21 +110,7 @@ Tuple = import "Tuple"
   /// Array.fold (acc -> x -> acc + x) 0 [1, 2, 3]  //=> 6
   /// Array.fold (acc -> x -> acc * x) 1 [2, 3, 4]  //=> 24
   /// ```
-  fold: fn ->
-    init ->
-      arr ->
-        foldHelper = f ->
-          acc ->
-            xs ->
-              idx ->
-                if idx >= Builtins.array_length xs then
-                  acc
-                else
-                  when Builtins.array_get (xs, idx) is
-                    (#ok, x) then foldHelper f (f acc x) xs (idx + 1)
-                    otherwise acc
-
-        foldHelper fn init arr 0
+  fold: fn -> init -> arr -> Builtins.array_fold (fn, init, arr)
 
   /// Reverses an array.
   ///

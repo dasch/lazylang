@@ -214,3 +214,7 @@ test "Array.uniq deduplicates objects" {
         \\]
     );
 }
+
+test "Array.fold handles large arrays" {
+    try expectEvaluates("Array.fold (acc -> x -> acc + x) 0 (Range.toArray (1..500))", "125250");
+}
