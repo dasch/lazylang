@@ -1213,9 +1213,9 @@ fn evaluateApplication(
     if (ctx.recursion_depth.* >= MAX_RECURSION_DEPTH) {
         if (ctx.error_ctx) |err_ctx| {
             err_ctx.setErrorLocation(application.function.location.line, application.function.location.column, application.function.location.offset, application.function.location.length);
-            const msg = std.heap.page_allocator.dupe(u8, "Maximum recursion depth exceeded") catch "Maximum recursion depth exceeded";
-            value_mod.setUserCrashMessage(msg);
         }
+        const msg = std.heap.page_allocator.dupe(u8, "Maximum recursion depth exceeded") catch "Maximum recursion depth exceeded";
+        value_mod.setUserCrashMessage(msg);
         return error.UserCrash;
     }
     ctx.recursion_depth.* += 1;
@@ -1907,8 +1907,9 @@ pub fn evaluateExpression(
 
                         if (field.is_patch) {
                             // Patch: merge with existing field if it exists and is an object
-                            var base_obj_mut = base_obj;
-                            const existing_value = try findObjectField(arena, &base_obj_mut, static_key);
+                            const existing_value: ?Value = for (base_obj.fields) |bf| {
+                                if (std.mem.eql(u8, bf.key, static_key)) break bf.value;
+                            } else null;
                             if (existing_value) |existing| {
                                 // Force the existing value if it's a thunk
                                 const forced_existing = try force(arena, existing);
@@ -2137,10 +2138,11 @@ fn accessField(arena: std.mem.Allocator, object_value: Value, field_name: []cons
         },
     };
 
-    // Look for the field (uses hash index for objects with 8+ fields)
-    var obj_mut = object;
-    if (try findObjectField(arena, &obj_mut, field_name)) |field_value| {
-        return try force(arena, field_value);
+    // Look for the field
+    for (object.fields) |field| {
+        if (std.mem.eql(u8, field.key, field_name)) {
+            return try force(arena, field.value);
+        }
     }
 
     // Field not found - populate error context with available fields and location

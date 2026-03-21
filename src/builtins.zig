@@ -124,10 +124,12 @@ pub fn arrayFold(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalEr
 
     // Apply function to each element: fold(fn, init, [x, y, z]) = fn(fn(fn(init, x), y), z)
     // Function is curried: acc -> x -> result
+    var fold_recursion_depth: u32 = 0;
     const ctx = eval.EvalContext{
         .allocator = arena,
         .lazy_paths = &[_][]const u8{},
         .error_ctx = null,
+        .recursion_depth = &fold_recursion_depth,
     };
 
     for (array.elements) |element| {
