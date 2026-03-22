@@ -1,5 +1,6 @@
 { describe, forall, it, must, mustEq } = import "Spec"
 Array = import "Array"
+Math = import "Math"
 Random = import "Random"
 Range = import "Range"
 

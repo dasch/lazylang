@@ -151,8 +151,8 @@ fn fuzzEvalOne(context: void, input: []const u8) anyerror!void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
-    // evalInline uses its own internal arena; we pass a general-purpose
-    // allocator for the result string allocation.
+    // evalInline manages its own internal arena; we pass an arena allocator
+    // here since the result is freed via arena.deinit() on the next line.
     var result = eval.evalInline(arena.allocator(), input) catch return;
     defer result.deinit();
 }
