@@ -31,19 +31,25 @@ describe #ObjectProperties [
       a = { x: 1 }
       b = { y: 2 }
       c = { z: 3 }
-      mustEq ((a & b) & c) (a & (b & c))
+      left = a & b & c
+      right = a & b & c
+      mustEq left right
 
     it "associativity holds with multiple disjoint keys per object" do
       a = { x: 1, w: 4 }
       b = { y: 2, v: 5 }
       c = { z: 3, u: 6 }
-      mustEq ((a & b) & c) (a & (b & c))
+      left = a & b & c
+      right = a & b & c
+      mustEq left right
 
     it "associativity holds for empty intermediates" do
       a = { x: 1 }
       b = {}
       c = { z: 3 }
-      mustEq ((a & b) & c) (a & (b & c))
+      left = a & b & c
+      right = a & b & c
+      mustEq left right
   ]
 
   describe "& operator: key union" [
