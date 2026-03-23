@@ -76,6 +76,10 @@ pub fn normalizedImportPath(allocator: std.mem.Allocator, import_path: []const u
 pub fn resolveImportPath(ctx: *const EvalContext, import_path: []const u8, current_dir: ?[]const u8) EvalError![]u8 {
     const normalized = try normalizedImportPath(ctx.allocator, import_path);
 
+    // Collect paths tried for error reporting
+    var tried = std.ArrayList([]const u8){};
+    defer tried.deinit(ctx.allocator);
+
     // 1. Try relative to current file's directory
     if (current_dir) |dir| {
         const candidate = try std.fs.path.join(ctx.allocator, &.{ dir, normalized });
@@ -92,7 +96,7 @@ pub fn resolveImportPath(ctx: *const EvalContext, import_path: []const u8, curre
             ctx.allocator.free(normalized);
             return candidate;
         }
-        ctx.allocator.free(candidate);
+        try tried.append(ctx.allocator, candidate);
     }
 
     // 2. Try relative to current working directory
@@ -105,8 +109,10 @@ pub fn resolveImportPath(ctx: *const EvalContext, import_path: []const u8, curre
     };
     if (relative_file) |file| {
         file.close();
+        for (tried.items) |p| ctx.allocator.free(p);
         return normalized;
     }
+    try tried.append(ctx.allocator, try ctx.allocator.dupe(u8, normalized));
 
     // 3. Try each path in LAZYLANG_PATH
     for (ctx.lazy_paths) |base| {
@@ -116,15 +122,17 @@ pub fn resolveImportPath(ctx: *const EvalContext, import_path: []const u8, curre
             else => {
                 ctx.allocator.free(candidate);
                 ctx.allocator.free(normalized);
+                for (tried.items) |p| ctx.allocator.free(p);
                 return err;
             },
         };
         if (f) |file| {
             file.close();
             ctx.allocator.free(normalized);
+            for (tried.items) |p| ctx.allocator.free(p);
             return candidate;
         }
-        ctx.allocator.free(candidate);
+        try tried.append(ctx.allocator, candidate);
     }
 
     ctx.allocator.free(normalized);
@@ -132,8 +140,17 @@ pub fn resolveImportPath(ctx: *const EvalContext, import_path: []const u8, curre
     // Module not found - set error context
     if (ctx.error_ctx) |err_ctx| {
         const module_name_copy = try err_ctx.allocator.dupe(u8, import_path);
-        err_ctx.setErrorData(.{ .module_not_found = .{ .module_name = module_name_copy } });
+        // Copy searched paths into error context allocator
+        const paths_copy = try err_ctx.allocator.alloc([]const u8, tried.items.len);
+        for (tried.items, 0..) |p, i| {
+            paths_copy[i] = try err_ctx.allocator.dupe(u8, p);
+        }
+        err_ctx.setErrorData(.{ .module_not_found = .{
+            .module_name = module_name_copy,
+            .searched_paths = paths_copy,
+        } });
     }
+    for (tried.items) |p| ctx.allocator.free(p);
 
     return error.ModuleNotFound;
 }
@@ -149,6 +166,13 @@ pub fn openImportFile(ctx: *const EvalContext, import_path: []const u8, current_
     const normalized = try normalizedImportPath(ctx.allocator, import_path);
     errdefer ctx.allocator.free(normalized);
 
+    // Collect paths tried for error reporting
+    var tried = std.ArrayList([]const u8){};
+    defer {
+        for (tried.items) |p| ctx.allocator.free(p);
+        tried.deinit(ctx.allocator);
+    }
+
     // 1. Try relative to current file's directory
     if (current_dir) |dir| {
         const candidate = try std.fs.path.join(ctx.allocator, &.{ dir, normalized });
@@ -160,7 +184,7 @@ pub fn openImportFile(ctx: *const EvalContext, import_path: []const u8, current_
             ctx.allocator.free(normalized);
             return .{ .path = candidate, .file = file };
         }
-        ctx.allocator.free(candidate);
+        try tried.append(ctx.allocator, candidate);
     }
 
     // 2. Try relative to current working directory
@@ -171,6 +195,7 @@ pub fn openImportFile(ctx: *const EvalContext, import_path: []const u8, current_
     if (relative_file) |file| {
         return .{ .path = normalized, .file = file };
     }
+    try tried.append(ctx.allocator, try ctx.allocator.dupe(u8, normalized));
 
     // 3. Try each path in LAZYLANG_PATH
     for (ctx.lazy_paths) |base| {
@@ -183,13 +208,21 @@ pub fn openImportFile(ctx: *const EvalContext, import_path: []const u8, current_
             ctx.allocator.free(normalized);
             return .{ .path = candidate, .file = file };
         }
-        ctx.allocator.free(candidate);
+        try tried.append(ctx.allocator, candidate);
     }
 
     // Module not found - set error context
     if (ctx.error_ctx) |err_ctx| {
         const module_name_copy = try err_ctx.allocator.dupe(u8, import_path);
-        err_ctx.setErrorData(.{ .module_not_found = .{ .module_name = module_name_copy } });
+        // Copy searched paths into error context allocator
+        const paths_copy = try err_ctx.allocator.alloc([]const u8, tried.items.len);
+        for (tried.items, 0..) |p, i| {
+            paths_copy[i] = try err_ctx.allocator.dupe(u8, p);
+        }
+        err_ctx.setErrorData(.{ .module_not_found = .{
+            .module_name = module_name_copy,
+            .searched_paths = paths_copy,
+        } });
     }
 
     return error.ModuleNotFound;

@@ -9,7 +9,7 @@
 // help: Check the spelling or define this variable before using it.
 //
 // Stack trace:
-//   0: f
+//   0: f(5)
 //      at tests/fixtures/errors/nested_unknown_identifier.lazy:21:1
 
 outer = 10

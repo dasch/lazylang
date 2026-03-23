@@ -3,10 +3,10 @@
 //    |
 // 11 | result = 5 + "hello"
 //    |              ^----
-//
+// 
 // Expected `integer` for addition, but found `string`.
-//
-// help: Make sure you're using compatible types for this operation.
+// 
+// help: Use `toString` to convert to string, or `++` for string concatenation.
 
 result = 5 + "hello"
 result

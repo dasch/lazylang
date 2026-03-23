@@ -1,0 +1,13 @@
+// error: Runtime error
+//   --> tests/fixtures/errors/assert_failure.lazy:12:1
+//    |
+// 12 | assert x > 0 : "x must be positive"
+//    | ^-----
+//
+// x must be positive
+//
+// help: Check the condition and message passed to `assert` or `crash`.
+
+x = -5
+assert x > 0 : "x must be positive"
+x

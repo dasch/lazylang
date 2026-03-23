@@ -1091,6 +1091,7 @@ fn evaluateBinaryOp(
                     };
 
                     if (ctx.error_ctx) |err_ctx| {
+                        const arg_str = formatValueShort(err_ctx.allocator, left_value) catch null;
                         err_ctx.pushStackFrame(
                             function_name,
                             err_ctx.current_file,
@@ -1099,7 +1100,10 @@ fn evaluateBinaryOp(
                             binary.right.location.offset,
                             binary.right.location.length,
                             false,
-                        ) catch {};
+                            arg_str,
+                        ) catch {
+                            if (arg_str) |s| err_ctx.allocator.free(s);
+                        };
                     }
 
                     const result = evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx) catch |err| {
@@ -1136,6 +1140,7 @@ fn evaluateBinaryOp(
                             binary.right.location.offset,
                             binary.right.location.length,
                             true,
+                            null,
                         ) catch {};
                     }
 
@@ -1158,10 +1163,11 @@ fn evaluateBinaryOp(
 
                     return result;
                 },
-                else => {
+                else => |bad_value| {
                     // Point to the right operand (function) that isn't actually a function
                     if (ctx.error_ctx) |err_ctx| {
                         err_ctx.setErrorLocation(binary.right.location.line, binary.right.location.column, binary.right.location.offset, binary.right.location.length);
+                        err_ctx.setErrorData(.{ .not_a_function = .{ .value_type = getValueTypeName(bad_value) } });
                         err_ctx.captureStackTrace() catch {};
                     }
                     return error.ExpectedFunction;
@@ -1632,6 +1638,13 @@ pub fn evaluateExpression(
                 continue;
             }
 
+            // No branch matched and no otherwise clause
+            if (ctx.error_ctx) |err_ctx| {
+                err_ctx.setErrorLocation(expr.location.line, expr.location.column, expr.location.offset, expr.location.length);
+                const val_str = formatValueShort(err_ctx.allocator, value) catch "";
+                err_ctx.setErrorData(.{ .when_no_match = .{ .value_str = val_str } });
+                err_ctx.captureStackTrace() catch {};
+            }
             return error.TypeMismatch;
         },
         .when_predicate => |when_pred| {
@@ -1667,6 +1680,13 @@ pub fn evaluateExpression(
                 continue;
             }
 
+            // No branch matched and no otherwise clause
+            if (ctx.error_ctx) |err_ctx| {
+                err_ctx.setErrorLocation(expr.location.line, expr.location.column, expr.location.offset, expr.location.length);
+                const val_str = formatValueShort(err_ctx.allocator, value) catch "";
+                err_ctx.setErrorData(.{ .when_no_match = .{ .value_str = val_str } });
+                err_ctx.captureStackTrace() catch {};
+            }
             return error.TypeMismatch;
         },
         .application => |application| {
@@ -1755,6 +1775,7 @@ pub fn evaluateExpression(
                             .identifier => |name| name,
                             else => null,
                         };
+                        const arg_str_tco = formatValueShort(err_ctx.allocator, argument_value) catch null;
                         err_ctx.pushStackFrame(
                             function_name_tco,
                             err_ctx.current_file,
@@ -1763,7 +1784,10 @@ pub fn evaluateExpression(
                             application.function.location.offset,
                             application.function.location.length,
                             false,
-                        ) catch {};
+                            arg_str_tco,
+                        ) catch {
+                            if (arg_str_tco) |s| err_ctx.allocator.free(s);
+                        };
                         tco_has_pushed_frame = true;
                     }
 
@@ -1787,6 +1811,7 @@ pub fn evaluateExpression(
                             application.function.location.offset,
                             application.function.location.length,
                             true, // Native function
+                            null,
                         ) catch {};
                     }
 
@@ -1808,9 +1833,25 @@ pub fn evaluateExpression(
                     ctx.recursion_depth.* -= 1;
                     return native_result;
                 },
-                else => {
+                else => |bad_value| {
                     if (ctx.error_ctx) |err_ctx| {
                         err_ctx.setErrorLocation(application.function.location.line, application.function.location.column, application.function.location.offset, application.function.location.length);
+                        // Detect curried-too-many-args: if the function expr is itself an application,
+                        // walk up to find the root function name
+                        const orig_func: ?[]const u8 = if (application.function.data == .application) blk_orig: {
+                            var func_expr = application.function;
+                            while (func_expr.data == .application) {
+                                func_expr = func_expr.data.application.function;
+                            }
+                            if (func_expr.data == .identifier) {
+                                break :blk_orig err_ctx.allocator.dupe(u8, func_expr.data.identifier) catch null;
+                            }
+                            break :blk_orig null;
+                        } else null;
+                        err_ctx.setErrorData(.{ .not_a_function = .{
+                            .value_type = getValueTypeName(bad_value),
+                            .original_function = orig_func,
+                        } });
                         err_ctx.captureStackTrace() catch {};
                     }
                     ctx.recursion_depth.* -= 1;

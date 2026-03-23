@@ -1,0 +1,12 @@
+// error: Unknown field
+//   --> tests/fixtures/errors/unknown_field_typo.lazy:12:8
+//    |
+// 12 | person.naem
+//    |        ^---
+// 
+// Field `naem` is not defined on `person`. Available fields are: `name`, `age`
+// 
+// help: Did you mean `name`?
+
+person = { name: "Alice", age: 30 }
+person.naem

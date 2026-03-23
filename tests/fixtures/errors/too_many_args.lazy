@@ -1,0 +1,13 @@
+// error: Not a function
+//   --> tests/fixtures/errors/too_many_args.lazy:12:10
+//    |
+// 12 | result = f 1 2
+//    |          ^
+//
+// The result of calling `f` is `integer`, which cannot be called as a function. `f` may take fewer arguments than provided.
+//
+// help: Lazylang functions are curried — `f a b` is `(f a) b`. If `f` takes one argument, `f a` returns a result that `b` is then applied to.
+
+f = x -> x + 1
+result = f 1 2
+result
