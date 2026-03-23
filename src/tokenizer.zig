@@ -287,6 +287,7 @@ pub const Tokenizer = struct {
             .{ "import", .keyword_import },
             .{ "assert", .keyword_assert },
             .{ "self", .keyword_self },
+            .{ "super", .keyword_super },
             .{ "and", .keyword_and },
         });
         return keywords.get(lexeme);

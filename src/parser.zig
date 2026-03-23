@@ -152,6 +152,7 @@ pub const Parser = struct {
             .keyword_import => "'import'",
             .keyword_assert => "'assert'",
             .keyword_self => "'self'",
+            .keyword_super => "'super'",
             .keyword_and => "'and'",
         };
     }
@@ -692,7 +693,7 @@ pub const Parser = struct {
                 .keyword_unless,
                 .keyword_and,
                 => break,
-                .identifier, .keyword_self => {
+                .identifier, .keyword_self, .keyword_super => {
                     const argument = try self.parsePostfix();
                     const node = try self.allocateExpression();
                     node.* = .{
@@ -1061,7 +1062,7 @@ pub const Parser = struct {
             },
             // Keywords used as identifiers in expression position are treated as identifier references
             // (e.g. `self` as a variable name, or keywords used as object field shorthand)
-            .keyword_self => {
+            .keyword_self, .keyword_super => {
                 const ident_token = self.current;
                 const name = self.current.lexeme;
                 try self.advance();

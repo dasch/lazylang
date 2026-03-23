@@ -66,6 +66,7 @@ pub const TokenKind = enum {
     keyword_import,
     keyword_assert,
     keyword_self,
+    keyword_super,
     keyword_and,
 
     /// Returns true if this token kind is a keyword.
@@ -86,6 +87,7 @@ pub const TokenKind = enum {
             .keyword_import,
             .keyword_assert,
             .keyword_self,
+            .keyword_super,
             .keyword_and,
             => true,
             else => false,
