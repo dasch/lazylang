@@ -124,12 +124,16 @@ pub fn arrayFold(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalEr
 
     // Apply function to each element: fold(fn, init, [x, y, z]) = fn(fn(fn(init, x), y), z)
     // Function is curried: acc -> x -> result
-    var fold_recursion_depth: u32 = 0;
-    const ctx = eval.EvalContext{
+    // Allocate ctx and recursion_depth on the arena so any thunks created during
+    // fold that capture ctx will have a valid pointer even after fold returns.
+    const fold_recursion_depth = try arena.create(u32);
+    fold_recursion_depth.* = 0;
+    const ctx = try arena.create(eval.EvalContext);
+    ctx.* = .{
         .allocator = arena,
         .lazy_paths = &[_][]const u8{},
         .error_ctx = null,
-        .recursion_depth = &fold_recursion_depth,
+        .recursion_depth = fold_recursion_depth,
     };
 
     for (array.elements) |element| {
@@ -137,16 +141,16 @@ pub fn arrayFold(arena: std.mem.Allocator, args: []const eval.Value) eval.EvalEr
         accumulator = switch (function) {
             .function => |func| blk: {
                 // Apply first argument (accumulator)
-                const env1 = try eval.matchPattern(arena, func.param, accumulator, func.env, &ctx);
-                const intermediate = try eval.evaluateExpression(arena, func.body, env1, null, &ctx);
+                const env1 = try eval.matchPattern(arena, func.param, accumulator, func.env, ctx);
+                const intermediate = try eval.evaluateExpression(arena, func.body, env1, null, ctx);
 
                 // The result should be a function, apply second argument (element)
                 const func2 = switch (intermediate) {
                     .function => |f| f,
                     else => return error.TypeMismatch,
                 };
-                const env2 = try eval.matchPattern(arena, func2.param, element, func2.env, &ctx);
-                break :blk try eval.evaluateExpression(arena, func2.body, env2, null, &ctx);
+                const env2 = try eval.matchPattern(arena, func2.param, element, func2.env, ctx);
+                break :blk try eval.evaluateExpression(arena, func2.body, env2, null, ctx);
             },
             else => return error.TypeMismatch,
         };

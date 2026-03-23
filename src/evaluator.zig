@@ -1202,167 +1202,6 @@ fn evaluateBinaryOp(
     };
 }
 
-fn evaluateApplication(
-    arena: std.mem.Allocator,
-    application: ast.Application,
-    env: ?*Environment,
-    current_dir: ?[]const u8,
-    ctx: *const EvalContext,
-) EvalError!Value {
-    // Check and increment recursion depth
-    if (ctx.recursion_depth.* >= MAX_RECURSION_DEPTH) {
-        if (ctx.error_ctx) |err_ctx| {
-            err_ctx.setErrorLocation(application.function.location.line, application.function.location.column, application.function.location.offset, application.function.location.length);
-        }
-        const msg = std.heap.page_allocator.dupe(u8, "Maximum recursion depth exceeded") catch "Maximum recursion depth exceeded";
-        value_mod.setUserCrashMessage(msg);
-        return error.UserCrash;
-    }
-    ctx.recursion_depth.* += 1;
-    defer ctx.recursion_depth.* -= 1;
-
-    const function_value = try evaluateExpression(arena, application.function, env, current_dir, ctx);
-    const argument_value = try evaluateExpression(arena, application.argument, env, current_dir, ctx);
-
-    switch (function_value) {
-        .function => |function_ptr| {
-            const bound_env = matchPattern(arena, function_ptr.param, argument_value, function_ptr.env, ctx) catch |err| {
-                // If pattern matching fails, update error location to point to the argument
-                // at the call site, not the parameter in the function definition
-                if (ctx.error_ctx) |err_ctx| {
-                    err_ctx.setErrorLocation(application.argument.location.line, application.argument.location.column, application.argument.location.offset, application.argument.location.length);
-
-                    // If the error is a type mismatch and the function is named, update the operation
-                    if (err == error.TypeMismatch) {
-                        // Check if function expression is an identifier
-                        const function_name = switch (application.function.data) {
-                            .identifier => |name| name,
-                            else => null,
-                        };
-
-                        if (function_name) |name| {
-                            // Update the operation field in the error data if it exists
-                            if (err_ctx.last_error_data == .type_mismatch) {
-                                const old_data = err_ctx.last_error_data.type_mismatch;
-                                // Save ownership flags before clearing them on the live struct
-                                const was_expected_owned = old_data.expected_owned;
-                                const was_found_owned = old_data.found_owned;
-                                // Try to allocate new operation string; if it fails, leave error data as-is
-                                if (std.fmt.allocPrint(err_ctx.allocator, "calling function `{s}`", .{name})) |new_operation| {
-                                    // Clear flags so freeErrorData doesn't free strings we're reusing
-                                    err_ctx.last_error_data.type_mismatch.expected_owned = false;
-                                    err_ctx.last_error_data.type_mismatch.found_owned = false;
-                                    err_ctx.setErrorData(.{ .type_mismatch = .{
-                                        .expected = old_data.expected,
-                                        .found = old_data.found,
-                                        .operation = new_operation,
-                                        .expected_owned = was_expected_owned,
-                                        .found_owned = was_found_owned,
-                                    } });
-                                } else |_| {
-                                    // Allocation failed, keep existing error data
-                                }
-                            }
-                        }
-                    }
-                    // Capture stack trace on error
-                    err_ctx.captureStackTrace() catch {};
-                }
-                return err;
-            };
-
-            // Push stack frame for function call
-            const function_name = switch (application.function.data) {
-                .identifier => |name| name,
-                else => null,
-            };
-
-            if (ctx.error_ctx) |err_ctx| {
-                err_ctx.pushStackFrame(
-                    function_name,
-                    err_ctx.current_file,
-                    application.function.location.line,
-                    application.function.location.column,
-                    application.function.location.offset,
-                    application.function.location.length,
-                    false, // Not a native function
-                ) catch {};
-            }
-
-            // Evaluate function body
-            const result = evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx) catch |err| {
-                // Capture stack trace on error (only if not already captured)
-                if (ctx.error_ctx) |err_ctx| {
-                    if (err_ctx.stack_trace == null) {
-                        err_ctx.captureStackTrace() catch {};
-                    }
-                }
-                // Pop stack frame before returning error
-                if (ctx.error_ctx) |err_ctx| {
-                    err_ctx.popStackFrame();
-                }
-                return err;
-            };
-
-            // Pop stack frame after successful evaluation
-            if (ctx.error_ctx) |err_ctx| {
-                err_ctx.popStackFrame();
-            }
-
-            return result;
-        },
-        .native_fn => |native_fn| {
-            // Push stack frame for native function call
-            const function_name = switch (application.function.data) {
-                .identifier => |name| name,
-                else => null,
-            };
-
-            if (ctx.error_ctx) |err_ctx| {
-                err_ctx.pushStackFrame(
-                    function_name,
-                    err_ctx.current_file,
-                    application.function.location.line,
-                    application.function.location.column,
-                    application.function.location.offset,
-                    application.function.location.length,
-                    true, // Native function
-                ) catch {};
-            }
-
-            // Native functions receive a single argument (could be a tuple for multiple args)
-            const args = [_]Value{argument_value};
-            const result = native_fn(arena, &args) catch |err| {
-                // Capture stack trace on error (only if not already captured)
-                if (ctx.error_ctx) |err_ctx| {
-                    if (err_ctx.stack_trace == null) {
-                        err_ctx.captureStackTrace() catch {};
-                    }
-                }
-                // Pop stack frame before returning error
-                if (ctx.error_ctx) |err_ctx| {
-                    err_ctx.popStackFrame();
-                }
-                return err;
-            };
-
-            // Pop stack frame after successful evaluation
-            if (ctx.error_ctx) |err_ctx| {
-                err_ctx.popStackFrame();
-            }
-
-            return result;
-        },
-        else => {
-            // Point to the function expression that isn't actually a function
-            if (ctx.error_ctx) |err_ctx| {
-                err_ctx.setErrorLocation(application.function.location.line, application.function.location.column, application.function.location.offset, application.function.location.length);
-                err_ctx.captureStackTrace() catch {};
-            }
-            return error.ExpectedFunction;
-        },
-    }
-}
 
 fn evaluateObjectLiteral(
     arena: std.mem.Allocator,
@@ -1481,18 +1320,50 @@ fn evaluateObjectLiteral(
 
 pub fn evaluateExpression(
     arena: std.mem.Allocator,
-    expr: *Expression,
-    env: ?*Environment,
+    initial_expr: *Expression,
+    initial_env: ?*Environment,
     current_dir: ?[]const u8,
     ctx: *const EvalContext,
 ) EvalError!Value {
-    return switch (expr.data) {
-        .integer => |value| .{ .integer = value },
-        .float => |value| .{ .float = value },
-        .boolean => |value| .{ .boolean = value },
-        .null_literal => .null_value,
-        .symbol => |value| .{ .string = if (value.len > 0 and value[0] == '#') value[1..] else value },
-        .identifier => |name| blk: {
+    // Trampoline loop for tail call optimization (TCO).
+    // Tail positions (let body, where body, if/then/else branches, when branches,
+    // assert body, and function application body) update `expr`/`env` and
+    // continue the loop instead of recursing, keeping the Zig stack bounded.
+    var expr = initial_expr;
+    var env = initial_env;
+    // Count tail-call function applications to detect infinite loops.
+    // Structural tail positions (let, where, if, when) are not counted.
+    var tco_call_count: u32 = 0;
+    var tco_has_pushed_frame: bool = false;
+
+    // Pop the last TCO stack frame when we exit (success or error via errdefer below).
+    defer {
+        if (tco_has_pushed_frame) {
+            if (ctx.error_ctx) |err_ctx| {
+                err_ctx.popStackFrame();
+            }
+        }
+    }
+
+    // Capture the stack trace when this evaluateExpression call exits with an error,
+    // if no inner call has already captured it. This preserves the call stack for
+    // error reporting even when tail calls eliminate intermediate Zig stack frames.
+    errdefer {
+        if (ctx.error_ctx) |err_ctx| {
+            if (err_ctx.stack_trace == null) {
+                err_ctx.captureStackTrace() catch {};
+            }
+        }
+    }
+
+    tco_loop: while (true) {
+    switch (expr.data) {
+        .integer => |value| return .{ .integer = value },
+        .float => |value| return .{ .float = value },
+        .boolean => |value| return .{ .boolean = value },
+        .null_literal => return .null_value,
+        .symbol => |value| return .{ .string = if (value.len > 0 and value[0] == '#') value[1..] else value },
+        .identifier => |name| {
             const resolved = lookup(env, name) orelse {
                 // Set error location and data for unknown identifier
                 if (ctx.error_ctx) |err_ctx| {
@@ -1507,31 +1378,31 @@ pub fn evaluateExpression(
                 return error.UnknownIdentifier;
             };
             // Automatically force thunks when looking up identifiers
-            break :blk try force(arena, resolved);
+            return try force(arena, resolved);
         },
-        .string_literal => |value| .{ .string = value },
-        .string_interpolation => |interp| blk: {
-            var result = std.ArrayListUnmanaged(u8){};
+        .string_literal => |value| return .{ .string = value },
+        .string_interpolation => |interp| {
+            var result_str = std.ArrayListUnmanaged(u8){};
             for (interp.parts) |part| {
                 switch (part) {
                     .literal => |lit| {
-                        try result.appendSlice(arena, lit);
+                        try result_str.appendSlice(arena, lit);
                     },
                     .interpolation => |interp_expr| {
                         const interp_value = try evaluateExpression(arena, interp_expr, env, current_dir, ctx);
                         const str_value = try valueToString(arena, interp_value);
-                        try result.appendSlice(arena, str_value);
+                        try result_str.appendSlice(arena, str_value);
                     },
                 }
             }
-            break :blk .{ .string = try result.toOwnedSlice(arena) };
+            return .{ .string = try result_str.toOwnedSlice(arena) };
         },
-        .lambda => |lambda| blk: {
+        .lambda => |lambda| {
             const function = try arena.create(FunctionValue);
             function.* = .{ .param = lambda.param, .body = lambda.body, .env = env };
-            break :blk Value{ .function = function };
+            return Value{ .function = function };
         },
-        .let => |let_expr| blk: {
+        .let => |let_expr| {
             // For recursive definitions, if the pattern is a simple identifier,
             // we create the environment binding before evaluating the value
             const is_recursive = switch (let_expr.pattern.data) {
@@ -1565,8 +1436,10 @@ pub fn evaluateExpression(
                 // Update the environment entry with the actual value
                 recursive_env.value = value;
 
-                // Evaluate body with the recursive environment
-                break :blk try evaluateExpression(arena, let_expr.body, recursive_env, current_dir, ctx);
+                // TCO: evaluate body in the loop instead of recursing
+                expr = let_expr.body;
+                env = recursive_env;
+                continue;
             } else {
                 // Non-recursive case: evaluate value first, then pattern match
                 const value = try evaluateExpression(arena, let_expr.value, env, current_dir, ctx);
@@ -1582,10 +1455,13 @@ pub fn evaluateExpression(
                 }
 
                 const new_env = try matchPattern(arena, let_expr.pattern, value, env, ctx);
-                break :blk try evaluateExpression(arena, let_expr.body, new_env, current_dir, ctx);
+                // TCO: evaluate body in the loop instead of recursing
+                expr = let_expr.body;
+                env = new_env;
+                continue;
             }
         },
-        .where_expr => |where_expr| blk: {
+        .where_expr => |where_expr| {
             // For where clauses, all bindings should be mutually recursive
             // Strategy:
             // 1. For identifier patterns: wrap in thunks for lazy mutual recursion
@@ -1648,12 +1524,14 @@ pub fn evaluateExpression(
                 }
             }
 
-            // Finally, evaluate the main expression with the full environment
-            break :blk try evaluateExpression(arena, where_expr.expr, current_env, current_dir, ctx);
+            // TCO: evaluate the main expression in the loop instead of recursing
+            expr = where_expr.expr;
+            env = current_env;
+            continue;
         },
-        .unary => |unary| blk: {
+        .unary => |unary| {
             const operand_value = try evaluateExpression(arena, unary.operand, env, current_dir, ctx);
-            const result = switch (unary.op) {
+            return switch (unary.op) {
                 .logical_not => blk2: {
                     const bool_val = switch (operand_value) {
                         .boolean => |v| v,
@@ -1662,10 +1540,9 @@ pub fn evaluateExpression(
                     break :blk2 Value{ .boolean = !bool_val };
                 },
             };
-            break :blk result;
         },
-        .binary => |binary| try evaluateBinaryOp(arena, binary, env, current_dir, ctx),
-        .if_expr => |if_expr| blk: {
+        .binary => |binary| return try evaluateBinaryOp(arena, binary, env, current_dir, ctx),
+        .if_expr => |if_expr| {
             const condition_value = try evaluateExpression(arena, if_expr.condition, env, current_dir, ctx);
             const condition_bool = switch (condition_value) {
                 .boolean => |v| v,
@@ -1673,14 +1550,18 @@ pub fn evaluateExpression(
             };
 
             if (condition_bool) {
-                break :blk try evaluateExpression(arena, if_expr.then_expr, env, current_dir, ctx);
+                // TCO: evaluate then branch in the loop
+                expr = if_expr.then_expr;
+                continue;
             } else if (if_expr.else_expr) |else_expr| {
-                break :blk try evaluateExpression(arena, else_expr, env, current_dir, ctx);
+                // TCO: evaluate else branch in the loop
+                expr = else_expr;
+                continue;
             } else {
-                break :blk .null_value;
+                return .null_value;
             }
         },
-        .assert_expr => |assert_expr| blk: {
+        .assert_expr => |assert_expr| {
             const condition = try evaluateExpression(arena, assert_expr.condition, env, current_dir, ctx);
             const cond_bool = switch (condition) {
                 .boolean => |b| b,
@@ -1714,9 +1595,11 @@ pub fn evaluateExpression(
                 }
                 return error.UserCrash;
             }
-            break :blk try evaluateExpression(arena, assert_expr.body, env, current_dir, ctx);
+            // TCO: evaluate body in the loop
+            expr = assert_expr.body;
+            continue;
         },
-        .when_matches => |when_matches| blk: {
+        .when_matches => |when_matches| {
             const value = try evaluateExpression(arena, when_matches.value, env, current_dir, ctx);
 
             // Try each pattern branch
@@ -1736,18 +1619,22 @@ pub fn evaluateExpression(
                     }
                 }
 
-                // Pattern matched (and guard passed), evaluate the expression
-                break :blk try evaluateExpression(arena, branch.expression, match_env, current_dir, ctx);
+                // TCO: evaluate matched branch expression in the loop
+                expr = branch.expression;
+                env = match_env;
+                continue :tco_loop;
             }
 
             // No pattern matched, check for otherwise clause
             if (when_matches.otherwise) |otherwise_expr| {
-                break :blk try evaluateExpression(arena, otherwise_expr, env, current_dir, ctx);
+                // TCO: evaluate otherwise in the loop
+                expr = otherwise_expr;
+                continue;
             }
 
             return error.TypeMismatch;
         },
-        .when_predicate => |when_pred| blk: {
+        .when_predicate => |when_pred| {
             const value = try evaluateExpression(arena, when_pred.value, env, current_dir, ctx);
 
             // Try each predicate branch
@@ -1755,31 +1642,183 @@ pub fn evaluateExpression(
                 const predicate = try evaluateExpression(arena, branch.predicate, env, current_dir, ctx);
 
                 // Call the predicate with the value
-                const result = switch (predicate) {
+                const pred_result = switch (predicate) {
                     .function => |func| try evaluateExpression(arena, func.body, try matchPattern(arena, func.param, value, func.env, ctx), current_dir, ctx),
                     .native_fn => |native_fn| try native_fn(arena, &[_]Value{value}),
                     else => return error.ExpectedFunction,
                 };
 
                 // Check if predicate returned truthy
-                const is_match = switch (result) {
+                const is_match = switch (pred_result) {
                     .boolean => |b| b,
                     else => true, // non-boolean truthy
                 };
 
                 if (is_match) {
-                    break :blk try evaluateExpression(arena, branch.expression, env, current_dir, ctx);
+                    // TCO: evaluate matched branch expression in the loop
+                    expr = branch.expression;
+                    continue :tco_loop;
                 }
             }
 
             if (when_pred.otherwise) |otherwise_expr| {
-                break :blk try evaluateExpression(arena, otherwise_expr, env, current_dir, ctx);
+                // TCO: evaluate otherwise in the loop
+                expr = otherwise_expr;
+                continue;
             }
 
             return error.TypeMismatch;
         },
-        .application => |application| try evaluateApplication(arena, application, env, current_dir, ctx),
-        .array => |array| blk: {
+        .application => |application| {
+            // Check and increment recursion depth
+            if (ctx.recursion_depth.* >= MAX_RECURSION_DEPTH) {
+                if (ctx.error_ctx) |err_ctx| {
+                    err_ctx.setErrorLocation(application.function.location.line, application.function.location.column, application.function.location.offset, application.function.location.length);
+                }
+                const msg = std.heap.page_allocator.dupe(u8, "Maximum recursion depth exceeded") catch "Maximum recursion depth exceeded";
+                value_mod.setUserCrashMessage(msg);
+                return error.UserCrash;
+            }
+            ctx.recursion_depth.* += 1;
+
+            const function_value = evaluateExpression(arena, application.function, env, current_dir, ctx) catch |err| {
+                ctx.recursion_depth.* -= 1;
+                return err;
+            };
+            const argument_value = evaluateExpression(arena, application.argument, env, current_dir, ctx) catch |err| {
+                ctx.recursion_depth.* -= 1;
+                return err;
+            };
+
+            switch (function_value) {
+                .function => |function_ptr| {
+                    const bound_env = matchPattern(arena, function_ptr.param, argument_value, function_ptr.env, ctx) catch |err| {
+                        // If pattern matching fails, update error location to point to the argument
+                        if (ctx.error_ctx) |err_ctx| {
+                            err_ctx.setErrorLocation(application.argument.location.line, application.argument.location.column, application.argument.location.offset, application.argument.location.length);
+
+                            // If the error is a type mismatch and the function is named, update the operation
+                            if (err == error.TypeMismatch) {
+                                const function_name = switch (application.function.data) {
+                                    .identifier => |name| name,
+                                    else => null,
+                                };
+
+                                if (function_name) |name| {
+                                    if (err_ctx.last_error_data == .type_mismatch) {
+                                        const old_data = err_ctx.last_error_data.type_mismatch;
+                                        const was_expected_owned = old_data.expected_owned;
+                                        const was_found_owned = old_data.found_owned;
+                                        if (std.fmt.allocPrint(err_ctx.allocator, "calling function `{s}`", .{name})) |new_operation| {
+                                            err_ctx.last_error_data.type_mismatch.expected_owned = false;
+                                            err_ctx.last_error_data.type_mismatch.found_owned = false;
+                                            err_ctx.setErrorData(.{ .type_mismatch = .{
+                                                .expected = old_data.expected,
+                                                .found = old_data.found,
+                                                .operation = new_operation,
+                                                .expected_owned = was_expected_owned,
+                                                .found_owned = was_found_owned,
+                                            } });
+                                        } else |_| {}
+                                    }
+                                }
+                            }
+                            err_ctx.captureStackTrace() catch {};
+                        }
+                        ctx.recursion_depth.* -= 1;
+                        return err;
+                    };
+
+                    // TCO: instead of recursing into function body, update expr/env and loop.
+                    // Decrement depth since the current application "frame" is replaced.
+                    ctx.recursion_depth.* -= 1;
+
+                    // Check for infinite tail-call loops. Each function application
+                    // via TCO increments this counter; exceeding the limit reports
+                    // UserCrash (same as the recursion depth check for non-TCO calls).
+                    tco_call_count += 1;
+                    if (tco_call_count > MAX_RECURSION_DEPTH * MAX_RECURSION_DEPTH) {
+                        if (ctx.error_ctx) |err_ctx| {
+                            err_ctx.setErrorLocation(application.function.location.line, application.function.location.column, application.function.location.offset, application.function.location.length);
+                        }
+                        const msg = std.heap.page_allocator.dupe(u8, "Maximum recursion depth exceeded") catch "Maximum recursion depth exceeded";
+                        value_mod.setUserCrashMessage(msg);
+                        return error.UserCrash;
+                    }
+
+                    // Update the stack frame for this tail call (replace, not push).
+                    // Pop the previous frame (if any) and push the new one so error
+                    // traces always show the most recent tail-call site.
+                    if (ctx.error_ctx) |err_ctx| {
+                        if (tco_has_pushed_frame) err_ctx.popStackFrame();
+                        const function_name_tco = switch (application.function.data) {
+                            .identifier => |name| name,
+                            else => null,
+                        };
+                        err_ctx.pushStackFrame(
+                            function_name_tco,
+                            err_ctx.current_file,
+                            application.function.location.line,
+                            application.function.location.column,
+                            application.function.location.offset,
+                            application.function.location.length,
+                            false,
+                        ) catch {};
+                        tco_has_pushed_frame = true;
+                    }
+
+                    expr = function_ptr.body;
+                    env = bound_env;
+                    continue;
+                },
+                .native_fn => |native_fn| {
+                    // Push stack frame for native function call
+                    const function_name = switch (application.function.data) {
+                        .identifier => |name| name,
+                        else => null,
+                    };
+
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.pushStackFrame(
+                            function_name,
+                            err_ctx.current_file,
+                            application.function.location.line,
+                            application.function.location.column,
+                            application.function.location.offset,
+                            application.function.location.length,
+                            true, // Native function
+                        ) catch {};
+                    }
+
+                    const args = [_]Value{argument_value};
+                    const native_result = native_fn(arena, &args) catch |err| {
+                        if (ctx.error_ctx) |err_ctx| {
+                            if (err_ctx.stack_trace == null) {
+                                err_ctx.captureStackTrace() catch {};
+                            }
+                            err_ctx.popStackFrame();
+                        }
+                        ctx.recursion_depth.* -= 1;
+                        return err;
+                    };
+
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.popStackFrame();
+                    }
+                    ctx.recursion_depth.* -= 1;
+                    return native_result;
+                },
+                else => {
+                    if (ctx.error_ctx) |err_ctx| {
+                        err_ctx.setErrorLocation(application.function.location.line, application.function.location.column, application.function.location.offset, application.function.location.length);
+                        err_ctx.captureStackTrace() catch {};
+                    }
+                    ctx.recursion_depth.* -= 1;
+                    return error.ExpectedFunction;
+                },
+            }
+        },
+        .array => |array| {
             // First pass: evaluate all elements and count total size
             var temp_values = std.ArrayList(Value){};
             defer temp_values.deinit(arena);
@@ -1827,16 +1866,16 @@ pub fn evaluateExpression(
                 }
             }
 
-            break :blk Value{ .array = .{ .elements = try temp_values.toOwnedSlice(arena) } };
+            return Value{ .array = .{ .elements = try temp_values.toOwnedSlice(arena) } };
         },
-        .tuple => |tuple| blk: {
+        .tuple => |tuple| {
             const values = try arena.alloc(Value, tuple.elements.len);
             for (tuple.elements, 0..) |element, i| {
                 values[i] = try evaluateExpression(arena, element, env, current_dir, ctx);
             }
-            break :blk Value{ .tuple = .{ .elements = values } };
+            return Value{ .tuple = .{ .elements = values } };
         },
-        .range => |range| blk: {
+        .range => |range| {
             const start = try evaluateExpression(arena, range.start, env, current_dir, ctx);
             const end = try evaluateExpression(arena, range.end, env, current_dir, ctx);
 
@@ -1850,10 +1889,10 @@ pub fn evaluateExpression(
                 else => return error.TypeMismatch,
             };
 
-            break :blk Value{ .range = .{ .start = start_int, .end = end_int, .inclusive = range.inclusive } };
+            return Value{ .range = .{ .start = start_int, .end = end_int, .inclusive = range.inclusive } };
         },
-        .object => |object| try evaluateObjectLiteral(arena, object, env, current_dir, ctx),
-        .object_extend => |extend| blk: {
+        .object => |object| return try evaluateObjectLiteral(arena, object, env, current_dir, ctx),
+        .object_extend => |extend| {
             // Evaluate the base expression
             const base_value = try evaluateExpression(arena, extend.base, env, current_dir, ctx);
 
@@ -1874,7 +1913,7 @@ pub fn evaluateExpression(
                     }
                     const obj_arg = Value{ .object = .{ .fields = try fields_list.toOwnedSlice(arena), .module_doc = null } };
                     const bound_env = try matchPattern(arena, function_ptr.param, obj_arg, function_ptr.env, ctx);
-                    break :blk try evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx);
+                    return try evaluateExpression(arena, function_ptr.body, bound_env, current_dir, ctx);
                 },
                 .native_fn => |native_fn| {
                     // Build an object from the extension fields and call native function
@@ -1891,7 +1930,7 @@ pub fn evaluateExpression(
                     }
                     const obj_arg = Value{ .object = .{ .fields = try fields_list.toOwnedSlice(arena), .module_doc = null } };
                     const args = [_]Value{obj_arg};
-                    break :blk try native_fn(arena, &args);
+                    return try native_fn(arena, &args);
                 },
                 .object => |base_obj| {
                     // Build the extension object with proper handling of is_patch
@@ -1935,37 +1974,34 @@ pub fn evaluateExpression(
 
                     // Merge base with extension
                     const extension_obj = ObjectValue{ .fields = try extension_fields.toOwnedSlice(arena), .module_doc = null };
-                    break :blk try mergeObjects(arena, base_obj, extension_obj);
+                    return try mergeObjects(arena, base_obj, extension_obj);
                 },
                 else => return error.TypeMismatch,
             }
         },
-        .array_comprehension => |comp| blk: {
+        .array_comprehension => |comp| {
             var result_list = std.ArrayListUnmanaged(Value){};
             try evaluateArrayComprehension(arena, &result_list, comp, 0, env, current_dir, ctx);
-            break :blk Value{ .array = .{ .elements = try result_list.toOwnedSlice(arena) } };
+            return Value{ .array = .{ .elements = try result_list.toOwnedSlice(arena) } };
         },
-        .object_comprehension => |comp| blk: {
+        .object_comprehension => |comp| {
             var result_fields = std.ArrayListUnmanaged(ObjectFieldValue){};
             try evaluateObjectComprehension(arena, &result_fields, comp, 0, env, current_dir, ctx);
-            break :blk Value{ .object = .{ .fields = try result_fields.toOwnedSlice(arena), .module_doc = null } };
+            return Value{ .object = .{ .fields = try result_fields.toOwnedSlice(arena), .module_doc = null } };
         },
-        .import_expr => |import_expr| blk: {
-            // Import the module - error location will be set inside importModule if it fails
-            break :blk try importModule(arena, import_expr.path, current_dir, ctx);
-        },
-        .field_access => |field_access| blk: {
+        .import_expr => |import_expr| return try importModule(arena, import_expr.path, current_dir, ctx),
+        .field_access => |field_access| {
             const object_value = try evaluateExpression(arena, field_access.object, env, current_dir, ctx);
             const forced = try force(arena, object_value);
-            break :blk try accessField(arena, forced, field_access.field, field_access.field_location, field_access.object, ctx);
+            return try accessField(arena, forced, field_access.field, field_access.field_location, field_access.object, ctx);
         },
-        .index => |index| blk: {
+        .index => |index| {
             const object_value = try evaluateExpression(arena, index.object, env, current_dir, ctx);
             const forced_object = try force(arena, object_value);
             const index_value = try evaluateExpression(arena, index.index, env, current_dir, ctx);
             const forced_index = try force(arena, index_value);
 
-            break :blk switch (forced_object) {
+            return switch (forced_object) {
                 .array => |arr| blk2: {
                     const idx = switch (forced_index) {
                         .integer => |i| i,
@@ -1997,7 +2033,7 @@ pub fn evaluateExpression(
                 else => return error.TypeMismatch,
             };
         },
-        .field_accessor => |field_accessor| blk: {
+        .field_accessor => |field_accessor| {
             // Create a function that accesses the specified fields
             const param = try arena.create(Pattern);
             param.* = .{
@@ -2035,9 +2071,9 @@ pub fn evaluateExpression(
                 .env = env,
             };
 
-            break :blk Value{ .function = func_value };
+            return Value{ .function = func_value };
         },
-        .operator_function => |op| blk: {
+        .operator_function => |op| {
             // Create a curried binary function: x -> y -> x op y
             // First, create the parameters
             const param_x = try arena.create(Pattern);
@@ -2093,9 +2129,9 @@ pub fn evaluateExpression(
                 .env = env,
             };
 
-            break :blk Value{ .function = outer_func };
+            return Value{ .function = outer_func };
         },
-        .field_projection => |field_projection| blk: {
+        .field_projection => |field_projection| {
             const object_value = try evaluateExpression(arena, field_projection.object, env, current_dir, ctx);
 
             // Verify it's an object
@@ -2115,9 +2151,10 @@ pub fn evaluateExpression(
                 };
             }
 
-            break :blk Value{ .object = .{ .fields = new_fields, .module_doc = null } };
+            return Value{ .object = .{ .fields = new_fields, .module_doc = null } };
         },
-    };
+    }
+    } // end tco_loop
 }
 
 fn accessField(arena: std.mem.Allocator, object_value: Value, field_name: []const u8, location: SourceLocation, object_expr: ?*Expression, ctx: *const EvalContext) EvalError!Value {
