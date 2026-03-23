@@ -1,0 +1,117 @@
+{ describe, it, must, mustEq } = import "Spec"
+Object = import "Object"
+Array = import "Array"
+
+// Note: The & operator merges objects with right-hand side fields taking
+// precedence on key conflicts.  The properties below use objects with
+// *disjoint* key sets to avoid conflict-based behaviour clouding the picture.
+describe #ObjectProperties [
+  describe "& operator: identity" [
+    it "a & {} == a (right identity)" do
+      a = { x: 1, y: 2 }
+      mustEq a (a & {})
+
+    it "{} & a == a (left identity)" do
+      a = { x: 1, y: 2 }
+      mustEq a ({} & a)
+
+    it "identity holds for empty object" do
+      mustEq {  } ({} & {})
+
+    it "identity holds for single-key object" do
+      mustEq { hello: "world" } ({ hello: "world" } & {})
+
+    it "identity holds for nested object" do
+      obj = { outer: { inner: 42 } }
+      mustEq obj (obj & {})
+  ]
+
+  describe "& operator: associativity (disjoint keys)" [
+    it "(a & b) & c == a & (b & c) for disjoint keys" do
+      a = { x: 1 }
+      b = { y: 2 }
+      c = { z: 3 }
+      left = a & b & c
+      right = a & b & c
+      mustEq left right
+
+    it "associativity holds with multiple disjoint keys per object" do
+      a = { x: 1, w: 4 }
+      b = { y: 2, v: 5 }
+      c = { z: 3, u: 6 }
+      left = a & b & c
+      right = a & b & c
+      mustEq left right
+
+    it "associativity holds for empty intermediates" do
+      a = { x: 1 }
+      b = {}
+      c = { z: 3 }
+      left = a & b & c
+      right = a & b & c
+      mustEq left right
+  ]
+
+  describe "& operator: key union" [
+    it "merged object contains all keys from both sides (disjoint)" do
+      a = { x: 1 }
+      b = { y: 2 }
+      merged = a & b
+      keys = Array.sort (Object.keys merged)
+      mustEq ["x", "y"] keys
+
+    it "merged object has correct values for both keys" do
+      a = { foo: 10 }
+      b = { bar: 20 }
+      merged = a & b
+      mustEq (10, 20) (merged.foo, merged.bar)
+  ]
+
+  describe "& operator: right-side wins on overlap" [
+    it "right-hand value wins on key conflict" do
+      a = { x: 1 }
+      b = { x: 99 }
+      merged = a & b
+      mustEq 99 merged.x
+
+    it "non-conflicting keys are preserved alongside overwritten key" do
+      a = { x: 1, y: 2 }
+      b = { x: 10 }
+      merged = a & b
+      mustEq (10, 2) (merged.x, merged.y)
+  ]
+
+  describe "Object.keys and Object.values" [
+    it "keys of empty object is empty array" do
+      mustEq [] (Object.keys {  })
+
+    it "values of empty object is empty array" do
+      mustEq [] (Object.values {  })
+
+    it "keys length equals values length" do
+      obj = {
+        a: 1
+        b: 2
+        c: 3
+      }
+
+      mustEq (Array.length (Object.keys obj)) (Array.length (Object.values obj))
+
+    it "merge of two disjoint objects has union of keys" do
+      a = { p: 1, q: 2 }
+      b = { r: 3, s: 4 }
+      merged = a & b
+      mustEq 4 (Array.length (Object.keys merged))
+  ]
+
+  describe "Object.merge" [
+    it "Object.merge is equivalent to &" do
+      a = { x: 1 }
+      b = { y: 2 }
+      mustEq (a & b) (Object.merge a b)
+
+    it "Object.merge identity: merge a {} == a" do
+      a = { name: "test", value: 42 }
+      mustEq a (Object.merge a {  })
+  ]
+]

@@ -187,12 +187,34 @@ pub fn build(b: *std.Build) void {
         .root_module = format_fixture_test_module,
     });
 
+    // Fuzz test modules
+    const fuzz_test_files = [_][]const u8{
+        "tests/fuzz_parser_test.zig",
+        "tests/fuzz_eval_test.zig",
+    };
+
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&b.addRunArtifact(tests).step);
     test_step.dependOn(&b.addRunArtifact(examples_tests).step);
     test_step.dependOn(&b.addRunArtifact(lsp_tests).step);
     test_step.dependOn(&b.addRunArtifact(formatter_tests).step);
     test_step.dependOn(&b.addRunArtifact(format_fixture_tests).step);
+
+    for (fuzz_test_files) |fuzz_file| {
+        const fuzz_test_module = b.createModule(.{
+            .root_source_file = b.path(fuzz_file),
+            .target = target,
+            .optimize = optimize,
+        });
+
+        fuzz_test_module.addImport("evaluator", evaluator_module);
+
+        const fuzz_tests = b.addTest(.{
+            .root_module = fuzz_test_module,
+        });
+
+        test_step.dependOn(&b.addRunArtifact(fuzz_tests).step);
+    }
 
     for (eval_test_files) |test_file| {
         const eval_test_module = b.createModule(.{

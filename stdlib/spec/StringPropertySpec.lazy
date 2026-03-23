@@ -1,0 +1,108 @@
+{ describe, forall, it, must, mustEq } = import "Spec"
+Random = import "Random"
+String = import "String"
+Array = import "Array"
+
+// A generator that produces short strings from a fixed alphabet.
+// Returns (string, nextSeed).
+shortString = seed ->
+  alphabet = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"]
+  alphabetLen = Array.length alphabet
+  (len, s1) = Random.intRange 0 8 seed
+  buildStr = remaining ->
+    acc ->
+      s ->
+        if remaining <= 0 then
+          (acc, s)
+        else
+          (idx, sNext) = Random.intRange 0 alphabetLen s
+          char = when Array.get idx alphabet is
+            (#ok, c) then c
+            otherwise "x"
+
+          buildStr (remaining - 1) (String.append acc char) sNext
+
+  buildStr len "" s1
+
+describe #StringProperties [
+  describe "reverse" [
+    forall shortString "reverse is an involution: reverse(reverse(s)) == s" do
+      s -> mustEq s (String.reverse (String.reverse s))
+
+    it "reverse involution holds for empty string" do
+      mustEq "" (String.reverse (String.reverse ""))
+
+    it "reverse involution holds for single character" do
+      mustEq "a" (String.reverse (String.reverse "a"))
+
+    it "reverse involution holds for known string" do
+      mustEq "hello" (String.reverse (String.reverse "hello"))
+
+    it "reverse involution holds for palindrome" do
+      mustEq "racecar" (String.reverse (String.reverse "racecar"))
+  ]
+
+  describe "append" [
+    forall shortString "append length: length(append a b) == length a + length b" do
+      a ->
+        b = String.reverse a
+        mustEq (String.length a + String.length b) (String.length (String.append a b))
+
+    it "append length holds for known strings" do
+      a = "hello"
+      b = " world"
+      mustEq (String.length a + String.length b) (String.length (String.append a b))
+
+    it "append length holds for empty strings" do
+      mustEq 0 (String.length (String.append "" ""))
+
+    forall shortString "append with empty string is identity" do
+      s -> mustEq s (String.append s "")
+
+    forall shortString "prepend with empty string is identity" do
+      s -> mustEq s (String.append "" s)
+  ]
+
+  describe "length" [
+    forall shortString "length is non-negative" do
+      s -> must (String.length s >= 0)
+
+    it "length of empty string is zero" do
+      mustEq 0 (String.length "")
+
+    forall shortString "length of concat equals sum of lengths" do
+      s ->
+        t = "xyz"
+        mustEq (String.length s + String.length t) (String.length (String.concat [s, t]))
+  ]
+
+  describe "concat" [
+    forall shortString "concat of single-element array is identity" do
+      s -> mustEq s (String.concat [s])
+
+    it "concat of empty array is empty string" do
+      mustEq "" (String.concat [])
+
+    forall shortString "concat with empty string segment preserves length" do
+      s -> mustEq (String.length s) (String.length (String.concat [s, ""]))
+  ]
+
+  describe "toUpperCase / toLowerCase" [
+    forall shortString "toLowerCase(toUpperCase(s)) == toLowerCase(s)" do
+      s -> mustEq (String.toLowerCase s) (String.toLowerCase (String.toUpperCase s))
+
+    forall shortString "toUpperCase(toLowerCase(s)) == toUpperCase(s)" do
+      s -> mustEq (String.toUpperCase s) (String.toUpperCase (String.toLowerCase s))
+
+    it "toUpperCase then toLowerCase roundtrips" do
+      mustEq "hello" (String.toLowerCase (String.toUpperCase "hello"))
+  ]
+
+  describe "isEmpty" [
+    it "isEmpty is true for empty string" do
+      mustEq true (String.isEmpty "")
+
+    forall shortString "isEmpty false implies length > 0" do
+      s -> if String.isEmpty s then mustEq true true else must (String.length s > 0)
+  ]
+]
