@@ -363,3 +363,62 @@ test "object sibling fields shadow outer scope" {
         \\{ x: 1, y: x + 1 }.y
     , "2");
 }
+
+// super keyword
+
+test "super accesses base object field" {
+    try expectEvaluates(
+        \\base = { x: 1 }
+        \\ext = base { x: super.x + 10 }
+        \\ext.x
+    , "11");
+}
+
+test "super and self in same merged object" {
+    // self in the base field sees the merged object; super in extension sees the base
+    try expectEvaluates(
+        \\base = { x: 1, y: self.x + 10 }
+        \\ext = base { x: super.x + 1 }
+        \\(ext.x, ext.y)
+    , "(2, 12)");
+}
+
+test "super in chained extensions refers to full base" {
+    try expectEvaluates(
+        \\a = { x: 1 }
+        \\b = a { x: 2 }
+        \\c = b { x: super.x + 100 }
+        \\c.x
+    , "102");
+}
+
+test "super in merge operator" {
+    try expectEvaluates(
+        \\base = { x: 1 }
+        \\ext = { x: super.x + 10 }
+        \\result = base & ext
+        \\result.x
+    , "11");
+}
+
+test "super is error in non-merged object" {
+    const std = @import("std");
+    const evaluator = @import("evaluator");
+    const result = evaluator.evalInline(std.testing.allocator, "{ x: super.y }.x");
+    if (result) |ok| {
+        var r = ok;
+        r.deinit();
+        return error.TestExpectedError;
+    } else |err| {
+        try std.testing.expectEqual(evaluator.EvalError.UnknownIdentifier, err);
+    }
+}
+
+test "super preserves base object through multiple merges" {
+    try expectEvaluates(
+        \\base = { x: 1, y: 2 }
+        \\ext1 = base { z: super.x }
+        \\ext2 = ext1 { w: super.z }
+        \\(ext1.z, ext2.w)
+    , "(1, 1)");
+}

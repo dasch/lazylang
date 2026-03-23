@@ -368,7 +368,7 @@ pub const Server = struct {
             .keyword_if, .keyword_then, .keyword_else, .keyword_when, .keyword_is,
             .keyword_for, .keyword_in, .keyword_where, .keyword_do, .keyword_otherwise,
             .keyword_unless, .keyword_matches, .keyword_import, .keyword_assert,
-            .keyword_self, .keyword_and => 0, // keyword
+            .keyword_self, .keyword_super, .keyword_and => 0, // keyword
         };
     }
 

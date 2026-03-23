@@ -511,18 +511,23 @@ fn mergeObjects(arena: std.mem.Allocator, base: ObjectValue, extension: ObjectVa
     const module_doc = extension.module_doc orelse base.module_doc;
     const fields = try result_fields.toOwnedSlice(arena);
 
-    // Late-binding self: clone thunks and point them to a new self_value cell
+    // Late-binding self/super: clone thunks and point them to new self/super cells
     // for the merged object. Cloning is necessary so the base object's thunks
     // are not mutated (pure functional semantics).
     const self_cell = try arena.create(Value);
     self_cell.* = .null_value; // placeholder
+    // super refers to the base object (before merge)
+    const super_cell = try arena.create(Value);
+    super_cell.* = .{ .object = base };
     for (fields) |*field| {
         if (field.value == .thunk) {
             const old_thunk = field.value.thunk;
             const new_thunk = try arena.create(Thunk);
             new_thunk.* = old_thunk.*;
             new_thunk.self_value = self_cell;
+            new_thunk.super_value = super_cell;
             new_thunk.state = .unevaluated; // reset so it re-evaluates with new self
+            new_thunk.cached_sibling_env = null; // invalidate cached env since self/super changed
             field.value = .{ .thunk = new_thunk };
         }
     }
@@ -664,6 +669,16 @@ pub fn force(arena: std.mem.Allocator, value: Value) EvalError!Value {
                             .value = self_val.*,
                             .parent = thunk.env,
                         };
+                        // Add `super` binding if this thunk came from a merge
+                        if (thunk.super_value) |super_val| {
+                            const super_env = try arena.create(Environment);
+                            super_env.* = .{
+                                .name = "super",
+                                .value = super_val.*,
+                                .parent = current_env,
+                            };
+                            current_env = super_env;
+                        }
                         // Add bindings for each sibling field name,
                         // skipping the current field to avoid self-referential cycles.
                         switch (self_val.*) {
@@ -1976,6 +1991,13 @@ pub fn evaluateExpression(
                 .object => |base_obj| {
                     // Build the extension object with proper handling of is_patch
                     // Note: object_extend only supports static keys
+                    // Bind `super` to the base object so extension fields can reference it.
+                    const super_env = try arena.create(Environment);
+                    super_env.* = .{
+                        .name = "super",
+                        .value = base_value,
+                        .parent = env,
+                    };
                     var extension_fields = std.ArrayListUnmanaged(ObjectFieldValue){};
                     for (extend.fields) |field| {
                         const static_key = switch (field.key) {
@@ -1983,7 +2005,7 @@ pub fn evaluateExpression(
                             .dynamic => return error.TypeMismatch, // Dynamic keys not supported in object_extend
                         };
                         const key_copy = try arena.dupe(u8, static_key);
-                        const value = try evaluateExpression(arena, field.value, env, current_dir, ctx);
+                        const value = try evaluateExpression(arena, field.value, super_env, current_dir, ctx);
 
                         if (field.is_patch) {
                             // Patch: merge with existing field if it exists and is an object
