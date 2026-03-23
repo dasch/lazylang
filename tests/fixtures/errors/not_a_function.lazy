@@ -3,9 +3,9 @@
 //    |
 // 12 | result = x 10
 //    |          ^
-//
-// Attempted to call a value that is not a function.
-//
+// 
+// Attempted to call a value of type `integer` as a function.
+// 
 // help: Only functions can be called with arguments. Make sure this value is a function.
 
 x = 42

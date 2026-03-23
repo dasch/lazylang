@@ -1,0 +1,12 @@
+// error: Not a function
+//   --> tests/fixtures/errors/not_a_function_string.lazy:12:1
+//    |
+// 12 | x 42
+//    | ^
+// 
+// Attempted to call a value of type `string` as a function.
+// 
+// help: Only functions can be called with arguments. Make sure this value is a function.
+
+x = "hello"
+x 42

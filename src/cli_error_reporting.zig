@@ -38,9 +38,9 @@ pub fn reportErrorWithContext(
     if (evaluator.getUserCrashMessage()) |crash_message| {
         const error_info = error_reporter.ErrorInfo{
             .title = "Runtime error",
-            .location = null,
+            .location = err_ctx.last_error_location,
             .message = crash_message,
-            .suggestion = null,
+            .suggestion = "Check the condition and message passed to `assert` or `crash`.",
             .stack_trace = err_ctx.stack_trace,
         };
         try error_reporter.reportError(stderr, source, filename, error_info, use_colors);
@@ -189,6 +189,19 @@ pub fn reportError(
         error.TypeMismatch => blk: {
             if (err_ctx) |ctx| {
                 switch (ctx.last_error_data) {
+                    .when_no_match => |wdata| {
+                        const message = if (wdata.value_str.len > 0)
+                            try std.fmt.allocPrint(arena_allocator, "No branch matched the value `{s}`, and there is no `otherwise` clause.", .{wdata.value_str})
+                        else
+                            "None of the `when` branches matched the value, and there is no `otherwise` clause to handle the remaining cases.";
+                        break :blk error_reporter.ErrorInfo{
+                            .title = "No matching branch",
+                            .location = location,
+                            .message = message,
+                            .suggestion = "Add an `otherwise` clause to handle cases not covered by the existing branches.",
+                            .stack_trace = stack_trace,
+                        };
+                    },
                     .type_mismatch => |data| {
                         const message = if (data.operation) |op| blk2: {
                             // Special formatting for function call pattern mismatches
@@ -204,11 +217,22 @@ pub fn reportError(
                         } else
                             try std.fmt.allocPrint(arena_allocator, "Expected `{s}`, but found `{s}`.", .{ data.expected, data.found });
 
+                        const suggestion = if (data.operation) |op| sugg: {
+                            if (std.mem.eql(u8, op, "addition") and std.mem.eql(u8, data.found, "string"))
+                                break :sugg "Use `toString` to convert to string, or `++` for string concatenation."
+                            else if (std.mem.eql(u8, op, "addition") and std.mem.eql(u8, data.expected, "integer"))
+                                break :sugg "Both operands of `+` must be the same numeric type."
+                            else if (std.mem.startsWith(u8, op, "comparison"))
+                                break :sugg "Values of different types cannot be compared directly."
+                            else
+                                break :sugg "Make sure you're using compatible types for this operation.";
+                        } else "Make sure you're using compatible types for this operation.";
+
                         break :blk error_reporter.ErrorInfo{
                             .title = "Type mismatch",
                             .location = location,
                             .message = message,
-                            .suggestion = "Make sure you're using compatible types for this operation.",
+                            .suggestion = suggestion,
                             .stack_trace = stack_trace,
                         };
                     },
@@ -224,23 +248,60 @@ pub fn reportError(
                 .stack_trace = stack_trace,
             };
         },
-        error.ExpectedFunction => error_reporter.ErrorInfo{
-            .title = "Not a function",
-            .location = location,
-            .message = "Attempted to call a value that is not a function.",
-            .suggestion = "Only functions can be called with arguments. Make sure this value is a function.",
-            .stack_trace = stack_trace,
+        error.ExpectedFunction => blk: {
+            if (err_ctx) |ctx| {
+                switch (ctx.last_error_data) {
+                    .not_a_function => |data| {
+                        if (data.original_function) |func_name| {
+                            const message = try std.fmt.allocPrint(arena_allocator, "The result of calling `{s}` is `{s}`, which cannot be called as a function. `{s}` may take fewer arguments than provided.", .{ func_name, data.value_type, func_name });
+                            break :blk error_reporter.ErrorInfo{
+                                .title = "Not a function",
+                                .location = location,
+                                .message = message,
+                                .suggestion = "Lazylang functions are curried — `f a b` is `(f a) b`. If `f` takes one argument, `f a` returns a result that `b` is then applied to.",
+                                .stack_trace = stack_trace,
+                            };
+                        }
+                        const message = try std.fmt.allocPrint(arena_allocator, "Attempted to call a value of type `{s}` as a function.", .{data.value_type});
+                        break :blk error_reporter.ErrorInfo{
+                            .title = "Not a function",
+                            .location = location,
+                            .message = message,
+                            .suggestion = "Only functions can be called with arguments. Make sure this value is a function.",
+                            .stack_trace = stack_trace,
+                        };
+                    },
+                    else => {},
+                }
+            }
+            break :blk error_reporter.ErrorInfo{
+                .title = "Not a function",
+                .location = location,
+                .message = "Attempted to call a value that is not a function.",
+                .suggestion = "Only functions can be called with arguments. Make sure this value is a function.",
+                .stack_trace = stack_trace,
+            };
         },
         error.ModuleNotFound => blk: {
             if (err_ctx) |ctx| {
                 switch (ctx.last_error_data) {
                     .module_not_found => |data| {
                         const message = try std.fmt.allocPrint(arena_allocator, "Could not find module `{s}`.", .{data.module_name});
+                        const suggestion = if (data.searched_paths.len > 0) suggestion_blk: {
+                            var buf = std.ArrayList(u8){};
+                            defer buf.deinit(arena_allocator);
+                            try buf.appendSlice(arena_allocator, "Searched in:");
+                            for (data.searched_paths) |p| {
+                                try buf.appendSlice(arena_allocator, "\n  - ");
+                                try buf.appendSlice(arena_allocator, p);
+                            }
+                            break :suggestion_blk try arena_allocator.dupe(u8, buf.items);
+                        } else "Check that the module path is correct and the file exists. Module paths are searched in LAZYLANG_PATH and stdlib/lib.";
                         break :blk error_reporter.ErrorInfo{
                             .title = "Module not found",
                             .location = location,
                             .message = message,
-                            .suggestion = "Check that the module path is correct and the file exists. Module paths are searched in LAZYLANG_PATH and stdlib/lib.",
+                            .suggestion = suggestion,
                             .stack_trace = stack_trace,
                         };
                     },
@@ -294,11 +355,26 @@ pub fn reportError(
                         else
                             try std.fmt.allocPrint(arena_allocator, "Field `{s}` is not defined on {s}. Available fields are: `{s}`, `{s}`, `{s}`, `{s}`, `{s}`", .{ data.field_name, on_what, data.available_fields[0], data.available_fields[1], data.available_fields[2], data.available_fields[3], data.available_fields[4] });
 
+                        // Find closest field via Levenshtein distance
+                        var best_match: ?[]const u8 = null;
+                        var best_dist: usize = std.math.maxInt(usize);
+                        for (data.available_fields) |field| {
+                            const dist = error_context.levenshteinDistance(data.field_name, field);
+                            if (dist < best_dist and dist <= data.field_name.len / 2 + 1) {
+                                best_dist = dist;
+                                best_match = field;
+                            }
+                        }
+                        const suggestion = if (best_match) |match|
+                            try std.fmt.allocPrint(arena_allocator, "Did you mean `{s}`?", .{match})
+                        else
+                            "Check the field name for typos.";
+
                         break :blk error_reporter.ErrorInfo{
                             .title = "Unknown field",
                             .location = location,
                             .message = message,
-                            .suggestion = "Check the field name for typos.",
+                            .suggestion = suggestion,
                             .stack_trace = stack_trace,
                         };
                     },
@@ -325,9 +401,9 @@ pub fn reportError(
             const crash_message = evaluator.getUserCrashMessage() orelse "Program crashed with no message.";
             break :blk error_reporter.ErrorInfo{
                 .title = "Runtime error",
-                .location = null,
+                .location = location,
                 .message = crash_message,
-                .suggestion = null,
+                .suggestion = "Check the condition and message passed to `assert` or `crash`.",
                 .stack_trace = stack_trace,
             };
         },

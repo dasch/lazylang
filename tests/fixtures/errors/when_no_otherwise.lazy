@@ -1,0 +1,14 @@
+// error: No matching branch
+//   --> tests/fixtures/errors/when_no_otherwise.lazy:12:1
+//    |
+// 12 | when x is
+//    | ^---
+// 
+// No branch matched the value `2`, and there is no `otherwise` clause.
+// 
+// help: Add an `otherwise` clause to handle cases not covered by the existing branches.
+
+x = 2
+when x is
+  1 then "one"
+  3 then "three"

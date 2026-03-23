@@ -193,6 +193,14 @@ fn showStackTrace(writer: anytype, stack_trace: []error_context.StackFrame, use_
             try w.writeAll("<anonymous>");
         }
 
+        if (!frame.is_native) {
+            if (frame.arg_str) |arg| {
+                try w.writeAll("(");
+                try w.writeAll(arg);
+                try w.writeAll(")");
+            }
+        }
+
         try w.writeAll("\n     at ");
         try w.writeAll(frame.filename);
         try w.print(":{d}:{d}\n", .{ frame.location.line, frame.location.column });

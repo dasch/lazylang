@@ -230,6 +230,73 @@ test "error: not a function - object" {
     , error.ExpectedFunction);
 }
 
+test "error: not a function reports value type in error data" {
+    try expectErrorWithData(
+        \\x = 42
+        \\x 10
+    , error.ExpectedFunction, struct {
+        fn check(data: ErrorData) !void {
+            switch (data) {
+                .not_a_function => |d| {
+                    try testing.expectEqualStrings("integer", d.value_type);
+                },
+                else => return error.TestUnexpectedResult,
+            }
+        }
+    }.check);
+}
+
+test "error: not a function reports string type in error data" {
+    try expectErrorWithData(
+        \\"hello" 42
+    , error.ExpectedFunction, struct {
+        fn check(data: ErrorData) !void {
+            switch (data) {
+                .not_a_function => |d| {
+                    try testing.expectEqualStrings("string", d.value_type);
+                },
+                else => return error.TestUnexpectedResult,
+            }
+        }
+    }.check);
+}
+
+test "error: when with no matching branch and no otherwise sets when_no_match data" {
+    try expectErrorWithData(
+        \\when 5 is
+        \\  1 then "one"
+        \\  2 then "two"
+    , error.TypeMismatch, struct {
+        fn check(data: ErrorData) !void {
+            switch (data) {
+                .when_no_match => |_| {},
+                else => return error.TestUnexpectedResult,
+            }
+        }
+    }.check);
+}
+
+test "error: when with matching branch does not error" {
+    var result = try eval.evalInlineWithContext(testing.allocator,
+        \\when 1 is
+        \\  1 then "one"
+        \\  2 then "two"
+    );
+    defer result.deinit();
+    try testing.expect(result.err == null);
+}
+
+test "error: when with otherwise does not error when no branch matches" {
+    var result = try eval.evalInlineWithContext(testing.allocator,
+        \\when 5 is
+        \\  1 then "one"
+        \\  2 then "two"
+        \\  otherwise "other"
+    );
+    defer result.deinit();
+    try testing.expect(result.err == null);
+}
+
 // ============================================================================
 // FIELD ACCESS ERRORS - with content checks
 // ============================================================================

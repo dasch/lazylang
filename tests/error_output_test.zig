@@ -196,6 +196,61 @@ test "exact error: type mismatch on field access shows location with stack trace
     try assertExactMatch(actual, expected);
 }
 
+test "exact error: calling integer as function shows type in message" {
+    const fixture = "tests/fixtures/errors/not_a_function.lazy";
+    const actual = try captureErrorOutput(testing.allocator, fixture);
+    defer testing.allocator.free(actual);
+
+    const expected = try loadExpectedError(testing.allocator, fixture);
+    defer testing.allocator.free(expected);
+
+    try assertExactMatch(actual, expected);
+}
+
+test "exact error: calling string as function shows type in message" {
+    const fixture = "tests/fixtures/errors/not_a_function_string.lazy";
+    const actual = try captureErrorOutput(testing.allocator, fixture);
+    defer testing.allocator.free(actual);
+
+    const expected = try loadExpectedError(testing.allocator, fixture);
+    defer testing.allocator.free(expected);
+
+    try assertExactMatch(actual, expected);
+}
+
+test "exact error: when with no matching branch and no otherwise hints at otherwise clause" {
+    const fixture = "tests/fixtures/errors/when_no_otherwise.lazy";
+    const actual = try captureErrorOutput(testing.allocator, fixture);
+    defer testing.allocator.free(actual);
+
+    const expected = try loadExpectedError(testing.allocator, fixture);
+    defer testing.allocator.free(expected);
+
+    try assertExactMatch(actual, expected);
+}
+
+test "exact error: field access on non-object integer" {
+    const fixture = "tests/fixtures/errors/field_access_on_non_object.lazy";
+    const actual = try captureErrorOutput(testing.allocator, fixture);
+    defer testing.allocator.free(actual);
+
+    const expected = try loadExpectedError(testing.allocator, fixture);
+    defer testing.allocator.free(expected);
+
+    try assertExactMatch(actual, expected);
+}
+
+test "exact error: unknown field with typo suggestion" {
+    const fixture = "tests/fixtures/errors/unknown_field_typo.lazy";
+    const actual = try captureErrorOutput(testing.allocator, fixture);
+    defer testing.allocator.free(actual);
+
+    const expected = try loadExpectedError(testing.allocator, fixture);
+    defer testing.allocator.free(expected);
+
+    try assertExactMatch(actual, expected);
+}
+
 // ============================================================================
 // ERROR MESSAGE QUALITY TESTS
 // These tests verify error messages contain helpful information

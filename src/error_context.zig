@@ -29,6 +29,8 @@ pub const StackFrame = struct {
     location: error_reporter.SourceLocation,
     filename: []const u8,
     is_native: bool,
+    /// Short string representation of the argument passed to this call (non-native only)
+    arg_str: ?[]const u8 = null,
 
     pub fn init(
         function_name: ?[]const u8,
@@ -76,6 +78,19 @@ pub const ErrorData = union(enum) {
     },
     module_not_found: struct {
         module_name: []const u8,
+        searched_paths: []const []const u8 = &.{},
+    },
+    /// Raised when a non-function value is called as a function.
+    not_a_function: struct {
+        /// The type name of the value that was called (e.g. "integer", "string").
+        value_type: []const u8,
+        /// If the call resulted from curried over-application, the root function name.
+        original_function: ?[]const u8 = null,
+    },
+    /// Raised when a `when` expression has no matching branch and no `otherwise` clause.
+    when_no_match: struct {
+        /// Short string representation of the unmatched value.
+        value_str: []const u8 = "",
     },
     none: void,
 };
@@ -144,7 +159,10 @@ pub const ErrorContext = struct {
         // Free ErrorData memory
         self.freeErrorData();
 
-        // Free call stack
+        // Free call stack (free any arg_str in remaining frames)
+        for (self.call_stack.items) |frame| {
+            if (frame.arg_str) |s| self.allocator.free(s);
+        }
         self.call_stack.deinit(self.allocator);
 
         // Free captured stack trace
@@ -154,6 +172,7 @@ pub const ErrorContext = struct {
                     self.allocator.free(name);
                 }
                 self.allocator.free(frame.filename);
+                if (frame.arg_str) |s| self.allocator.free(s);
             }
             self.allocator.free(trace);
         }
@@ -310,6 +329,8 @@ pub const ErrorContext = struct {
             },
             .module_not_found => |old_data| {
                 self.allocator.free(old_data.module_name);
+                for (old_data.searched_paths) |p| self.allocator.free(p);
+                self.allocator.free(old_data.searched_paths);
             },
             .type_mismatch => |old_data| {
                 if (old_data.expected_owned) self.allocator.free(old_data.expected);
@@ -319,6 +340,12 @@ pub const ErrorContext = struct {
                         self.allocator.free(op);
                     }
                 }
+            },
+            .not_a_function => |nf| {
+                if (nf.original_function) |of| self.allocator.free(of);
+            },
+            .when_no_match => |wdata| {
+                if (wdata.value_str.len > 0) self.allocator.free(wdata.value_str);
             },
             .none => {},
         }
@@ -350,6 +377,7 @@ pub const ErrorContext = struct {
                     self.allocator.free(name);
                 }
                 self.allocator.free(frame.filename);
+                if (frame.arg_str) |s| self.allocator.free(s);
             }
             self.allocator.free(trace);
             self.stack_trace = null;
@@ -366,15 +394,19 @@ pub const ErrorContext = struct {
         offset: usize,
         length: usize,
         is_native: bool,
+        arg_str: ?[]const u8,
     ) !void {
-        const frame = StackFrame.init(function_name, filename, line, column, offset, length, is_native);
+        var frame = StackFrame.init(function_name, filename, line, column, offset, length, is_native);
+        frame.arg_str = arg_str;
         try self.call_stack.append(self.allocator, frame);
     }
 
     /// Pop a stack frame from the call stack
     pub fn popStackFrame(self: *ErrorContext) void {
         if (self.call_stack.items.len > 0) {
-            _ = self.call_stack.pop();
+            if (self.call_stack.pop()) |frame| {
+                if (frame.arg_str) |s| self.allocator.free(s);
+            }
         }
     }
 
@@ -405,6 +437,10 @@ pub const ErrorContext = struct {
                     .location = src_frame.location,
                     .filename = try self.allocator.dupe(u8, src_frame.filename),
                     .is_native = src_frame.is_native,
+                    .arg_str = if (src_frame.arg_str) |s|
+                        try self.allocator.dupe(u8, s)
+                    else
+                        null,
                 };
             }
             self.stack_trace = frames;
@@ -438,7 +474,7 @@ pub const ErrorContext = struct {
 };
 
 /// Calculate Levenshtein distance between two strings
-fn levenshteinDistance(s1: []const u8, s2: []const u8) usize {
+pub fn levenshteinDistance(s1: []const u8, s2: []const u8) usize {
     if (s1.len == 0) return s2.len;
     if (s2.len == 0) return s1.len;
 

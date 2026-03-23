@@ -1,0 +1,12 @@
+// error: Type mismatch
+//   --> tests/fixtures/errors/field_access_on_non_object.lazy:12:3
+//    |
+// 12 | x.someField
+//    |   ^--------
+//
+// Expected `object` for field access, but found `integer`.
+//
+// help: Make sure you're using compatible types for this operation.
+
+x = 42
+x.someField
