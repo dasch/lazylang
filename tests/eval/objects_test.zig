@@ -422,3 +422,33 @@ test "super preserves base object through multiple merges" {
         \\(ext1.z, ext2.w)
     , "(1, 1)");
 }
+
+test "base object not mutated by super references" {
+    try expectEvaluates(
+        \\base = { x: 1 }
+        \\ext1 = base { y: super.x }
+        \\ext2 = base { y: super.x + 100 }
+        \\(ext1.y, ext2.y)
+    , "(1, 101)");
+}
+
+test "super.nonexistent field is error" {
+    const std = @import("std");
+    const evaluator = @import("evaluator");
+    const result = evaluator.evalInline(std.testing.allocator, "base = { x: 1 }; ext = base { y: super.z }; ext.y");
+    if (result) |ok| {
+        var r = ok;
+        r.deinit();
+        return error.TestExpectedError;
+    } else |err| {
+        try std.testing.expectEqual(evaluator.EvalError.UnknownField, err);
+    }
+}
+
+test "super in new field not in base" {
+    try expectEvaluates(
+        \\base = { x: 1 }
+        \\ext = base { brand_new: super.x * 2 }
+        \\ext.brand_new
+    , "2");
+}

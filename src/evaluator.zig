@@ -516,7 +516,8 @@ fn mergeObjects(arena: std.mem.Allocator, base: ObjectValue, extension: ObjectVa
     // are not mutated (pure functional semantics).
     const self_cell = try arena.create(Value);
     self_cell.* = .null_value; // placeholder
-    // super refers to the base object (before merge)
+    // super is the base object before merge — unlike self, this is known
+    // immediately and does not need a placeholder.
     const super_cell = try arena.create(Value);
     super_cell.* = .{ .object = base };
     for (fields) |*field| {
@@ -526,7 +527,7 @@ fn mergeObjects(arena: std.mem.Allocator, base: ObjectValue, extension: ObjectVa
             new_thunk.* = old_thunk.*;
             new_thunk.self_value = self_cell;
             new_thunk.super_value = super_cell;
-            new_thunk.state = .unevaluated; // reset so it re-evaluates with new self
+            new_thunk.state = .unevaluated; // reset so it re-evaluates with new self/super
             new_thunk.cached_sibling_env = null; // invalidate cached env since self/super changed
             field.value = .{ .thunk = new_thunk };
         }
@@ -1991,7 +1992,9 @@ pub fn evaluateExpression(
                 .object => |base_obj| {
                     // Build the extension object with proper handling of is_patch
                     // Note: object_extend only supports static keys
-                    // Bind `super` to the base object so extension fields can reference it.
+                    // Bind `super` to the base object for eager evaluation of extension fields.
+                    // Note: lazy (thunk-based) super binding for the merged result is handled
+                    // inside mergeObjects.
                     const super_env = try arena.create(Environment);
                     super_env.* = .{
                         .name = "super",
