@@ -260,7 +260,7 @@ generateIstio = { appConfig, componentConfig, manifests } ->
   manifests ++ virtualServiceManifests ++ destinationRuleManifests
 
 setNamespace = { appConfig, componentConfig, manifests } ->
-  [manifest & { metadata: manifest.metadata & { namespace: appConfig.namespace } }
+  [manifest { metadata: super.metadata & { namespace: appConfig.namespace } }
    for manifest in manifests]
 
 setStandardLabels = { appConfig, componentConfig, manifests } ->
@@ -279,12 +279,10 @@ setStandardLabels = { appConfig, componentConfig, manifests } ->
             (#ok, existing) then existing
             otherwise {}
 
-        withMeta = manifest & { metadata: manifest.metadata & { labels: existingLabels & labels } }
+        withMeta = manifest { metadata: super.metadata & { labels: existingLabels & labels } }
 
-        if manifest.kind == "Deployment" then
-          templateMeta = withMeta.spec.template.metadata
-          newTemplate = withMeta.spec.template & { metadata: templateMeta & { labels: templateMeta.labels & labels } }
-          withMeta & { spec: withMeta.spec & { template: newTemplate } }
+        if withMeta.kind == "Deployment" then
+          withMeta { spec: super.spec { template: super.template { metadata: super.metadata & { labels: super.metadata.labels & labels } } } }
         else
           withMeta
 
@@ -292,7 +290,7 @@ setAnnotations = { appConfig, componentConfig, manifests } ->
   annotations = {
     "app.kubernetes.io/version": componentConfig.imageTag
   }
-  [manifest & { metadata: manifest.metadata & { annotations } } for manifest in manifests]
+  [manifest { metadata: super.metadata & { annotations } } for manifest in manifests]
 
 // -- Pipeline --
 

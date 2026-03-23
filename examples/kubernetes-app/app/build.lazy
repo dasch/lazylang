@@ -20,7 +20,7 @@ componentConfigs = {
 // Build manifests for a single environment.
 buildEnv = envName ->
   envOverrides = appSpec.environments[envName]
-  appConfig = appSpec.base & { namespace: envOverrides.namespace, registry: appSpec.base.registry }
+  appConfig = appSpec.base { namespace: envOverrides.namespace }
 
   components = {
     [name]:
@@ -50,7 +50,7 @@ buildEnv = envName ->
               when Object.get envName config.environments is
                 (#ok, overrides) then
                   when Object.get "istio" overrides is
-                    (#ok, istio) then { istio: istio & { gateway: gw } }
+                    (#ok, istio) then { istio: istio { gateway: gw } }
                     otherwise {}
                 otherwise {}
             otherwise {})
